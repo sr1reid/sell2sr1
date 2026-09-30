@@ -73,17 +73,26 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
 
-    // --- ALL LOCATIONS FROM SR1COMPANIES.COM/LOCATIONS ---
+    // --- LOCATION LIST ---
     const LOCATIONS = [
-      { id: 'turner_me', name: 'Turner, Maine', address: '2239 Auburn Road, Turner, ME 04282', phone: '(207) 224-8444', services: 'RVs, Trailers, Tractors, Heavy Equipment, Powersports, Containers, Docks' },
-      { id: 'manchester_me', name: 'Manchester, Maine', address: '746 Western Avenue, Manchester, ME 04351', phone: '(207) 622-0672', services: 'RVs, Trailers, Equipment' },
-      { id: 'hermon_me', name: 'Hermon, Maine', address: '34 Page Road W, Hermon, ME 04401', phone: '(207) 605-0284', services: 'Trailers, Containers, Equipment Rentals' },
-      { id: 'orono_me', name: 'Orono, Maine', address: '485 Main St / 29 Stillwater Ave, Orono, ME 04473', phone: '(207) 300-4000', services: 'Tractors, Heavy Equipment' },
-      { id: 'houlton_me', name: 'Houlton, Maine', address: '28 Ludlow Rd, Houlton, ME 04730', phone: '(207) 521-5264', services: 'Trailers, Equipment' },
-      { id: 'caribou_me', name: 'Caribou, Maine', address: '323 Sweden St, Caribou, ME 04736', phone: '(207) 498-2549', services: 'Equipment' },
-      { id: 'loudon_nh', name: 'Loudon, New Hampshire', address: '7 Wales Bridge Rd / Route 106N, Loudon, NH 03307', phone: '(603) 688-9000', services: 'Tractors, Heavy Equipment, Trailers, RVs, Containers' },
-      { id: 'epsom_nh', name: 'Epsom, New Hampshire', address: '2080 Dover Road, Epsom, NH 03234', phone: '(603) 736-0320', services: 'Powersports, Docks' },
-      { id: 'pickup_requested', name: 'On-Site Pickup (Anywhere in New England)', address: 'We dispatch our transport fleet directly to your location', phone: '', services: 'Mobile Logistics Pickup' }
+      { id: 'trailers_loudon_nh', name: 'SR1 Trailers - Loudon NH' },
+      { id: 'trailers_turner_me', name: 'SR1 Trailers - Turner ME' },
+      { id: 'trailers_manchester_me', name: 'SR1 Trailers - Manchester ME' },
+      { id: 'trailers_hermon_me', name: 'SR1 Trailers - Hermon ME' },
+      { id: 'equipment_loudon_nh', name: 'SR1 Equipment - Loudon NH' },
+      { id: 'equipment_turner_me', name: 'SR1 Equipment - Turner ME' },
+      { id: 'equipment_orono_me', name: 'SR1 Equipment - Orono ME' },
+      { id: 'equipment_houlton_me', name: 'SR1 Equipment - Houlton ME' },
+      { id: 'equipment_caribou_me', name: 'SR1 Equipment - Caribou ME' },
+      { id: 'containers_loudon_nh', name: 'SR1 Containers - Loudon NH' },
+      { id: 'containers_turner_me', name: 'SR1 Containers - Turner ME' },
+      { id: 'containers_hermon_me', name: 'SR1 Containers - Hermon ME' },
+      { id: 'rv_loudon_nh', name: 'SR1 RV - Loudon NH' },
+      { id: 'rv_turner_me', name: 'SR1 RV - Turner ME' },
+      { id: 'rv_manchester_me', name: 'SR1 RV - Manchester ME' },
+      { id: 'powersports_epsom_nh', name: 'SR1 Powersports - Epsom NH' },
+      { id: 'powersports_turner_me', name: 'SR1 Powersports - Turner ME' },
+      { id: 'pickup_requested', name: 'On-Site Pickup (Anywhere in NH for the right price!)' }
     ];
 
     // --- REVISED CATEGORIES (NO IMAGE/EMOJI ICONS) ---
@@ -648,7 +657,7 @@
         slidesCount: '',
         horsepower: '',
         cabType: 'open_rops',
-        preferredLocation: 'manchester_me',
+        preferredLocation: 'trailers_loudon_nh',
         firstName: '',
         lastName: '',
         email: '',
@@ -837,10 +846,6 @@
                   <div className="flex items-start space-x-2">
                     <span className="text-emerald-400 font-bold mt-0.5">✓</span>
                     <span><strong>Direct Reach Out:</strong> Our appraisal team will review your photos and details and contact you directly via phone (<span className="text-white">{submittedInquiry.customer.phone}</span>) or email (<span className="text-white">{submittedInquiry.customer.email}</span>).</span>
-                  </div>
-                  <div className="flex items-start space-x-2">
-                    <span className="text-emerald-400 font-bold mt-0.5">✓</span>
-                    <span><strong>No Further Action Needed:</strong> You don't need to check back online; we handle loan payoffs, title transfer, and pickup directly with you.</span>
                   </div>
                 </div>
               </div>
@@ -1759,7 +1764,7 @@
                       <td className="p-3 font-mono text-neutral-400">{item.referenceId}</td>
                       <td className="p-3 font-bold text-white">{item.unit.year} {item.unit.make} {item.unit.model}</td>
                       <td className="p-3">{item.customer.firstName} {item.customer.lastName}</td>
-                      <td className="p-3">{LOCATIONS.find(l => l.id === item.preferredLocation)?.name.split(',')[0]}</td>
+                      <td className="p-3">{LOCATIONS.find(l => l.id === item.preferredLocation)?.name}</td>
                       <td className="p-3">
                         {item.outreach?.reachedOut ? (
                           <span className="text-emerald-400 font-semibold text-[11px] flex items-center space-x-1">
