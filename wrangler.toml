@@ -1,0 +1,15 @@
+name = "sell2sr1"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+# Optional Cloudflare R2 Bucket for photos
+# [[r2_buckets]]
+# binding = 'PHOTOS_BUCKET'
+# bucket_name = 'sell2sr1-photos'
+
+# Optional Cloudflare D1 SQL database
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "sell2sr1-db"
+# database_id = "xxxx-xxxx-xxxx"

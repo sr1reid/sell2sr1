@@ -1,0 +1,2105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>sell2sr1.com | SR1 Companies Vehicle & Equipment Acquisition</title>
+  <meta name="description" content="Sell your RVs, trailers, tractors, heavy equipment, powersports, motorcycles, boats, and shipping containers directly to SR1 Companies. Locations throughout Maine and New Hampshire.">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            neutral: {
+              950: '#09090b',
+              900: '#121214',
+              850: '#18181b',
+              800: '#202024',
+              750: '#27272a',
+              700: '#3f3f46',
+              600: '#52525b',
+              500: '#71717a',
+              400: '#a1a1aa',
+              300: '#d4d4d8',
+              200: '#e4e4e7',
+              100: '#f4f4f5',
+              50: '#fafafa',
+            },
+            sr1: {
+              red: '#e11d48',
+              redDark: '#be123c'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & Babel for instant zero-config browser runtime -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #09090b;
+      color: #f4f4f5;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #121214;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #27272a;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased text-neutral-100 selection:bg-neutral-100 selection:text-neutral-950 custom-scrollbar">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    // --- ALL LOCATIONS FROM SR1COMPANIES.COM/LOCATIONS ---
+    const LOCATIONS = [
+      { id: 'turner_me', name: 'Turner, Maine', address: '2239 Auburn Road, Turner, ME 04282', phone: '(207) 224-8444', services: 'RVs, Trailers, Tractors, Heavy Equipment, Powersports, Containers, Docks' },
+      { id: 'manchester_me', name: 'Manchester, Maine', address: '746 Western Avenue, Manchester, ME 04351', phone: '(207) 622-0672', services: 'RVs, Trailers, Equipment' },
+      { id: 'hermon_me', name: 'Hermon, Maine', address: '34 Page Road W, Hermon, ME 04401', phone: '(207) 605-0284', services: 'Trailers, Containers, Equipment Rentals' },
+      { id: 'orono_me', name: 'Orono, Maine', address: '485 Main St / 29 Stillwater Ave, Orono, ME 04473', phone: '(207) 300-4000', services: 'Tractors, Heavy Equipment' },
+      { id: 'houlton_me', name: 'Houlton, Maine', address: '28 Ludlow Rd, Houlton, ME 04730', phone: '(207) 521-5264', services: 'Trailers, Equipment' },
+      { id: 'caribou_me', name: 'Caribou, Maine', address: '323 Sweden St, Caribou, ME 04736', phone: '(207) 498-2549', services: 'Equipment' },
+      { id: 'loudon_nh', name: 'Loudon, New Hampshire', address: '7 Wales Bridge Rd / Route 106N, Loudon, NH 03307', phone: '(603) 688-9000', services: 'Tractors, Heavy Equipment, Trailers, RVs, Containers' },
+      { id: 'epsom_nh', name: 'Epsom, New Hampshire', address: '2080 Dover Road, Epsom, NH 03234', phone: '(603) 736-0320', services: 'Powersports, Docks' },
+      { id: 'pickup_requested', name: 'On-Site Pickup (Anywhere in New England)', address: 'We dispatch our transport fleet directly to your location', phone: '', services: 'Mobile Logistics Pickup' }
+    ];
+
+    // --- REVISED CATEGORIES (NO IMAGE/EMOJI ICONS) ---
+    const CATEGORIES = {
+      rv: {
+        label: 'RVs / Campers',
+        desc: 'Travel trailers, 5th wheels, motorhomes, toy haulers & truck campers',
+        subtypes: ['Travel Trailer', 'Fifth Wheel', 'Toy Hauler', 'Class C Motorhome', 'Class A Motorhome', 'Class B / Van', 'Pop-Up', 'Truck Camper'],
+        isHours: false
+      },
+      trailer: {
+        label: 'Trailers',
+        desc: 'Dump trailers, cargo/enclosed, equipment haulers, utility, tilt & goosenecks',
+        subtypes: ['Dump Trailer', 'Cargo / Enclosed', 'Equipment Hauler', 'Utility / Landscape', 'Gooseneck / Deckover', 'Tilt Bed', 'Snowmobile / ATV Trailer'],
+        isHours: false
+      },
+      tractor: {
+        label: 'Tractors',
+        desc: 'Sub-compact, compact & utility tractors with loaders & attachments',
+        subtypes: ['Sub-Compact (<25 HP)', 'Compact Tractor (25-50 HP)', 'Utility Tractor (50+ HP)', 'Commercial Mower', 'Tractor Loader Backhoe'],
+        isHours: true
+      },
+      equipment: {
+        label: 'Heavy Equipment',
+        desc: 'Track loaders, skid steers, mini excavators, telehandlers & attachments',
+        subtypes: ['Compact Track Loader (CTL)', 'Skid Steer (Wheeled)', 'Mini Excavator', 'Backhoe Loader', 'Attachments'],
+        isHours: true
+      },
+      powersports: {
+        label: 'Powersports',
+        desc: 'Side-by-sides (UTVs), ATVs, snowmobiles & youth models',
+        subtypes: ['UTV / Side-by-Side', 'ATV / 4-Wheeler', 'Snowmobile', 'Youth Powersports'],
+        isHours: false
+      },
+      motorcycle: {
+        label: 'Motorcycles',
+        desc: 'Cruisers, touring, dual sports, adventure & sport bikes',
+        subtypes: ['Cruiser', 'Touring / Bagger', 'Adventure / Dual Sport', 'Sport Bike', 'Dirt Bike'],
+        isHours: false
+      },
+      boat_pwc: {
+        label: 'Boats & PWCs',
+        desc: 'Pontoon boats, fishing boats, personal watercraft (Jet Skis) & docks',
+        subtypes: ['Personal Watercraft (Jet Ski)', 'Pontoon / Tritoon Boat', 'Fishing Boat', 'Bowrider / Deck Boat', 'Dock System'],
+        isHours: true
+      },
+      container: {
+        label: 'Shipping Containers',
+        desc: '20ft, 40ft standard, 40ft High Cube & custom storage containers',
+        subtypes: ['20ft Standard Container', '40ft Standard Container', '40ft High Cube Container', 'Custom Modified Container'],
+        isHours: false
+      },
+      other: {
+        label: 'Other',
+        desc: 'Specialty equipment, trucks, commercial units or items not listed above',
+        subtypes: ['Specialty Vehicle / Truck', 'Commercial Equipment', 'Attachment / Implement', 'Other'],
+        isHours: false
+      }
+    };
+
+    const STAGES = {
+      new: { label: 'New Inquiry', color: 'bg-neutral-800 text-neutral-200 border-neutral-700' },
+      appraising: { label: 'Under Review', color: 'bg-neutral-800 text-neutral-300 border-neutral-600' },
+      offer_sent: { label: 'Offer Sent', color: 'bg-neutral-700 text-white border-neutral-500 font-semibold' },
+      negotiating: { label: 'Counter / Discussing', color: 'bg-neutral-800 text-neutral-300 border-neutral-600' },
+      accepted: { label: 'Offer Accepted', color: 'bg-white text-neutral-950 border-white font-bold' },
+      inspection: { label: 'Inspection / Logistics', color: 'bg-neutral-800 text-neutral-300 border-neutral-600' },
+      purchased: { label: 'Purchased & Closed', color: 'bg-white text-neutral-950 border-white font-bold' },
+      declined: { label: 'Declined / Passed', color: 'bg-neutral-900 text-neutral-500 border-neutral-800' }
+    };
+
+    const INITIAL_INQUIRIES_DATA = [
+      {
+        id: 'inq-101',
+        referenceId: 'SR1-SELL-1042',
+        createdAt: '2026-09-21T17:30:00Z',
+        updatedAt: '2026-09-21T18:15:00Z',
+        stage: 'new',
+        preferredLocation: 'manchester_me',
+        assignedStaffName: 'Reid Lanpher',
+        customer: {
+          firstName: 'David',
+          lastName: 'Morin',
+          email: 'dmorin.outdoors@gmail.com',
+          phone: '(207) 557-8192',
+          preferredContact: 'text',
+          city: 'Augusta',
+          state: 'ME',
+          zipCode: '04330'
+        },
+        unit: {
+          category: 'rv',
+          subcategory: 'Fifth Wheel',
+          year: 2022,
+          make: 'Grand Design',
+          model: 'Reflection 31MB',
+          trimOrFloorplan: 'Mid-Bunk Floorplan',
+          vinOrSerial: '573FS3625N1892019',
+          mileageOrHours: 4800,
+          isHours: false,
+          specs: { lengthFeet: 36, slidesCount: 3, bunkhouse: true, generatorHours: 120 },
+          condition: 'Very Good',
+          conditionNotes: 'Stored covered during Maine winters. Roof treated biannually. Minor scuff on rear bumper.',
+          tireOrTrackCondition: 'Good (approx 75% tread)',
+          knownIssuesOrDamage: 'Rear ladder rung slightly loose'
+        },
+        financials: {
+          titleStatus: 'Financed / Money Owed',
+          lienHolderName: 'Bangor Savings Bank',
+          estimatedPayoff: 38500,
+          askingPrice: 47000
+        },
+        photos: [
+          { id: 'p1', url: 'https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7?auto=format&fit=crop&w=1000&q=80', label: 'Exterior Profile' },
+          { id: 'p2', url: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1000&q=80', label: 'Living Room & Slides' }
+        ],
+        offers: [],
+        notes: [
+          { id: 'n1', authorName: 'Reid Lanpher', authorRole: 'Managing Buyer', createdAt: '2026-09-21 18:15', category: 'comp', content: 'Clean bunkhouse model. Retail comps in Maine hover around $48k-$51k. Book wholesale is ~$43,000. Opening offer around $44,200.' }
+        ]
+      },
+      {
+        id: 'inq-102',
+        referenceId: 'SR1-SELL-1043',
+        createdAt: '2026-09-21T15:20:00Z',
+        updatedAt: '2026-09-21T16:45:00Z',
+        stage: 'offer_sent',
+        preferredLocation: 'hermon_me',
+        assignedStaffName: 'Mark Stevens',
+        customer: {
+          firstName: 'Travis',
+          lastName: 'Pelletier',
+          email: 't.pelletier_earthworks@yahoo.com',
+          phone: '(207) 949-3310',
+          preferredContact: 'phone',
+          city: 'Hermon',
+          state: 'ME',
+          zipCode: '04401'
+        },
+        unit: {
+          category: 'tractor',
+          subcategory: 'Compact Tractor (25-50 HP)',
+          year: 2021,
+          make: 'Kubota',
+          model: 'L3901 HST',
+          trimOrFloorplan: '4WD with LA525 Quick-Attach Loader',
+          vinOrSerial: 'KB3901HST77291',
+          mileageOrHours: 285,
+          isHours: true,
+          specs: { horsepower: 37.5, cabType: 'Open ROPS', attachmentsIncluded: ['LA525 Loader', '60" Rotary Cutter'] },
+          condition: 'Excellent',
+          conditionNotes: 'Heated barn kept, used for mowing 8 acres and snow blowing driveway.',
+          tireOrTrackCondition: 'Like New (R4 Industrial)',
+          knownIssuesOrDamage: 'None'
+        },
+        financials: {
+          titleStatus: 'Clean Title in Hand',
+          askingPrice: 24500
+        },
+        photos: [
+          { id: 'p3', url: 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?auto=format&fit=crop&w=1000&q=80', label: 'Tractor Profile' },
+          { id: 'p4', url: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=1000&q=80', label: 'Loader & Bucket' }
+        ],
+        offers: [
+          {
+            id: 'off-1',
+            amount: 22800,
+            estRetailValue: 26500,
+            expirationDate: '2026-09-28',
+            status: 'sent',
+            createdAt: '2026-09-21 16:45',
+            createdBy: 'Mark Stevens',
+            notes: 'Includes LA525 loader and rotary cutter. Drop off at Hermon location.',
+            customerPayoffEstimate: 0,
+            calculatedNetEquity: 22800
+          }
+        ],
+        notes: [
+          { id: 'n2', authorName: 'Mark Stevens', authorRole: 'Equipment Specialist', createdAt: '2026-09-21 16:40', category: 'comp', content: 'Low-hour Kubotas sell promptly. Offered $22,800. Customer has title in hand.' }
+        ]
+      },
+      {
+        id: 'inq-103',
+        referenceId: 'SR1-SELL-1044',
+        createdAt: '2026-09-21T11:10:00Z',
+        updatedAt: '2026-09-21T14:30:00Z',
+        stage: 'accepted',
+        preferredLocation: 'turner_me',
+        assignedStaffName: 'Sarah Jenkins',
+        customer: {
+          firstName: 'Brad',
+          lastName: 'Chamberlain',
+          email: 'brad.chamberlain@frontier.com',
+          phone: '(207) 312-6580',
+          preferredContact: 'text',
+          city: 'Auburn',
+          state: 'ME',
+          zipCode: '04210'
+        },
+        unit: {
+          category: 'trailer',
+          subcategory: 'Dump Trailer',
+          year: 2023,
+          make: 'Diamond C',
+          model: 'LPX 14ft Dump',
+          trimOrFloorplan: '14,900 GVWR Low Profile',
+          vinOrSerial: '4DOTC1427P1088492',
+          mileageOrHours: 3500,
+          isHours: false,
+          specs: { lengthFeet: 14, axlesCount: 2, gvwrLbs: 14900 },
+          condition: 'Good',
+          conditionNotes: 'Scissor hoist works cleanly. Tarp kit included.',
+          tireOrTrackCondition: 'Good (14-ply radial)',
+          knownIssuesOrDamage: 'Right rear fender minor ding'
+        },
+        financials: {
+          titleStatus: 'Clean Title in Hand',
+          askingPrice: 11000
+        },
+        photos: [
+          { id: 'p5', url: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=1000&q=80', label: 'Trailer Angle' }
+        ],
+        offers: [
+          {
+            id: 'off-2',
+            amount: 9800,
+            estRetailValue: 12000,
+            expirationDate: '2026-09-27',
+            status: 'accepted',
+            createdAt: '2026-09-21 13:00',
+            createdBy: 'Sarah Jenkins',
+            notes: 'Agreed $9,800. Customer dropping off at Turner location.',
+            customerPayoffEstimate: 0,
+            calculatedNetEquity: 9800
+          }
+        ],
+        notes: [
+          { id: 'n3', authorName: 'Sarah Jenkins', authorRole: 'Trailer Appraiser', createdAt: '2026-09-21 14:30', category: 'inspection', content: 'Drop-off confirmed for Friday at Turner location. Payment ready upon physical check.' }
+        ]
+      }
+    ];
+
+    // --- SR1 LOGO COMPONENT MATCHING SR1 WEBSITES ---
+    function SR1HeaderLogo() {
+      return (
+        <div className="flex items-center space-x-3 group cursor-pointer">
+          {/* Official SR1 Uploaded Logo */}
+          <div className="flex items-center">
+            <img 
+              src="/logo.png" 
+              alt="SR1 Companies" 
+              className="h-10 sm:h-12 w-auto object-contain transition-opacity hover:opacity-90" 
+            />
+          </div>
+
+          <div className="hidden sm:flex flex-col justify-center border-l border-neutral-800 pl-3">
+            <span className="text-[12px] font-bold tracking-wide text-neutral-300 uppercase">
+              sell2sr1<span className="text-neutral-500">.com</span>
+            </span>
+            <span className="text-[10px] font-medium tracking-wider text-neutral-400">
+              100% Employee-Owned
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    // --- MAIN APP COMPONENT ---
+    function App() {
+      const [currentView, setCurrentView] = useState('sell'); // 'sell' | 'track' | 'portal'
+      const [inquiries, setInquiries] = useState(() => {
+        const saved = localStorage.getItem('sell2sr1_inquiries_v2');
+        return saved ? JSON.parse(saved) : INITIAL_INQUIRIES_DATA;
+      });
+      const [selectedInquiryId, setSelectedInquiryId] = useState(null);
+      const [lastSubmittedRef, setLastSubmittedRef] = useState(null);
+
+      useEffect(() => {
+        localStorage.setItem('sell2sr1_inquiries_v2', JSON.stringify(inquiries));
+      }, [inquiries]);
+
+      const handleNewInquiry = (newInquiry) => {
+        setInquiries(prev => [newInquiry, ...prev]);
+        setLastSubmittedRef(newInquiry.referenceId);
+      };
+
+      const handleUpdateInquiry = (updated) => {
+        setInquiries(prev => prev.map(item => item.id === updated.id ? updated : item));
+      };
+
+      const newLeadsCount = inquiries.filter(i => i.stage === 'new').length;
+
+      return (
+        <div className="min-h-screen flex flex-col bg-[#09090b] text-neutral-100">
+          
+          {/* REFINED TOP ANNOUNCEMENT BAR (NO PHONE NUMBER) */}
+          <div className="bg-neutral-900 border-b border-neutral-800 text-xs py-2 px-4 text-center flex items-center justify-between">
+            <div className="hidden md:flex items-center space-x-2 text-neutral-400">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-neutral-300"></span>
+              <span>Direct Purchasing Platform of SR1 Companies</span>
+            </div>
+            <div className="mx-auto md:mx-0 flex items-center space-x-3 text-neutral-300 font-medium">
+              <span>Employee-Owned. Customer-Focused.</span>
+              <span className="text-neutral-600 hidden sm:inline">•</span>
+              <span className="text-neutral-400 text-xs hidden sm:inline">
+                Locations in Maine & New Hampshire
+              </span>
+            </div>
+            <div className="hidden md:block text-neutral-400 text-xs">
+              Fast, Transparent Valuations
+            </div>
+          </div>
+
+          {/* MAIN HEADER */}
+          <header className="sticky top-0 z-40 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-800">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+              
+              <div onClick={() => { setCurrentView('sell'); setSelectedInquiryId(null); }}>
+                <SR1HeaderLogo />
+              </div>
+
+              {/* VIEW SWITCHER / NAVIGATION */}
+              <div className="flex items-center space-x-1.5 bg-neutral-900 p-1.5 rounded-lg border border-neutral-800">
+                <button
+                  onClick={() => { setCurrentView('sell'); setSelectedInquiryId(null); }}
+                  className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
+                    currentView === 'sell' 
+                      ? 'bg-neutral-100 text-neutral-950 shadow-sm' 
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  Sell Your Unit
+                </button>
+
+                <button
+                  onClick={() => { setCurrentView('contact'); setSelectedInquiryId(null); }}
+                  className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
+                    currentView === 'contact' 
+                      ? 'bg-neutral-100 text-neutral-950 shadow-sm' 
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  Contact Us
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* DYNAMIC VIEW CONTENT */}
+          <main className="flex-1">
+            {currentView === 'sell' && (
+              <CustomerSellFlow 
+                onSubmit={handleNewInquiry} 
+                onGoToContact={() => setCurrentView('contact')}
+              />
+            )}
+
+            {currentView === 'contact' && (
+              <ContactView onGoToSell={() => setCurrentView('sell')} />
+            )}
+
+            {currentView === 'portal' && (
+              <StaffPortalView 
+                inquiries={inquiries}
+                onUpdateInquiry={handleUpdateInquiry}
+                selectedInquiryId={selectedInquiryId}
+                setSelectedInquiryId={setSelectedInquiryId}
+              />
+            )}
+          </main>
+
+          {/* NEUTRAL FOOTER */}
+          <footer className="bg-neutral-950 border-t border-neutral-850 py-12 text-neutral-400 text-xs">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                
+                {/* BRAND SUMMARY */}
+                <div className="space-y-4">
+                  <div className="flex items-center">
+                    <img 
+                      src="/logo.png" 
+                      alt="SR1 Companies" 
+                      className="h-9 w-auto object-contain opacity-95" 
+                    />
+                  </div>
+                  <p className="text-neutral-400 text-xs leading-relaxed">
+                    Official purchasing and trade appraisal platform of SR1 Companies
+                  </p>
+                  <p className="text-neutral-300 font-semibold text-xs">
+                    Employee-Owned. Customer-Focused.
+                  </p>
+                </div>
+
+                {/* CATEGORIES */}
+                <div>
+                  <h4 className="font-bold uppercase tracking-wider text-neutral-200 mb-3 text-[11px]">Types Of Units We Purchase</h4>
+                  <ul className="space-y-1 text-neutral-400 text-xs">
+                    <li>RVs / Campers</li>
+                    <li>Trailers</li>
+                    <li>Tractors</li>
+                    <li>Heavy Equipment</li>
+                    <li>Powersports</li>
+                    <li>Motorcycles</li>
+                    <li>Boats & PWCs</li>
+                    <li>Shipping Containers</li>
+                    <li>Other Equipment</li>
+                  </ul>
+                </div>
+
+                {/* DIRECT CONTACT */}
+                <div className="space-y-4">
+                  <h4 className="font-bold uppercase tracking-wider text-neutral-200 text-[11px]">Direct Contact</h4>
+                  <p className="text-neutral-400 text-xs leading-relaxed">
+                    Have questions about selling your unit, cash offers, or arranging drop-off or pickup? Contact our appraisal desk directly.
+                  </p>
+                  <div className="pt-1">
+                    <button 
+                      onClick={() => { setCurrentView('contact'); window.scrollTo(0, 0); }} 
+                      className="px-4 py-2.5 bg-neutral-850 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold border border-neutral-750 transition-all flex items-center space-x-2 shadow-sm"
+                    >
+                      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 002-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      <span>Contact Us</span>
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              <div className="pt-6 border-t border-neutral-850 flex flex-col sm:flex-row items-center justify-between text-neutral-400 text-xs">
+                <p>© 2026 SR1 Companies. All rights reserved. sell2sr1.com</p>
+                <div className="flex items-center space-x-4 mt-2 sm:mt-0">
+                  <button onClick={() => { setCurrentView('contact'); window.scrollTo(0, 0); }} className="hover:text-neutral-200 cursor-pointer">
+                    Contact Us
+                  </button>
+                  <span>•</span>
+                  <span className="hover:text-neutral-200 cursor-pointer">Terms</span>
+                  <span>•</span>
+                  <span className="hover:text-neutral-200 cursor-pointer">Privacy</span>
+                  <span>•</span>
+                  <button 
+                    onClick={() => { setCurrentView('portal'); window.scrollTo(0, 0); }} 
+                    className="text-neutral-500 hover:text-neutral-300 flex items-center space-x-1.5 py-1 px-2.5 rounded-lg hover:bg-neutral-900 border border-transparent hover:border-neutral-800 transition-all cursor-pointer text-[11px]"
+                  >
+                    <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    <span>Staff Login</span>
+                    {newLeadsCount > 0 && (
+                      <span className="ml-1 px-1.5 py-0.2 text-[9px] font-bold bg-neutral-800 text-neutral-300 rounded-full border border-neutral-700">
+                        {newLeadsCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </footer>
+
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 1. CUSTOMER SELL INTAKE FLOW (NO ICONS, NEUTRAL THEME)
+    // ==========================================
+    function CustomerSellFlow({ onSubmit, onGoToContact }) {
+      const [step, setStep] = useState(1);
+      const [category, setCategory] = useState('rv');
+      const [submittedInquiry, setSubmittedInquiry] = useState(null);
+      const [formData, setFormData] = useState({
+        subcategory: 'Travel Trailer',
+        year: 2022,
+        make: '',
+        model: '',
+        trimOrFloorplan: '',
+        vinOrSerial: '',
+        mileageOrHours: '',
+        condition: 'good',
+        conditionNotes: '',
+        knownIssuesOrDamage: '',
+        tireOrTrackCondition: 'good',
+        titleStatus: 'owned_clean_title',
+        lienHolderName: '',
+        estimatedPayoff: '',
+        askingPrice: '',
+        lengthFeet: '',
+        slidesCount: '',
+        horsepower: '',
+        cabType: 'open_rops',
+        preferredLocation: 'manchester_me',
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        preferredContact: 'text',
+        city: '',
+        state: 'ME',
+        zipCode: ''
+      });
+
+      const [photos, setPhotos] = useState([]);
+      const [uploading, setUploading] = useState(false);
+
+      const activeCatConfig = CATEGORIES[category] || CATEGORIES.rv;
+
+      const handleCategorySelect = (catKey) => {
+        setCategory(catKey);
+        setFormData(prev => ({ ...prev, subcategory: CATEGORIES[catKey].subtypes[0] }));
+      };
+
+      const handleInputChange = (field, value) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+      };
+
+      const handleFileSelect = (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+        setUploading(true);
+
+        files.forEach(file => {
+          const reader = new FileReader();
+          reader.onload = (uploadEvent) => {
+            setPhotos(prev => [
+              ...prev,
+              {
+                id: 'p-' + Math.random().toString(36).substr(2, 9),
+                url: uploadEvent.target.result,
+                label: file.name.split('.')[0] || 'Uploaded Photo',
+                uploadedAt: new Date().toISOString()
+              }
+            ]);
+            setUploading(false);
+          };
+          reader.readAsDataURL(file);
+        });
+      };
+
+      const handleLoadSamplePhotos = () => {
+        const sampleUrlMap = {
+          rv: [
+            'https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7?auto=format&fit=crop&w=1000&q=80',
+            'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1000&q=80'
+          ],
+          trailer: [
+            'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=1000&q=80'
+          ],
+          tractor: [
+            'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?auto=format&fit=crop&w=1000&q=80',
+            'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=1000&q=80'
+          ],
+          equipment: [
+            'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=1000&q=80'
+          ],
+          powersports: [
+            'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=1000&q=80'
+          ]
+        };
+
+        const urls = sampleUrlMap[category] || sampleUrlMap.rv;
+        const newSamples = urls.map((u, i) => ({
+          id: 'sample-' + i + '-' + Date.now(),
+          url: u,
+          label: `Inspection Photo ${i + 1}`,
+          uploadedAt: new Date().toISOString()
+        }));
+        setPhotos(prev => [...prev, ...newSamples]);
+      };
+
+      const removePhoto = (id) => {
+        setPhotos(prev => prev.filter(p => p.id !== id));
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        const refId = 'SR1-SELL-' + Math.floor(1000 + Math.random() * 9000);
+        
+        const newInquiry = {
+          id: 'inq-' + Date.now(),
+          referenceId: refId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          stage: 'new',
+          preferredLocation: formData.preferredLocation,
+          assignedStaffName: 'Appraisal Desk Queue',
+          customer: {
+            firstName: formData.firstName || 'Client',
+            lastName: formData.lastName || 'Seller',
+            email: formData.email || 'client@example.com',
+            phone: formData.phone || '(207) 555-0199',
+            preferredContact: formData.preferredContact,
+            city: formData.city || 'Manchester',
+            state: formData.state || 'ME',
+            zipCode: formData.zipCode || '04351'
+          },
+          unit: {
+            category,
+            subcategory: formData.subcategory,
+            year: Number(formData.year) || 2022,
+            make: formData.make || 'Unit Make',
+            model: formData.model || 'Unit Model',
+            trimOrFloorplan: formData.trimOrFloorplan,
+            vinOrSerial: formData.vinOrSerial || 'VIN-PENDING',
+            mileageOrHours: Number(formData.mileageOrHours) || 0,
+            isHours: activeCatConfig.isHours,
+            specs: {
+              lengthFeet: Number(formData.lengthFeet) || undefined,
+              slidesCount: Number(formData.slidesCount) || undefined,
+              horsepower: Number(formData.horsepower) || undefined,
+              cabType: formData.cabType
+            },
+            condition: formData.condition === 'excellent' ? 'Excellent' : formData.condition === 'very_good' ? 'Very Good' : formData.condition === 'good' ? 'Good' : 'Fair',
+            conditionNotes: formData.conditionNotes,
+            tireOrTrackCondition: formData.tireOrTrackCondition,
+            knownIssuesOrDamage: formData.knownIssuesOrDamage
+          },
+          financials: {
+            titleStatus: formData.titleStatus === 'owned_clean_title' 
+              ? 'Owned outright - clean title in hand' 
+              : formData.titleStatus === 'financed_money_owed' 
+              ? 'Financed - money owed' 
+              : formData.titleStatus === 'other'
+              ? 'Other'
+              : 'Owned outright - not titleable',
+            lienHolderName: formData.lienHolderName,
+            estimatedPayoff: Number(formData.estimatedPayoff) || 0,
+            askingPrice: Number(formData.askingPrice) || 0
+          },
+          photos: photos.length > 0 ? photos : [
+            { id: 'p-default', url: 'https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7?auto=format&fit=crop&w=1000&q=80', label: 'Unit Photo' }
+          ],
+          offers: [],
+          notes: [
+            {
+              id: 'n-sys',
+              authorName: 'System',
+              authorRole: 'Intake Automation',
+              createdAt: new Date().toLocaleTimeString(),
+              category: 'general',
+              content: `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}. Routing to ${formData.preferredLocation.replace('_', ' ').toUpperCase()} appraisal desk.`
+            }
+          ]
+        };
+
+        onSubmit(newInquiry);
+        setSubmittedInquiry(newInquiry);
+      };
+
+      if (submittedInquiry) {
+        return (
+          <div className="py-16 max-w-2xl mx-auto px-4 text-center space-y-8">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8 sm:p-10 space-y-6 shadow-2xl">
+              <div className="w-16 h-16 bg-neutral-800 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-neutral-700 text-3xl font-black shadow-inner">
+                ✓
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-neutral-400 border border-neutral-800 bg-neutral-950 px-3 py-1 rounded-full">
+                  Valuation Request Received
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-black text-white">
+                  Thank You, {submittedInquiry.customer.firstName}!
+                </h2>
+                <p className="text-sm text-neutral-400 max-w-md mx-auto leading-relaxed">
+                  Your unit details for your <strong className="text-white">{submittedInquiry.unit.year} {submittedInquiry.unit.make} {submittedInquiry.unit.model}</strong> have been sent to our appraisal desk.
+                </p>
+              </div>
+
+              <div className="bg-neutral-950 border border-neutral-850 rounded-2xl p-5 text-left space-y-3">
+                <div className="flex items-center justify-between border-b border-neutral-850 pb-2">
+                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Submission Reference</span>
+                  <span className="font-mono text-sm font-bold text-white bg-neutral-900 px-2.5 py-1 rounded border border-neutral-800">
+                    {submittedInquiry.referenceId}
+                  </span>
+                </div>
+                <div className="space-y-2 text-xs text-neutral-300 pt-1">
+                  <div className="flex items-start space-x-2">
+                    <span className="text-emerald-400 font-bold mt-0.5">✓</span>
+                    <span><strong>Direct Reach Out:</strong> Our appraisal team will review your photos and details and contact you directly via phone (<span className="text-white">{submittedInquiry.customer.phone}</span>) or email (<span className="text-white">{submittedInquiry.customer.email}</span>).</span>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <span className="text-emerald-400 font-bold mt-0.5">✓</span>
+                    <span><strong>No Further Action Needed:</strong> You don't need to check back online; we handle loan payoffs, title transfer, and pickup directly with you.</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button 
+                  onClick={() => {
+                    setSubmittedInquiry(null);
+                    setStep(1);
+                    setFormData({
+                      subcategory: 'Travel Trailer',
+                      year: 2022,
+                      make: '',
+                      model: '',
+                      trimOrFloorplan: '',
+                      vinOrSerial: '',
+                      mileageOrHours: '',
+                      condition: 'very_good',
+                      conditionNotes: '',
+                      knownIssuesOrDamage: '',
+                      tireOrTrackCondition: 'good',
+                      titleStatus: 'owned_clean_title',
+                      lienHolderName: '',
+                      estimatedPayoff: '',
+                      askingPrice: '',
+                      lengthFeet: '',
+                      slidesCount: '',
+                      horsepower: '',
+                      cabType: 'open_rops',
+                      preferredLocation: 'manchester_me',
+                      firstName: '',
+                      lastName: '',
+                      email: '',
+                      phone: '',
+                      preferredContact: 'text',
+                      city: '',
+                      state: 'ME',
+                      photos: []
+                    });
+                    setPhotos([]);
+                  }}
+                  className="w-full sm:w-auto px-6 py-3 bg-neutral-850 hover:bg-neutral-800 text-white font-semibold text-xs rounded-xl border border-neutral-750 transition-all"
+                >
+                  Submit Another Unit
+                </button>
+                <button 
+                  onClick={onGoToContact}
+                  className="w-full sm:w-auto px-6 py-3 bg-white text-neutral-950 hover:bg-neutral-200 font-bold text-xs rounded-xl transition-all"
+                >
+                  Have Questions? Contact Us →
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="py-12 sm:py-16">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6">
+            
+            {/* CLEAN HERO HEADER */}
+            <div className="text-center space-y-4 mb-10">
+              <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white">
+                Sell Your Unit to the People You Trust at SR1
+              </h1>
+              <p className="text-neutral-400 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
+                Receive a fair, straightforward cash offer from our appraisal team. We handle loan payoffs, title processing, and provide logistics pickup options across Maine and New Hampshire.
+              </p>
+            </div>
+
+            {/* NEUTRAL STEPPER */}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 mb-8">
+              <div className="grid grid-cols-4 gap-2 text-center text-xs font-semibold">
+                <div className={`py-2 px-1 rounded-lg transition-all ${step >= 1 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
+                  <span>1. Category</span>
+                </div>
+                <div className={`py-2 px-1 rounded-lg transition-all ${step >= 2 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
+                  <span>2. Details</span>
+                </div>
+                <div className={`py-2 px-1 rounded-lg transition-all ${step >= 3 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
+                  <span>3. Condition</span>
+                </div>
+                <div className={`py-2 px-1 rounded-lg transition-all ${step >= 4 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
+                  <span>4. Location</span>
+                </div>
+              </div>
+            </div>
+
+            {/* INTAKE CARD */}
+            <form onSubmit={handleSubmit} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 sm:p-8 space-y-8">
+              
+              {/* --- STEP 1: CATEGORY SELECTION (NO ICONS) --- */}
+              {step === 1 && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-lg font-bold text-white">
+                      Select Product Category
+                    </h2>
+                    <p className="text-xs text-neutral-400 mt-0.5">Choose the category that describes the unit you want to sell.</p>
+                  </div>
+
+                  {/* 9 REVISED CATEGORIES WITHOUT ICONS OR DESCRIPTIONS */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {Object.entries(CATEGORIES).map(([key, item]) => (
+                      <div
+                        key={key}
+                        onClick={() => handleCategorySelect(key)}
+                        className={`py-4 px-5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                          category === key
+                            ? 'bg-neutral-800 border-neutral-300 text-white shadow-sm ring-1 ring-neutral-300'
+                            : 'bg-neutral-950/60 border-neutral-800 text-neutral-300 hover:border-neutral-600 hover:bg-neutral-850'
+                        }`}
+                      >
+                        <span className="font-bold text-sm text-white">{item.label}</span>
+                        <span className={`text-xs font-bold ${category === key ? 'text-white' : 'text-neutral-600'}`}>✓</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setStep(2)}
+                      className="px-6 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
+                    >
+                      Continue to Unit Details →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* --- STEP 2: UNIT DETAILS --- */}
+              {step === 2 && (() => {
+                const requiresHours = category === 'tractor' || category === 'equipment' || category === 'boat_pwc';
+                const requiresMiles = category === 'powersports' || category === 'motorcycle';
+
+                return (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+                      <div>
+                        <h2 className="text-lg font-bold text-white">
+                          {activeCatConfig.label} Details
+                        </h2>
+                        <p className="text-xs text-neutral-400">Please provide the details for your unit below.</p>
+                      </div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 px-2 py-1 bg-neutral-800 rounded">
+                        {activeCatConfig.label}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Model Year */}
+                      <div>
+                        <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Model Year *</label>
+                        <input
+                          type="number"
+                          min="1970"
+                          max="2027"
+                          required
+                          value={formData.year}
+                          onChange={(e) => handleInputChange('year', e.target.value)}
+                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Make */}
+                      <div>
+                        <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Make *</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.make}
+                          onChange={(e) => handleInputChange('make', e.target.value)}
+                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Model */}
+                      <div>
+                        <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Model *</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.model}
+                          onChange={(e) => handleInputChange('model', e.target.value)}
+                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* VIN / Serial Number */}
+                      <div>
+                        <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                          VIN / Serial Number *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.vinOrSerial}
+                          onChange={(e) => handleInputChange('vinOrSerial', e.target.value.toUpperCase())}
+                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Hours: Required for tractors, heavy equipment, boats & pwcs */}
+                      {requiresHours && (
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Hours *</label>
+                          <input
+                            type="number"
+                            min="0"
+                            required
+                            value={formData.mileageOrHours}
+                            onChange={(e) => handleInputChange('mileageOrHours', e.target.value)}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {/* Miles: Required for powersports and motorcycles */}
+                      {requiresMiles && (
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Miles *</label>
+                          <input
+                            type="number"
+                            min="0"
+                            required
+                            value={formData.mileageOrHours}
+                            onChange={(e) => handleInputChange('mileageOrHours', e.target.value)}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-4 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
+                        className="px-4 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
+                      >
+                        ← Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!formData.year) {
+                            alert('Please enter the Model Year');
+                            return;
+                          }
+                          if (!formData.make.trim()) {
+                            alert('Please enter the Make');
+                            return;
+                          }
+                          if (!formData.model.trim()) {
+                            alert('Please enter the Model');
+                            return;
+                          }
+                          if (!formData.vinOrSerial.trim()) {
+                            alert('Please enter the VIN or Serial Number');
+                            return;
+                          }
+                          if (requiresHours && !formData.mileageOrHours) {
+                            alert('Please enter the Hours');
+                            return;
+                          }
+                          if (requiresMiles && !formData.mileageOrHours) {
+                            alert('Please enter the Miles');
+                            return;
+                          }
+                          setStep(3);
+                        }}
+                        className="px-6 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
+                      >
+                        Continue to Condition & Photos →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* --- STEP 3: CONDITION, TITLE & PHOTOS --- */}
+              {step === 3 && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Condition & Photos</h2>
+                    <p className="text-xs text-neutral-400 mt-0.5">Help our appraisal team evaluate condition and loan status accurately.</p>
+                  </div>
+
+                  {/* Free Text Condition Field */}
+                  <div>
+                    <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                      Please describe the condition of the unit and any flaws or issues *
+                    </label>
+                    <textarea
+                      rows="4"
+                      required
+                      value={formData.conditionNotes}
+                      onChange={(e) => handleInputChange('conditionNotes', e.target.value)}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                    ></textarea>
+                  </div>
+
+                  {/* Title & Payoff */}
+                  <div className="bg-neutral-950/70 p-4 rounded-xl border border-neutral-800 space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Title / Loan Status *</label>
+                      <select
+                        value={formData.titleStatus}
+                        onChange={(e) => handleInputChange('titleStatus', e.target.value)}
+                        className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-xs font-medium"
+                      >
+                        <option value="owned_not_titleable">Owned outright - not titleable</option>
+                        <option value="owned_clean_title">Owned outright - clean title in hand</option>
+                        <option value="financed_money_owed">Financed - money owed</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+
+                    {formData.titleStatus === 'financed_money_owed' && (
+                      <div>
+                        <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                          Estimated Loan Payoff Amount ($) *
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          required
+                          value={formData.estimatedPayoff}
+                          onChange={(e) => handleInputChange('estimatedPayoff', e.target.value)}
+                          className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* PHOTOS DROPZONE */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold uppercase text-neutral-300">
+                        Upload Photos ({photos.length} uploaded)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleLoadSamplePhotos}
+                        className="text-xs bg-neutral-800 hover:bg-neutral-750 text-neutral-300 font-semibold px-2.5 py-1 rounded border border-neutral-700 transition-colors"
+                      >
+                        + Auto-Load Sample Photos for Testing
+                      </button>
+                    </div>
+
+                    <div className="border border-dashed border-neutral-700 hover:border-neutral-500 rounded-xl p-6 text-center bg-neutral-950/40 transition-all">
+                      <p className="text-xs font-semibold text-neutral-200">Drag & drop photos or select from your device</p>
+                      <p className="text-[11px] text-neutral-500 mt-1">Recommended: Exterior profile, interior/controls, hour/mileage display, VIN/serial tag</p>
+                      
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={handleFileSelect}
+                        id="photo-input"
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="photo-input"
+                        className="mt-3 inline-block px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold rounded-lg border border-neutral-700 cursor-pointer"
+                      >
+                        Choose Files
+                      </label>
+                    </div>
+
+                    {photos.length > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
+                        {photos.map(p => (
+                          <div key={p.id} className="relative group rounded-lg overflow-hidden border border-neutral-800 aspect-video bg-neutral-950">
+                            <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2">
+                              <button
+                                type="button"
+                                onClick={() => removePhoto(p.id)}
+                                className="px-2 py-1 bg-neutral-800 text-white text-[10px] font-bold rounded"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/70 text-[9px] text-white rounded truncate max-w-[90%]">
+                              {p.label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-4 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setStep(2)}
+                      className="px-4 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!formData.conditionNotes.trim()) {
+                          alert('Please describe the condition of the unit and any flaws or issues');
+                          return;
+                        }
+                        if (formData.titleStatus === 'financed_money_owed' && !formData.estimatedPayoff) {
+                          alert('Please enter the estimated loan payoff amount');
+                          return;
+                        }
+                        setStep(4);
+                      }}
+                      className="px-6 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
+                    >
+                      Continue to Location & Contact →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* --- STEP 4: CONTACT & LOCATION SELECTION --- */}
+              {step === 4 && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Contact & Location</h2>
+                    <p className="text-xs text-neutral-400 mt-0.5">Where is the unit located and which SR1 store is most convenient?</p>
+                  </div>
+
+                  {/* Name */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">First Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.firstName}
+                        onChange={(e) => handleInputChange('firstName', e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Last Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.lastName}
+                        onChange={(e) => handleInputChange('lastName', e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Phone & Email */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Phone Number *</label>
+                      <input
+                        type="tel"
+                        required
+                        value={formData.phone}
+                        onChange={(e) => handleInputChange('phone', e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Email Address *</label>
+                      <input
+                        type="email"
+                        required
+                        value={formData.email}
+                        onChange={(e) => handleInputChange('email', e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Preferred Location - From sr1companies.com/locations */}
+                  <div>
+                    <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                      Preferred SR1 Dealership Location or On-Site Pickup Location *
+                    </label>
+                    <select
+                      value={formData.preferredLocation}
+                      onChange={(e) => handleInputChange('preferredLocation', e.target.value)}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-xs font-semibold focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                    >
+                      {LOCATIONS.map(loc => (
+                        <option key={loc.id} value={loc.id}>
+                          {loc.name} — {loc.address}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Recap */}
+                  <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 text-xs space-y-1 text-neutral-400">
+                    <p className="font-semibold text-neutral-200">Submission Summary:</p>
+                    <p>• {formData.year} {formData.make} {formData.model} ({formData.subcategory})</p>
+                    <p>• Category: {activeCatConfig.label} | Condition: {formData.condition}</p>
+                    <p>• Photos: {photos.length} attached</p>
+                  </div>
+
+                  <div className="pt-4 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setStep(3)}
+                      className="px-4 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-8 py-3.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-xl text-xs transition-all"
+                    >
+                      Submit for Cash Valuation →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 2. CONTACT US VIEW
+    // ==========================================
+    function ContactView({ onGoToSell }) {
+      const [formData, setFormData] = useState({ name: '', email: '', phone: '', unitType: 'General Question', message: '' });
+      const [submitted, setSubmitted] = useState(false);
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        setSubmitted(true);
+      };
+
+      return (
+        <div className="max-w-4xl mx-auto px-4 py-12 sm:px-6 space-y-10">
+          {/* HEADER */}
+          <div className="text-center space-y-3">
+            <span className="text-[11px] font-bold tracking-widest text-neutral-400 uppercase border border-neutral-800 bg-neutral-900 px-3 py-1 rounded-full">
+              Direct Communication
+            </span>
+            <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+              Contact SR1 Acquisitions
+            </h1>
+            <p className="text-neutral-400 text-sm max-w-xl mx-auto leading-relaxed">
+              Have questions about cash offers, trade appraisals, lien payoffs, or unit pickups? Reach out directly to our central appraisal team.
+            </p>
+          </div>
+
+          {/* CONTACT INFO GRID */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* DIRECT EMAIL CARD */}
+            <div className="md:col-span-1 bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-5 flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="w-12 h-12 rounded-xl bg-neutral-800 border border-neutral-750 flex items-center justify-center text-white">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 002-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Appraisal Desk Email</h3>
+                  <a 
+                    href="mailto:appraisals@sr1companies.com" 
+                    className="text-sm sm:text-base font-bold text-white hover:text-neutral-300 transition-colors block mt-1 underline underline-offset-4 decoration-neutral-600 break-all"
+                  >
+                    appraisals@sr1companies.com
+                  </a>
+                </div>
+                <p className="text-neutral-400 text-xs leading-relaxed">
+                  Our dedicated purchasing team monitors this inbox continuously during business hours to answer valuation questions and process unit submissions.
+                </p>
+              </div>
+            </div>
+
+            {/* SEND MESSAGE FORM */}
+            <div className="md:col-span-2 bg-neutral-900 border border-neutral-800 rounded-2xl p-6 sm:p-8 space-y-6">
+              <div>
+                <h3 className="text-lg font-bold text-white">Send Us a Direct Message</h3>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Fill out the quick form below to send an instant message to <span className="text-neutral-200 font-mono">appraisals@sr1companies.com</span>.
+                </p>
+              </div>
+
+              {submitted ? (
+                <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-8 text-center space-y-4">
+                  <div className="w-12 h-12 bg-neutral-800 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-neutral-700 text-xl font-bold">
+                    ✓
+                  </div>
+                  <h4 className="text-lg font-bold text-white">Message Delivered</h4>
+                  <p className="text-xs text-neutral-400 leading-relaxed max-w-md mx-auto">
+                    Your message has been sent directly to <strong className="text-white">appraisals@sr1companies.com</strong>. A representative from SR1 Companies will follow up with you shortly.
+                  </p>
+                  <div className="pt-2 flex justify-center space-x-3">
+                    <button 
+                      onClick={() => setSubmitted(false)} 
+                      className="px-4 py-2 bg-neutral-850 hover:bg-neutral-800 text-neutral-300 text-xs font-semibold rounded-lg border border-neutral-750"
+                    >
+                      Send Another Message
+                    </button>
+                    <button 
+                      onClick={onGoToSell} 
+                      className="px-4 py-2 bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-bold rounded-lg"
+                    >
+                      Start a Cash Valuation →
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Full Name *</label>
+                      <input 
+                        type="text" 
+                        required 
+                        value={formData.name} 
+                        onChange={(e) => setFormData({...formData, name: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Email Address *</label>
+                      <input 
+                        type="email" 
+                        required 
+                        value={formData.email} 
+                        onChange={(e) => setFormData({...formData, email: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Phone Number</label>
+                      <input 
+                        type="tel" 
+                        value={formData.phone} 
+                        onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Inquiry Subject</label>
+                      <select 
+                        value={formData.unitType} 
+                        onChange={(e) => setFormData({...formData, unitType: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      >
+                        <option value="General Question">General Question</option>
+                        <option value="Cash Offer Inquiry">Cash Offer Question</option>
+                        <option value="Trade-In Appraisal">Trade-In Appraisal</option>
+                        <option value="Lien Payoff Question">Lien Payoff / Financing</option>
+                        <option value="Pickup / Transport">Pickup / Transport Arrangement</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Your Message *</label>
+                    <textarea 
+                      rows="4" 
+                      required 
+                      value={formData.message} 
+                      onChange={(e) => setFormData({...formData, message: e.target.value})}
+                      placeholder="Type your question or details about your unit here..." 
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                    ></textarea>
+                  </div>
+
+                  <button 
+                    type="submit" 
+                    className="w-full py-3 bg-white text-neutral-950 hover:bg-neutral-200 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md"
+                  >
+                    Send Message to appraisals@sr1companies.com
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 3. STAFF APPRAISAL PORTAL (NEUTRAL THEME)
+    // ==========================================
+    function StaffPortalView({ inquiries, onUpdateInquiry, selectedInquiryId, setSelectedInquiryId }) {
+      const [filterStage, setFilterStage] = useState('all');
+      const [filterCategory, setFilterCategory] = useState('all');
+      const [filterLocation, setFilterLocation] = useState('all');
+      const [searchTerm, setSearchTerm] = useState('');
+      const [viewMode, setViewMode] = useState('board');
+
+      const metrics = useMemo(() => {
+        const total = inquiries.length;
+        const newCount = inquiries.filter(i => i.stage === 'new').length;
+        const appraisingCount = inquiries.filter(i => i.stage === 'appraising').length;
+        const offersSent = inquiries.filter(i => i.stage === 'offer_sent').length;
+        const accepted = inquiries.filter(i => i.stage === 'accepted' || i.stage === 'inspection' || i.stage === 'purchased').length;
+
+        return { total, newCount, appraisingCount, offersSent, accepted };
+      }, [inquiries]);
+
+      const filtered = useMemo(() => {
+        return inquiries.filter(inq => {
+          if (filterStage !== 'all' && inq.stage !== filterStage) return false;
+          if (filterCategory !== 'all' && inq.unit.category !== filterCategory) return false;
+          if (filterLocation !== 'all' && inq.preferredLocation !== filterLocation) return false;
+          if (searchTerm.trim()) {
+            const term = searchTerm.toLowerCase();
+            const matchesCustomer = `${inq.customer.firstName} ${inq.customer.lastName}`.toLowerCase().includes(term);
+            const matchesRef = inq.referenceId.toLowerCase().includes(term);
+            const matchesUnit = `${inq.unit.year} ${inq.unit.make} ${inq.unit.model}`.toLowerCase().includes(term);
+            const matchesVin = (inq.unit.vinOrSerial || '').toLowerCase().includes(term);
+            return matchesCustomer || matchesRef || matchesUnit || matchesVin;
+          }
+          return true;
+        });
+      }, [inquiries, filterStage, filterCategory, filterLocation, searchTerm]);
+
+      const selectedInquiry = inquiries.find(i => i.id === selectedInquiryId);
+
+      return (
+        <div className="py-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+          
+          {/* HEADER */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-neutral-900 border border-neutral-800 p-4 rounded-2xl">
+            <div className="flex items-center space-x-3">
+              <div>
+                <h1 className="text-lg font-bold text-white">Staff Appraisal & Purchasing Desk</h1>
+                <p className="text-xs text-neutral-400">Manage inquiries across all SR1 dealership locations</p>
+              </div>
+            </div>
+
+            <div className="bg-neutral-950 p-1 rounded-lg flex items-center space-x-1 border border-neutral-800 text-xs">
+              <button
+                onClick={() => setViewMode('board')}
+                className={`px-3 py-1.5 rounded-md font-semibold transition-all ${viewMode === 'board' ? 'bg-neutral-100 text-neutral-950' : 'text-neutral-400 hover:text-white'}`}
+              >
+                Kanban
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-1.5 rounded-md font-semibold transition-all ${viewMode === 'list' ? 'bg-neutral-100 text-neutral-950' : 'text-neutral-400 hover:text-white'}`}
+              >
+                Table
+              </button>
+            </div>
+          </div>
+
+          {/* KPI STATS */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-xl">
+              <span className="text-[11px] font-semibold text-neutral-400">Total Inquiries</span>
+              <div className="text-xl font-bold text-white mt-1">{metrics.total}</div>
+            </div>
+            <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-xl">
+              <span className="text-[11px] font-semibold text-neutral-400">Awaiting Review</span>
+              <div className="text-xl font-bold text-white mt-1">{metrics.newCount}</div>
+            </div>
+            <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-xl">
+              <span className="text-[11px] font-semibold text-neutral-400">Under Appraisal</span>
+              <div className="text-xl font-bold text-white mt-1">{metrics.appraisingCount}</div>
+            </div>
+            <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-xl">
+              <span className="text-[11px] font-semibold text-neutral-400">Offers Sent</span>
+              <div className="text-xl font-bold text-white mt-1">{metrics.offersSent}</div>
+            </div>
+            <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-xl col-span-2 sm:col-span-1">
+              <span className="text-[11px] font-semibold text-neutral-400">Deals Accepted</span>
+              <div className="text-xl font-bold text-white mt-1">{metrics.accepted}</div>
+            </div>
+          </div>
+
+          {/* FILTER BAR */}
+          <div className="bg-neutral-900 border border-neutral-800 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex-1 min-w-[200px]">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search customer, make/model, VIN, reference..."
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:ring-1 focus:ring-neutral-400"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <span className="text-neutral-400">Category:</span>
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1 text-white"
+              >
+                <option value="all">All Categories</option>
+                {Object.entries(CATEGORIES).map(([k, v]) => (
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <span className="text-neutral-400">Location:</span>
+              <select
+                value={filterLocation}
+                onChange={(e) => setFilterLocation(e.target.value)}
+                className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1 text-white"
+              >
+                <option value="all">All Store Locations</option>
+                {LOCATIONS.map(loc => (
+                  <option key={loc.id} value={loc.id}>{loc.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* KANBAN OR TABLE VIEW */}
+          {viewMode === 'board' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {['new', 'appraising', 'offer_sent', 'accepted'].map(stageKey => {
+                const stageInquiries = filtered.filter(i => i.stage === stageKey);
+                const stageConfig = STAGES[stageKey];
+
+                return (
+                  <div key={stageKey} className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-3.5 flex flex-col space-y-3 min-h-[480px]">
+                    <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                      <h3 className="font-bold text-xs uppercase tracking-wider text-neutral-200">{stageConfig.label}</h3>
+                      <span className="text-[10px] bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded font-mono font-bold">
+                        {stageInquiries.length}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 space-y-2.5 overflow-y-auto">
+                      {stageInquiries.length === 0 ? (
+                        <div className="h-28 flex items-center justify-center text-[11px] text-neutral-600 border border-dashed border-neutral-800 rounded-xl">
+                          No inquiries in stage
+                        </div>
+                      ) : (
+                        stageInquiries.map(item => (
+                          <div
+                            key={item.id}
+                            onClick={() => setSelectedInquiryId(item.id)}
+                            className="bg-neutral-950 hover:bg-neutral-850 border border-neutral-800 hover:border-neutral-600 rounded-xl p-3 cursor-pointer transition-all space-y-2"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-mono text-neutral-400 bg-neutral-900 px-1.5 py-0.5 rounded">
+                                {item.referenceId}
+                              </span>
+                              <span className="text-[10px] uppercase font-semibold text-neutral-400">
+                                {CATEGORIES[item.unit.category]?.label}
+                              </span>
+                            </div>
+
+                            <div>
+                              <h4 className="font-bold text-xs text-white">
+                                {item.unit.year} {item.unit.make} {item.unit.model}
+                              </h4>
+                              <p className="text-[11px] text-neutral-400">
+                                {item.unit.subcategory} • {item.unit.mileageOrHours.toLocaleString()} {item.unit.isHours ? 'hrs' : 'mi'}
+                              </p>
+                            </div>
+
+                            <div className="text-[11px] text-neutral-400 flex items-center justify-between pt-1 border-t border-neutral-850">
+                              <span>{item.customer.firstName} {item.customer.lastName}</span>
+                              <span className="text-neutral-500">{item.customer.city}, {item.customer.state}</span>
+                            </div>
+
+                            {/* Client Outreach Badge */}
+                            <div className="flex items-center justify-between text-[10px] pt-1 border-t border-neutral-900">
+                              <span className="text-neutral-400">{item.customer.phone}</span>
+                              {item.outreach?.reachedOut ? (
+                                <span className="text-emerald-400 font-semibold flex items-center space-x-1">
+                                  <span>✓</span>
+                                  <span>{item.outreach.staffName}</span>
+                                </span>
+                              ) : (
+                                <span className="text-amber-400 font-medium">⏳ Needs Outreach</span>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden text-xs">
+              <table className="w-full text-left">
+                <thead className="bg-neutral-950 text-neutral-400 uppercase font-semibold border-b border-neutral-800 text-[10px]">
+                  <tr>
+                    <th className="p-3">Ref ID</th>
+                    <th className="p-3">Unit</th>
+                    <th className="p-3">Customer</th>
+                    <th className="p-3">Location</th>
+                    <th className="p-3">Outreach Status</th>
+                    <th className="p-3">Stage</th>
+                    <th className="p-3">Offer</th>
+                    <th className="p-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800">
+                  {filtered.map(item => (
+                    <tr key={item.id} className="hover:bg-neutral-850">
+                      <td className="p-3 font-mono text-neutral-400">{item.referenceId}</td>
+                      <td className="p-3 font-bold text-white">{item.unit.year} {item.unit.make} {item.unit.model}</td>
+                      <td className="p-3">{item.customer.firstName} {item.customer.lastName}</td>
+                      <td className="p-3">{LOCATIONS.find(l => l.id === item.preferredLocation)?.name.split(',')[0]}</td>
+                      <td className="p-3">
+                        {item.outreach?.reachedOut ? (
+                          <span className="text-emerald-400 font-semibold text-[11px] flex items-center space-x-1">
+                            <span>✓</span>
+                            <span>{item.outreach.staffName}</span>
+                          </span>
+                        ) : (
+                          <span className="text-amber-400 text-[11px]">⏳ Needs Outreach</span>
+                        )}
+                      </td>
+                      <td className="p-3">{STAGES[item.stage]?.label}</td>
+                      <td className="p-3 font-bold text-white">
+                        {item.offers.length > 0 ? `$${item.offers[item.offers.length - 1].amount.toLocaleString()}` : '-'}
+                      </td>
+                      <td className="p-3 text-right">
+                        <button
+                          onClick={() => setSelectedInquiryId(item.id)}
+                          className="px-2.5 py-1 bg-neutral-100 text-neutral-950 font-bold rounded text-[11px]"
+                        >
+                          Appraise
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* APPRAISAL MODAL */}
+          {selectedInquiry && (
+            <AppraisalWorkspaceModal
+              inquiry={selectedInquiry}
+              onClose={() => setSelectedInquiryId(null)}
+              onUpdateInquiry={onUpdateInquiry}
+            />
+          )}
+
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 4. APPRAISAL WORKSPACE MODAL
+    // ==========================================
+    function AppraisalWorkspaceModal({ inquiry, onClose, onUpdateInquiry }) {
+      const [currentStage, setCurrentStage] = useState(inquiry.stage);
+      const [offerAmount, setOfferAmount] = useState(inquiry.offers?.[0]?.amount || 25000);
+      const [offerNotes, setOfferNotes] = useState(inquiry.offers?.[0]?.notes || 'Subject to physical inspection and title verification.');
+      const [newNoteText, setNewNoteText] = useState('');
+      const [activePhoto, setActivePhoto] = useState(inquiry.photos?.[0]?.url);
+      const [outreachStaffName, setOutreachStaffName] = useState(inquiry.outreach?.staffName || '');
+      const [reachedOut, setReachedOut] = useState(inquiry.outreach?.reachedOut || false);
+      const [reachedOutAt, setReachedOutAt] = useState(inquiry.outreach?.reachedOutAt || null);
+
+      const netEquity = Math.max(0, offerAmount - (inquiry.financials.estimatedPayoff || 0));
+
+      const handleToggleOutreach = (checked) => {
+        if (checked && !outreachStaffName.trim()) {
+          alert('Please enter your staff name before checking off that you reached out.');
+          return;
+        }
+        const now = new Date().toLocaleString();
+        setReachedOut(checked);
+        setReachedOutAt(checked ? now : null);
+
+        const newOutreach = {
+          reachedOut: checked,
+          staffName: checked ? outreachStaffName.trim() : '',
+          reachedOutAt: checked ? now : null
+        };
+
+        const updated = {
+          ...inquiry,
+          outreach: newOutreach,
+          updatedAt: new Date().toISOString(),
+          notes: checked ? [
+            ...inquiry.notes,
+            {
+              id: 'n-outreach-' + Date.now(),
+              authorName: outreachStaffName.trim(),
+              authorRole: 'Staff Member',
+              createdAt: new Date().toLocaleTimeString(),
+              category: 'call_log',
+              content: `Staff member ${outreachStaffName.trim()} confirmed direct outreach to client (${inquiry.customer.phone} / ${inquiry.customer.email}).`
+            }
+          ] : inquiry.notes
+        };
+
+        onUpdateInquiry(updated);
+      };
+
+      const handleSaveStaffName = (name) => {
+        setOutreachStaffName(name);
+        if (reachedOut) {
+          onUpdateInquiry({
+            ...inquiry,
+            outreach: {
+              ...inquiry.outreach,
+              staffName: name.trim()
+            },
+            updatedAt: new Date().toISOString()
+          });
+        }
+      };
+
+      const handleSaveStage = (newSt) => {
+        setCurrentStage(newSt);
+        onUpdateInquiry({
+          ...inquiry,
+          stage: newSt,
+          updatedAt: new Date().toISOString()
+        });
+      };
+
+      const handleSendOffer = () => {
+        const newOffer = {
+          id: 'off-' + Date.now(),
+          amount: Number(offerAmount),
+          expirationDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          status: 'sent',
+          createdAt: new Date().toLocaleTimeString(),
+          createdBy: 'SR1 Appraisal Desk',
+          notes: offerNotes,
+          customerPayoffEstimate: inquiry.financials.estimatedPayoff || 0,
+          calculatedNetEquity: netEquity
+        };
+
+        const updated = {
+          ...inquiry,
+          stage: 'offer_sent',
+          updatedAt: new Date().toISOString(),
+          offers: [...(inquiry.offers || []), newOffer],
+          notes: [
+            ...inquiry.notes,
+            {
+              id: 'n-off-' + Date.now(),
+              authorName: 'Appraisal Desk',
+              authorRole: 'Buyer',
+              createdAt: new Date().toLocaleTimeString(),
+              category: 'offer_reason',
+              content: `Cash offer of $${Number(offerAmount).toLocaleString()} recorded.`
+            }
+          ]
+        };
+
+        setCurrentStage('offer_sent');
+        onUpdateInquiry(updated);
+        alert(`Cash offer of $${Number(offerAmount).toLocaleString()} logged for ${inquiry.customer.firstName}.`);
+      };
+
+      const handleAddNote = (e) => {
+        e.preventDefault();
+        if (!newNoteText.trim()) return;
+
+        const newNote = {
+          id: 'note-' + Date.now(),
+          authorName: 'Staff Buyer',
+          authorRole: 'Team Member',
+          createdAt: new Date().toLocaleTimeString(),
+          category: 'comp',
+          content: newNoteText.trim()
+        };
+
+        onUpdateInquiry({
+          ...inquiry,
+          notes: [...inquiry.notes, newNote],
+          updatedAt: new Date().toISOString()
+        });
+        setNewNoteText('');
+      };
+
+      return (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-neutral-900 border border-neutral-750 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-xs">
+            
+            <div className="bg-neutral-950 p-4 border-b border-neutral-800 flex items-center justify-between">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="font-mono text-neutral-300 font-bold bg-neutral-850 px-2 py-0.5 rounded">
+                    {inquiry.referenceId}
+                  </span>
+                  <h2 className="text-base font-bold text-white">
+                    {inquiry.unit.year} {inquiry.unit.make} {inquiry.unit.model}
+                  </h2>
+                </div>
+                <p className="text-[11px] text-neutral-400 mt-0.5">
+                  Seller: {inquiry.customer.firstName} {inquiry.customer.lastName} • {inquiry.customer.phone}
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <select
+                  value={currentStage}
+                  onChange={(e) => handleSaveStage(e.target.value)}
+                  className="bg-neutral-850 border border-neutral-750 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white"
+                >
+                  {Object.entries(STAGES).map(([k, v]) => (
+                    <option key={k} value={k}>{v.label}</option>
+                  ))}
+                </select>
+
+                <button
+                  onClick={onClose}
+                  className="w-7 h-7 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 flex items-center justify-center font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold uppercase text-neutral-400">Photos</span>
+                  <div className="rounded-xl overflow-hidden aspect-video bg-black border border-neutral-800">
+                    {activePhoto ? (
+                      <img src={activePhoto} alt="Inspection" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-neutral-500">No photos</div>
+                    )}
+                  </div>
+                  <div className="flex space-x-2 overflow-x-auto pb-1">
+                    {inquiry.photos.map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => setActivePhoto(p.url)}
+                        className={`flex-shrink-0 w-16 h-12 rounded border ${activePhoto === p.url ? 'border-neutral-200' : 'border-neutral-800 opacity-60'}`}
+                      >
+                        <img src={p.url} alt={p.label} className="w-full h-full object-cover rounded" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3 bg-neutral-950 p-4 rounded-xl border border-neutral-800">
+                  <span className="text-[11px] font-bold uppercase text-neutral-400 block">Unit Details</span>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-neutral-500 block text-[10px]">Category</span>
+                      <span className="font-semibold text-neutral-200">{CATEGORIES[inquiry.unit.category]?.label}</span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-500 block text-[10px]">Type</span>
+                      <span className="font-semibold text-neutral-200">{inquiry.unit.subcategory}</span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-500 block text-[10px]">VIN / Serial</span>
+                      <span className="font-mono text-neutral-200">{inquiry.unit.vinOrSerial || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-500 block text-[10px]">{inquiry.unit.isHours ? 'Hours' : 'Mileage'}</span>
+                      <span className="font-semibold text-neutral-200">{inquiry.unit.mileageOrHours.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-500 block text-[10px]">Condition</span>
+                      <span className="font-semibold text-neutral-200">{inquiry.unit.condition}</span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-500 block text-[10px]">Title Status</span>
+                      <span className="font-semibold text-neutral-200">{inquiry.financials.titleStatus}</span>
+                    </div>
+                  </div>
+
+                  {inquiry.financials.estimatedPayoff > 0 && (
+                    <div className="pt-2 border-t border-neutral-850">
+                      <span className="text-neutral-500 text-[10px] block">Lender Payoff:</span>
+                      <span className="text-neutral-200 font-bold">${inquiry.financials.estimatedPayoff.toLocaleString()}</span>
+                    </div>
+                  )}
+
+                  {inquiry.unit.conditionNotes && (
+                    <div className="pt-2 border-t border-neutral-850">
+                      <span className="text-neutral-500 text-[10px] block">Disclosures:</span>
+                      <p className="text-neutral-300 text-[11px] mt-0.5">{inquiry.unit.conditionNotes}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* STAFF CLIENT OUTREACH CHECK-OFF */}
+              <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[11px] font-bold uppercase text-neutral-300">Staff Client Outreach</span>
+                    {reachedOut ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 border border-emerald-700 text-emerald-300">
+                        ✓ Reached Out
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 border border-amber-800 text-amber-300">
+                        ⏳ Pending Outreach
+                      </span>
+                    )}
+                  </div>
+                  {reachedOutAt && (
+                    <span className="text-[10px] text-neutral-400">
+                      Logged on {reachedOutAt}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center pt-1">
+                  <div>
+                    <label className="text-neutral-400 text-[10px] block mb-1">Staff Member Name *</label>
+                    <input
+                      type="text"
+                      value={outreachStaffName}
+                      onChange={(e) => handleSaveStaffName(e.target.value)}
+                      placeholder="Enter staff name..."
+                      className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-3 py-2 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="pt-2 sm:pt-4">
+                    <label className="flex items-center space-x-2.5 cursor-pointer bg-neutral-900 p-2.5 rounded-lg border border-neutral-750 hover:border-neutral-600 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={reachedOut}
+                        onChange={(e) => handleToggleOutreach(e.target.checked)}
+                        className="w-4 h-4 rounded border-neutral-700 text-neutral-100 bg-neutral-950 focus:ring-0 cursor-pointer"
+                      />
+                      <span className="text-xs font-semibold text-neutral-200 select-none">
+                        I have reached out to this client
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* OFFER BUILDER */}
+              <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 space-y-3">
+                <span className="text-[11px] font-bold uppercase text-neutral-400 block">Offer Desk</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-neutral-400 text-[10px] block mb-1">SR1 Buy Offer ($)</label>
+                    <input
+                      type="number"
+                      value={offerAmount}
+                      onChange={(e) => setOfferAmount(Number(e.target.value))}
+                      className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-3 py-1.5 text-white font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 text-[10px] block mb-1">Loan Payoff ($)</label>
+                    <input
+                      type="number"
+                      readOnly
+                      value={inquiry.financials.estimatedPayoff || 0}
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-1.5 text-neutral-500 font-bold"
+                    />
+                  </div>
+                  <div className="bg-neutral-900 p-2 rounded-lg border border-neutral-800">
+                    <span className="text-neutral-400 text-[10px] block">Customer Net Check:</span>
+                    <span className="text-lg font-bold text-white mt-0.5 block">${netEquity.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={handleSendOffer}
+                    className="px-4 py-2 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-lg text-xs"
+                  >
+                    Save & Record Offer
+                  </button>
+                </div>
+              </div>
+
+              {/* NOTES */}
+              <div className="space-y-3">
+                <span className="text-[11px] font-bold uppercase text-neutral-400 block">Team Notes</span>
+                <div className="space-y-2 max-h-36 overflow-y-auto">
+                  {inquiry.notes.map(note => (
+                    <div key={note.id} className="bg-neutral-950 p-2.5 rounded-lg border border-neutral-800 text-[11px]">
+                      <div className="flex justify-between text-neutral-500 text-[10px]">
+                        <span>{note.authorName} ({note.authorRole})</span>
+                        <span>{note.createdAt}</span>
+                      </div>
+                      <p className="text-neutral-300 mt-1">{note.content}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <form onSubmit={handleAddNote} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newNoteText}
+                    onChange={(e) => setNewNoteText(e.target.value)}
+                    placeholder="Add an internal note..."
+                    className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-white"
+                  />
+                  <button type="submit" className="px-3 py-1.5 bg-neutral-800 text-white font-semibold rounded-lg text-xs">
+                    Post
+                  </button>
+                </form>
+              </div>
+
+            </div>
+
+            <div className="bg-neutral-950 p-3 border-t border-neutral-800 flex justify-end">
+              <button
+                onClick={onClose}
+                className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white font-semibold rounded-lg text-xs"
+              >
+                Close
+              </button>
+            </div>
+
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

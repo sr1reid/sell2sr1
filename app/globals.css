@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#0b1120] text-slate-100 font-sans;
+  }
+}
+
+.gradient-hero {
+  background: radial-gradient(circle at 50% -20%, rgba(37, 99, 235, 0.22), rgba(11, 17, 32, 0) 70%);
+}
