@@ -44,6 +44,9 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
     body {
@@ -348,6 +351,33 @@
       );
     }
 
+    // --- ALLOWED STAFF EMAILS ---
+    const ALLOWED_EMAILS = [
+      'reid@sr1companies.com',
+      'scott@sr1companies.com',
+      'craig@sr1companies.com',
+      'mike.m@sr1companies.com',
+      'tony.d@sr1companies.com',
+      'bert@sr1companies.com',
+      'kayla@sr1companies.com',
+      'dustin@sr1companies.com',
+      'andrew@sr1companies.com',
+      'kenny@sr1companies.com',
+      'tory@sr1companies.com',
+      'mike.p@sr1companies.com',
+      'brady@sr1companies.com',
+      'coleman@sr1companies.com',
+      'darrell@sr1companies.com',
+      'colin@sr1companies.com',
+      'julian@sr1companies.com',
+      'kyle@sr1companies.com',
+      'aaron@sr1companies.com',
+      'chase@sr1companies.com',
+      'frank@sr1companies.com',
+      'nick@sr1companies.com',
+      'bret@sr1companies.com'
+    ];
+
     // --- MAIN APP COMPONENT ---
     function App() {
       const [currentView, setCurrentView] = useState('sell'); // 'sell' | 'track' | 'portal'
@@ -357,6 +387,7 @@
       });
       const [selectedInquiryId, setSelectedInquiryId] = useState(null);
       const [lastSubmittedRef, setLastSubmittedRef] = useState(null);
+      const [isAuthenticated, setIsAuthenticated] = useState(false);
 
       useEffect(() => {
         localStorage.setItem('sell2sr1_inquiries_v2', JSON.stringify(inquiries));
@@ -372,6 +403,41 @@
       };
 
       const newLeadsCount = inquiries.filter(i => i.stage === 'new').length;
+
+      // --- GOOGLE SIGN-IN EFFECT ---
+      useEffect(() => {
+        if (currentView === 'portal' && !isAuthenticated) {
+          window.handleGoogleResponse = (response) => {
+            try {
+              // Decode JWT payload (base64)
+              const payload = JSON.parse(atob(response.credential.split('.')[1]));
+              const email = payload.email.toLowerCase();
+              
+              if (ALLOWED_EMAILS.includes(email)) {
+                setIsAuthenticated(true);
+              } else {
+                alert(`Access denied. The email ${email} is not authorized for the staff portal.`);
+              }
+            } catch (err) {
+              console.error('Failed to parse Google JWT', err);
+              alert('Authentication failed. Please try again.');
+            }
+          };
+
+          if (window.google) {
+            window.google.accounts.id.initialize({
+              client_id: '1062806885891-vhi7uu0osra4eab5q5pj9mik0fpmm48k.apps.googleusercontent.com',
+              callback: window.handleGoogleResponse
+            });
+            window.google.accounts.id.renderButton(
+              document.getElementById('google-signin-button'),
+              { theme: 'outline', size: 'large', type: 'standard' }
+            );
+          } else {
+            console.error("Google Identity Services library not loaded.");
+          }
+        }
+      }, [currentView, isAuthenticated]);
 
       return (
         <div className="min-h-screen flex flex-col bg-[#09090b] text-neutral-100">
@@ -443,12 +509,22 @@
             )}
 
             {currentView === 'portal' && (
-              <StaffPortalView 
-                inquiries={inquiries}
-                onUpdateInquiry={handleUpdateInquiry}
-                selectedInquiryId={selectedInquiryId}
-                setSelectedInquiryId={setSelectedInquiryId}
-              />
+              !isAuthenticated ? (
+                <div className="py-16 max-w-md mx-auto px-4 text-center space-y-6">
+                  <h2 className="text-2xl font-bold text-white">Staff Login</h2>
+                  <p className="text-neutral-400">Please sign in with your authorized SR1 Companies Google account to access the portal.</p>
+                  <div className="flex justify-center mt-6">
+                    <div id="google-signin-button"></div>
+                  </div>
+                </div>
+              ) : (
+                <StaffPortalView 
+                  inquiries={inquiries}
+                  onUpdateInquiry={handleUpdateInquiry}
+                  selectedInquiryId={selectedInquiryId}
+                  setSelectedInquiryId={setSelectedInquiryId}
+                />
+              )
             )}
           </main>
 
