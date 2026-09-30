@@ -813,6 +813,37 @@
 
         onSubmit(newInquiry);
         setSubmittedInquiry(newInquiry);
+
+        // Send email notification to reid@sr1companies.com
+        try {
+          fetch('https://formsubmit.co/ajax/reid@sr1companies.com', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+              _subject: `New Unit Valuation Request [${refId}]: ${formData.year} ${formData.make} ${formData.model}`,
+              Reference_ID: refId,
+              Customer_Name: `${formData.firstName} ${formData.lastName}`,
+              Customer_Email: formData.email,
+              Customer_Phone: formData.phone,
+              Preferred_Contact: formData.preferredContact,
+              Preferred_Location: (LOCATIONS.find(l => l.id === formData.preferredLocation)?.name) || formData.preferredLocation,
+              Unit: `${formData.year} ${formData.make} ${formData.model} ${formData.trimOrFloorplan || ''}`,
+              Subcategory: formData.subcategory,
+              VIN_or_Serial: formData.vinOrSerial || 'N/A',
+              Mileage_or_Hours: `${formData.mileageOrHours || 0} ${activeCatConfig.isHours ? 'Hours' : 'Miles'}`,
+              Condition: formData.condition,
+              Condition_Description: formData.conditionNotes || 'None',
+              Title_Status: formData.titleStatus,
+              Lien_Holder: formData.lienHolderName || 'N/A',
+              Estimated_Payoff: formData.estimatedPayoff ? `$${formData.estimatedPayoff}` : 'N/A'
+            })
+          }).catch(err => console.error('Email dispatch error:', err));
+        } catch (e) {
+          console.error('Email error:', e);
+        }
       };
 
       if (submittedInquiry) {
@@ -911,7 +942,7 @@
             {/* CLEAN HERO HEADER */}
             <div className="text-center space-y-4 mb-10">
               <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white">
-                Sell Your Unit to the People You Trust at SR1
+                Sell To The People You Trust At SR1
               </h1>
               <p className="text-neutral-400 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
                 Receive a fair, straightforward cash offer from our appraisal team. We handle loan payoffs, title processing, and provide logistics pickup options across Maine and New Hampshire.
@@ -1387,6 +1418,25 @@
 
       const handleSubmit = (e) => {
         e.preventDefault();
+        try {
+          fetch('https://formsubmit.co/ajax/reid@sr1companies.com', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+              _subject: `Direct Contact Message from ${formData.name}`,
+              Name: formData.name,
+              Email: formData.email,
+              Phone: formData.phone,
+              Topic: formData.unitType,
+              Message: formData.message
+            })
+          }).catch(err => console.error('Contact email dispatch error:', err));
+        } catch (e) {
+          console.error('Contact email error:', e);
+        }
         setSubmitted(true);
       };
 
