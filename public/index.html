@@ -360,32 +360,6 @@
       );
     }
 
-    // --- ALLOWED STAFF EMAILS ---
-    const ALLOWED_EMAILS = [
-      'reid@sr1companies.com',
-      'scott@sr1companies.com',
-      'craig@sr1companies.com',
-      'mike.m@sr1companies.com',
-      'tony.d@sr1companies.com',
-      'bert@sr1companies.com',
-      'kayla@sr1companies.com',
-      'dustin@sr1companies.com',
-      'andrew@sr1companies.com',
-      'kenny@sr1companies.com',
-      'tory@sr1companies.com',
-      'mike.p@sr1companies.com',
-      'brady@sr1companies.com',
-      'coleman@sr1companies.com',
-      'darrell@sr1companies.com',
-      'colin@sr1companies.com',
-      'julian@sr1companies.com',
-      'kyle@sr1companies.com',
-      'aaron@sr1companies.com',
-      'chase@sr1companies.com',
-      'frank@sr1companies.com',
-      'nick@sr1companies.com',
-      'bret@sr1companies.com'
-    ];
 
     // --- MAIN APP COMPONENT ---
     function App() {
@@ -422,10 +396,10 @@
               const payload = JSON.parse(atob(response.credential.split('.')[1]));
               const email = payload.email.toLowerCase();
               
-              if (ALLOWED_EMAILS.includes(email)) {
+              if (email.endsWith('@sr1companies.com')) {
                 setIsAuthenticated(true);
               } else {
-                alert(`Access denied. The email ${email} is not authorized for the staff portal.`);
+                alert(`Access denied. The email ${email} is not authorized for the staff portal. You must sign in with an @sr1companies.com account.`);
               }
             } catch (err) {
               console.error('Failed to parse Google JWT', err);
@@ -814,9 +788,9 @@
         onSubmit(newInquiry);
         setSubmittedInquiry(newInquiry);
 
-        // Send email notification to reid@sr1companies.com
+        // Send email notification to appraisals@sr1companies.com
         try {
-          fetch('https://formsubmit.co/ajax/reid@sr1companies.com', {
+          fetch('https://formsubmit.co/ajax/appraisals@sr1companies.com', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
@@ -1419,7 +1393,7 @@
       const handleSubmit = (e) => {
         e.preventDefault();
         try {
-          fetch('https://formsubmit.co/ajax/reid@sr1companies.com', {
+          fetch('https://formsubmit.co/ajax/appraisals@sr1companies.com', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
