@@ -122,7 +122,7 @@
         isHours: true
       },
       powersports: {
-        label: 'Powersport',
+        label: 'Powersports',
         desc: 'Side-by-sides (UTVs), ATVs, snowmobiles & youth models',
         subtypes: ['UTV / Side-by-Side', 'ATV / 4-Wheeler', 'Snowmobile', 'Youth Powersports'],
         isHours: false
@@ -376,6 +376,18 @@
       const [selectedInquiryId, setSelectedInquiryId] = useState(null);
       const [lastSubmittedRef, setLastSubmittedRef] = useState(null);
       const [isAuthenticated, setIsAuthenticated] = useState(false);
+      const [sellFlowKey, setSellFlowKey] = useState(0);
+
+      const goToHome = () => {
+        setCurrentView('sell');
+        setSelectedInquiryId(null);
+        setSellFlowKey(prev => prev + 1);
+        try {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch (e) {
+          window.scrollTo(0, 0);
+        }
+      };
 
       useEffect(() => {
         try {
@@ -467,14 +479,14 @@
           <header className="sticky top-0 z-40 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-800">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
               
-              <div onClick={() => { setCurrentView('sell'); setSelectedInquiryId(null); }}>
+              <div onClick={goToHome} role="button" aria-label="SR1 Home" className="cursor-pointer">
                 <SR1HeaderLogo />
               </div>
 
               {/* VIEW SWITCHER / NAVIGATION */}
               <div className="flex items-center space-x-1.5 bg-neutral-900 p-1.5 rounded-lg border border-neutral-800">
                 <button
-                  onClick={() => { setCurrentView('sell'); setSelectedInquiryId(null); }}
+                  onClick={goToHome}
                   className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
                     currentView === 'sell' 
                       ? 'bg-neutral-100 text-neutral-950 shadow-sm' 
@@ -485,7 +497,11 @@
                 </button>
 
                 <button
-                  onClick={() => { setCurrentView('contact'); setSelectedInquiryId(null); }}
+                  onClick={() => { 
+                    setCurrentView('contact'); 
+                    setSelectedInquiryId(null); 
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                   className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
                     currentView === 'contact' 
                       ? 'bg-neutral-100 text-neutral-950 shadow-sm' 
@@ -502,8 +518,12 @@
           <main className="flex-1">
             {currentView === 'sell' && (
               <CustomerSellFlow 
+                key={sellFlowKey}
                 onSubmit={handleNewInquiry} 
-                onGoToContact={() => setCurrentView('contact')}
+                onGoToContact={() => {
+                  setCurrentView('contact');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
               />
             )}
 
@@ -560,11 +580,11 @@
                 
                 {/* BRAND SUMMARY */}
                 <div className="space-y-4">
-                  <div className="flex items-center">
+                  <div className="flex items-center cursor-pointer" onClick={goToHome} role="button" aria-label="SR1 Home">
                     <img 
                       src="/logo.png" 
                       alt="SR1 Companies" 
-                      className="h-9 w-auto object-contain opacity-95" 
+                      className="h-9 w-auto object-contain opacity-95 transition-opacity hover:opacity-100" 
                     />
                   </div>
                   <p className="text-neutral-400 text-xs leading-relaxed">
@@ -583,7 +603,7 @@
                     <li>Trailer</li>
                     <li>Tractor</li>
                     <li>Heavy Equipment</li>
-                    <li>Powersport</li>
+                    <li>Powersports</li>
                     <li>Motorcycle</li>
                     <li>Boat / PWC</li>
                     <li>Shipping Container</li>
@@ -757,36 +777,6 @@
         setUploading(false);
       };
 
-      const handleLoadSamplePhotos = () => {
-        const sampleUrlMap = {
-          rv: [
-            'https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7?auto=format&fit=crop&w=1000&q=80',
-            'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1000&q=80'
-          ],
-          trailer: [
-            'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=1000&q=80'
-          ],
-          tractor: [
-            'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?auto=format&fit=crop&w=1000&q=80',
-            'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=1000&q=80'
-          ],
-          equipment: [
-            'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=1000&q=80'
-          ],
-          powersports: [
-            'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=1000&q=80'
-          ]
-        };
-
-        const urls = sampleUrlMap[category] || sampleUrlMap.rv;
-        const newSamples = urls.map((u, i) => ({
-          id: 'sample-' + i + '-' + Date.now(),
-          url: u,
-          label: `Inspection Photo ${i + 1}`,
-          uploadedAt: new Date().toISOString()
-        }));
-        setPhotos(prev => [...prev, ...newSamples]);
-      };
 
       const removePhoto = (id) => {
         setPhotos(prev => prev.filter(p => p.id !== id));
@@ -939,7 +929,7 @@
                 </div>
               </div>
 
-              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <div className="pt-2 flex items-center justify-center">
                 <button 
                   onClick={() => {
                     setSubmittedInquiry(null);
@@ -976,15 +966,9 @@
                     });
                     setPhotos([]);
                   }}
-                  className="w-full sm:w-auto px-6 py-3 bg-neutral-850 hover:bg-neutral-800 text-white font-semibold text-xs rounded-xl border border-neutral-750 transition-all"
+                  className="w-full sm:w-auto px-8 py-3.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
                 >
                   Submit Another Unit
-                </button>
-                <button 
-                  onClick={onGoToContact}
-                  className="w-full sm:w-auto px-6 py-3 bg-white text-neutral-950 hover:bg-neutral-200 font-bold text-xs rounded-xl transition-all"
-                >
-                  Have Questions? Contact Us →
                 </button>
               </div>
 
@@ -1216,19 +1200,32 @@
                       <button
                         type="button"
                         onClick={() => {
+                          if (category === 'container') {
+                            if (!formData.year) {
+                              alert('Please enter the Year Purchased');
+                              return;
+                            }
+                            if (!formData.vinOrSerial || !formData.vinOrSerial.trim()) {
+                              alert('Please enter the Box Identification Number');
+                              return;
+                            }
+                            setStep(3);
+                            return;
+                          }
+
                           if (!formData.year) {
                             alert('Please enter the Model Year');
                             return;
                           }
-                          if (!formData.make.trim()) {
+                          if (!formData.make || !formData.make.trim()) {
                             alert('Please enter the Make');
                             return;
                           }
-                          if (!formData.model.trim()) {
+                          if (!formData.model || !formData.model.trim()) {
                             alert('Please enter the Model');
                             return;
                           }
-                          if (!formData.vinOrSerial.trim()) {
+                          if (!formData.vinOrSerial || !formData.vinOrSerial.trim()) {
                             alert('Please enter the VIN or Serial Number');
                             return;
                           }
@@ -1308,17 +1305,10 @@
 
                   {/* PHOTOS DROPZONE */}
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div>
                       <label className="block text-xs font-semibold uppercase text-neutral-300">
                         Upload Photos ({photos.length} uploaded)
                       </label>
-                      <button
-                        type="button"
-                        onClick={handleLoadSamplePhotos}
-                        className="text-xs bg-neutral-800 hover:bg-neutral-750 text-neutral-300 font-semibold px-2.5 py-1 rounded border border-neutral-700 transition-colors"
-                      >
-                        + Auto-Load Sample Photos for Testing
-                      </button>
                     </div>
 
                     <div className="border border-dashed border-neutral-700 hover:border-neutral-500 rounded-xl p-6 text-center bg-neutral-950/40 transition-all">
