@@ -52,6 +52,10 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+  <!-- Google Firebase SDKs (Real-Time Cloud Sync) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
@@ -80,6 +84,29 @@
 
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
+
+    // --- FIREBASE INITIALIZATION & FIRESTORE CLOUD DATABASE ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyBaWVjWZn5gSaPyLAuZm0X6TrlQ9KNRR40",
+      authDomain: "sell2sr1.firebaseapp.com",
+      projectId: "sell2sr1",
+      storageBucket: "sell2sr1.firebasestorage.app",
+      messagingSenderId: "1062806885891",
+      appId: "1:1062806885891:web:7f305af78ffe666c33a036",
+      measurementId: "G-0Q126D9T0H"
+    };
+
+    let db = null;
+    try {
+      if (typeof firebase !== 'undefined') {
+        if (!firebase.apps || !firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.firestore();
+      }
+    } catch (err) {
+      console.warn('Firebase initialization notice:', err);
+    }
 
     // --- LOCATION LIST ---
     const LOCATIONS = [
@@ -448,13 +475,67 @@
         }
       }, [inquiries]);
 
+      // Real-time Firestore sync across all devices
+      useEffect(() => {
+        if (!db) return;
+        try {
+          const unsubscribe = db.collection('inquiries').onSnapshot((snapshot) => {
+            const cloudInquiries = [];
+            snapshot.forEach((doc) => {
+              cloudInquiries.push(doc.data());
+            });
+            if (cloudInquiries.length > 0) {
+              cloudInquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+              setInquiries(cloudInquiries);
+            }
+          }, (err) => {
+            console.warn('Firestore real-time sync notice:', err);
+          });
+          return () => unsubscribe();
+        } catch (e) {
+          console.warn('Firestore subscription error:', e);
+        }
+      }, []);
+
       const handleNewInquiry = (newInquiry) => {
         setInquiries(prev => [newInquiry, ...prev]);
         setLastSubmittedRef(newInquiry.referenceId);
+        if (db) {
+          try {
+            db.collection('inquiries').doc(newInquiry.id).set(newInquiry)
+              .catch(err => console.warn('Firestore new inquiry save error:', err));
+          } catch (e) {
+            console.warn('Firestore write error:', e);
+          }
+        }
       };
 
       const handleUpdateInquiry = (updated) => {
         setInquiries(prev => prev.map(item => item.id === updated.id ? updated : item));
+        if (db) {
+          try {
+            db.collection('inquiries').doc(updated.id).set(updated, { merge: true })
+              .catch(err => console.warn('Firestore update error:', err));
+          } catch (e) {
+            console.warn('Firestore update call error:', e);
+          }
+        }
+      };
+
+      const handleSyncSamplesToCloud = () => {
+        if (!db) {
+          alert('Firebase Cloud database not initialized.');
+          return;
+        }
+        try {
+          INITIAL_INQUIRIES_DATA.forEach(inq => {
+            db.collection('inquiries').doc(inq.id).set(inq, { merge: true });
+          });
+          alert('Sample inquiries successfully synced to Firebase Cloud! They will now appear live across all connected phones and computers.');
+        } catch (err) {
+          console.error('Failed to sync to cloud:', err);
+          alert('Error syncing to cloud. Please check your Firestore security rules.');
+        }
       };
 
       const newLeadsCount = inquiries.filter(i => i.stage === 'new').length;
@@ -597,6 +678,7 @@
                   setSelectedInquiryId={setSelectedInquiryId}
                   staffUser={staffUser}
                   onSignOut={handleSignOut}
+                  onSyncSamplesToCloud={handleSyncSamplesToCloud}
                 />
               )
             )}
@@ -1726,7 +1808,7 @@
     // ==========================================
     // 3. STAFF APPRAISAL PORTAL (NEUTRAL THEME)
     // ==========================================
-    function StaffPortalView({ inquiries, onUpdateInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut }) {
+    function StaffPortalView({ inquiries, onUpdateInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onSyncSamplesToCloud }) {
       const [filterStage, setFilterStage] = useState('all');
       const [filterCategory, setFilterCategory] = useState('all');
       const [filterLocation, setFilterLocation] = useState('all');
@@ -1778,6 +1860,23 @@
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {db && (
+                <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-950/70 border border-emerald-800/80 rounded-lg text-[11px] font-semibold text-emerald-300">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>Cloud Live</span>
+                </div>
+              )}
+
+              {inquiries.length <= 3 && (
+                <button
+                  onClick={onSyncSamplesToCloud}
+                  className="px-2.5 py-1 rounded-lg bg-neutral-850 hover:bg-neutral-800 text-neutral-300 border border-neutral-750 text-[11px] font-semibold transition-all"
+                  title="Upload sample inquiries to Firebase Firestore cloud so other devices see them"
+                >
+                  ⚡ Sync Samples to Cloud
+                </button>
+              )}
+
               <button
                 onClick={() => setShowInstallGuide(true)}
                 className="px-3 py-1.5 rounded-lg bg-neutral-850 hover:bg-neutral-800 text-neutral-200 border border-neutral-750 font-semibold text-xs flex items-center space-x-1.5 transition-all shadow-sm"
