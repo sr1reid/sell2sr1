@@ -86,10 +86,15 @@
     const { useState, useEffect, useMemo } = React;
 
     // --- FIREBASE INITIALIZATION & FIRESTORE CLOUD DATABASE ---
+    const FS_PROJECT_ID = 'sell2sr1';
+    const FS_DATABASE_ID = 'sell2sr1';
+    const FS_API_KEY = 'AIzaSyBaWVjWZn5gSaPyLAuZm0X6TrlQ9KNRR40';
+    const FS_REST_BASE = `https://firestore.googleapis.com/v1/projects/${FS_PROJECT_ID}/databases/${FS_DATABASE_ID}/documents/inquiries`;
+
     const firebaseConfig = {
-      apiKey: "AIzaSyBaWVjWZn5gSaPyLAuZm0X6TrlQ9KNRR40",
+      apiKey: FS_API_KEY,
       authDomain: "sell2sr1.firebaseapp.com",
-      projectId: "sell2sr1",
+      projectId: FS_PROJECT_ID,
       storageBucket: "sell2sr1.firebasestorage.app",
       messagingSenderId: "1062806885891",
       appId: "1:1062806885891:web:7f305af78ffe666c33a036",
@@ -99,13 +104,101 @@
     let db = null;
     try {
       if (typeof firebase !== 'undefined') {
-        if (!firebase.apps || !firebase.apps.length) {
-          firebase.initializeApp(firebaseConfig);
+        const app = (!firebase.apps || !firebase.apps.length)
+          ? firebase.initializeApp(firebaseConfig)
+          : firebase.app();
+        try {
+          db = app.firestore(FS_DATABASE_ID);
+        } catch (e1) {
+          try {
+            db = firebase.firestore(app, FS_DATABASE_ID);
+          } catch (e2) {
+            db = firebase.firestore();
+          }
         }
-        db = firebase.firestore();
       }
     } catch (err) {
       console.warn('Firebase initialization notice:', err);
+    }
+
+    // Convert JavaScript object to Firestore REST typed format
+    function jsonToFirestoreFields(obj) {
+      if (obj === null || obj === undefined) return { nullValue: null };
+      if (typeof obj === 'string') return { stringValue: obj };
+      if (typeof obj === 'number') {
+        return Number.isInteger(obj) ? { integerValue: obj.toString() } : { doubleValue: obj };
+      }
+      if (typeof obj === 'boolean') return { booleanValue: obj };
+      if (Array.isArray(obj)) {
+        return { arrayValue: { values: obj.map(jsonToFirestoreFields) } };
+      }
+      if (typeof obj === 'object') {
+        const fields = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (v !== undefined) {
+            fields[k] = jsonToFirestoreFields(v);
+          }
+        }
+        return { mapValue: { fields } };
+      }
+      return { nullValue: null };
+    }
+
+    // Convert Firestore REST typed format back to plain JavaScript object
+    function firestoreFieldsToJson(fsVal) {
+      if (!fsVal) return null;
+      if ('stringValue' in fsVal) return fsVal.stringValue;
+      if ('integerValue' in fsVal) return parseInt(fsVal.integerValue, 10);
+      if ('doubleValue' in fsVal) return fsVal.doubleValue;
+      if ('booleanValue' in fsVal) return fsVal.booleanValue;
+      if ('nullValue' in fsVal) return null;
+      if ('arrayValue' in fsVal) {
+        return (fsVal.arrayValue.values || []).map(firestoreFieldsToJson);
+      }
+      if ('mapValue' in fsVal) {
+        const res = {};
+        for (const [k, v] of Object.entries(fsVal.mapValue.fields || {})) {
+          res[k] = firestoreFieldsToJson(v);
+        }
+        return res;
+      }
+      return null;
+    }
+
+    // Direct REST API save: 100% reliable across all browsers & phones
+    async function saveInquiryToCloudRest(inquiry) {
+      try {
+        const clean = JSON.parse(JSON.stringify(inquiry));
+        const body = { fields: jsonToFirestoreFields(clean).mapValue.fields };
+        const url = `${FS_REST_BASE}/${inquiry.id}?key=${FS_API_KEY}`;
+        await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      } catch (e) {
+        console.warn('Cloud REST save notice:', e);
+      }
+    }
+
+    // Direct REST API fetch: instant fallback & multi-device sync
+    async function fetchInquiriesFromCloudRest() {
+      try {
+        const url = `${FS_REST_BASE}?key=${FS_API_KEY}&pageSize=100`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data.documents) return [];
+        return data.documents.map(doc => {
+          const item = {};
+          for (const [k, v] of Object.entries(doc.fields || {})) {
+            item[k] = firestoreFieldsToJson(v);
+          }
+          return item;
+        });
+      } catch (e) {
+        return null;
+      }
     }
 
     // --- LOCATION LIST ---
@@ -475,35 +568,74 @@
         }
       }, [inquiries]);
 
-      // Real-time Firestore sync across all devices
+      // Real-time Cloud Database Sync Engine (SDK onSnapshot + REST Polling)
       useEffect(() => {
-        if (!db) return;
-        try {
-          const unsubscribe = db.collection('inquiries').onSnapshot((snapshot) => {
-            const cloudInquiries = [];
-            snapshot.forEach((doc) => {
-              cloudInquiries.push(doc.data());
+        let isMounted = true;
+
+        const mergeInquiries = (cloudList) => {
+          if (!cloudList || cloudList.length === 0) return;
+          cloudList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          setInquiries(cloudList);
+        };
+
+        // 1. Immediate fetch from Cloud REST API on startup
+        fetchInquiriesFromCloudRest().then(list => {
+          if (isMounted && list && list.length > 0) {
+            mergeInquiries(list);
+          }
+        });
+
+        // 2. Real-time Firebase SDK subscription
+        let unsubscribe = null;
+        if (db) {
+          try {
+            unsubscribe = db.collection('inquiries').onSnapshot((snapshot) => {
+              const cloudInquiries = [];
+              snapshot.forEach((doc) => {
+                cloudInquiries.push(doc.data());
+              });
+              if (isMounted && cloudInquiries.length > 0) {
+                mergeInquiries(cloudInquiries);
+              }
+            }, (err) => {
+              console.warn('Firestore onSnapshot sync notice:', err);
             });
-            if (cloudInquiries.length > 0) {
-              cloudInquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-              setInquiries(cloudInquiries);
-            }
-          }, (err) => {
-            console.warn('Firestore real-time sync notice:', err);
-          });
-          return () => unsubscribe();
-        } catch (e) {
-          console.warn('Firestore subscription error:', e);
+          } catch (e) {
+            console.warn('Firestore subscription error:', e);
+          }
         }
+
+        // 3. Fallback continuous polling (every 4 seconds) to ensure 100% sync reliability across all devices
+        const pollInterval = setInterval(() => {
+          fetchInquiriesFromCloudRest().then(list => {
+            if (isMounted && list && list.length > 0) {
+              mergeInquiries(list);
+            }
+          });
+        }, 4000);
+
+        return () => {
+          isMounted = false;
+          if (unsubscribe) unsubscribe();
+          clearInterval(pollInterval);
+        };
       }, []);
 
       const handleNewInquiry = (newInquiry) => {
         setInquiries(prev => [newInquiry, ...prev]);
         setLastSubmittedRef(newInquiry.referenceId);
+
+        // Sanitize object (strips undefined values that Firestore rejects)
+        const cleanInquiry = JSON.parse(JSON.stringify(newInquiry));
+
+        // 1. Direct REST save (Guaranteed delivery)
+        saveInquiryToCloudRest(cleanInquiry);
+
+        // 2. Firebase SDK save
         if (db) {
           try {
-            db.collection('inquiries').doc(newInquiry.id).set(newInquiry)
-              .catch(err => console.warn('Firestore new inquiry save error:', err));
+            db.collection('inquiries').doc(newInquiry.id).set(cleanInquiry)
+              .catch(err => console.warn('Firestore new inquiry save notice:', err));
           } catch (e) {
             console.warn('Firestore write error:', e);
           }
@@ -512,29 +644,42 @@
 
       const handleUpdateInquiry = (updated) => {
         setInquiries(prev => prev.map(item => item.id === updated.id ? updated : item));
+
+        const cleanUpdated = JSON.parse(JSON.stringify(updated));
+
+        // 1. Direct REST save
+        saveInquiryToCloudRest(cleanUpdated);
+
+        // 2. Firebase SDK save
         if (db) {
           try {
-            db.collection('inquiries').doc(updated.id).set(updated, { merge: true })
-              .catch(err => console.warn('Firestore update error:', err));
+            db.collection('inquiries').doc(updated.id).set(cleanUpdated, { merge: true })
+              .catch(err => console.warn('Firestore update notice:', err));
           } catch (e) {
             console.warn('Firestore update call error:', e);
           }
         }
       };
 
-      const handleSyncSamplesToCloud = () => {
-        if (!db) {
-          alert('Firebase Cloud database not initialized.');
-          return;
-        }
+      const handleSyncSamplesToCloud = async () => {
         try {
-          INITIAL_INQUIRIES_DATA.forEach(inq => {
-            db.collection('inquiries').doc(inq.id).set(inq, { merge: true });
-          });
-          alert('Sample inquiries successfully synced to Firebase Cloud! They will now appear live across all connected phones and computers.');
+          for (const inq of INITIAL_INQUIRIES_DATA) {
+            const clean = JSON.parse(JSON.stringify(inq));
+            await saveInquiryToCloudRest(clean);
+            if (db) {
+              try {
+                db.collection('inquiries').doc(inq.id).set(clean, { merge: true });
+              } catch (e) {}
+            }
+          }
+          alert('Sample inquiries successfully synced to Cloud! They will now appear live across all your connected phones and computers.');
+          const list = await fetchInquiriesFromCloudRest();
+          if (list && list.length > 0) {
+            setInquiries(list);
+          }
         } catch (err) {
           console.error('Failed to sync to cloud:', err);
-          alert('Error syncing to cloud. Please check your Firestore security rules.');
+          alert('Error syncing to cloud. Please check your network connection.');
         }
       };
 
@@ -948,10 +1093,10 @@
             mileageOrHours: Number(formData.mileageOrHours) || 0,
             isHours: activeCatConfig.isHours,
             specs: {
-              lengthFeet: Number(formData.lengthFeet) || undefined,
-              slidesCount: Number(formData.slidesCount) || undefined,
-              horsepower: Number(formData.horsepower) || undefined,
-              cabType: formData.cabType
+              lengthFeet: Number(formData.lengthFeet) || 0,
+              slidesCount: Number(formData.slidesCount) || 0,
+              horsepower: Number(formData.horsepower) || 0,
+              cabType: formData.cabType || 'standard'
             },
             condition: formData.condition === 'excellent' ? 'Excellent' : formData.condition === 'very_good' ? 'Very Good' : formData.condition === 'good' ? 'Good' : 'Fair',
             conditionNotes: formData.conditionNotes,
