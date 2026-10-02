@@ -511,6 +511,28 @@
             )}
           </main>
 
+          {/* BROWSE INVENTORY & LEARN MORE SECTION */}
+          {currentView !== 'portal' && (
+            <section className="bg-neutral-900 border-t border-neutral-800 py-10 px-4 text-center">
+              <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
+                <span className="text-sm sm:text-base text-neutral-200 font-medium">
+                  If you'd like to browse our inventory or learn more about SR1,
+                </span>
+                <a 
+                  href="https://www.sr1companies.com" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="inline-flex items-center space-x-1.5 px-4 py-2 bg-neutral-100 hover:bg-white text-neutral-950 font-black rounded-xl text-xs sm:text-sm tracking-wide transition-all shadow-md group"
+                >
+                  <span>CLICK HERE</span>
+                  <svg className="w-3.5 h-3.5 text-neutral-950 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              </div>
+            </section>
+          )}
+
           {/* NEUTRAL FOOTER */}
           <footer className="bg-neutral-950 border-t border-neutral-850 py-12 text-neutral-400 text-xs">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
