@@ -98,19 +98,19 @@
     // --- REVISED CATEGORIES (NO IMAGE/EMOJI ICONS) ---
     const CATEGORIES = {
       rv: {
-        label: 'RVs / Campers',
+        label: 'RV / Camper',
         desc: 'Travel trailers, 5th wheels, motorhomes, toy haulers & truck campers',
         subtypes: ['Travel Trailer', 'Fifth Wheel', 'Toy Hauler', 'Class C Motorhome', 'Class A Motorhome', 'Class B / Van', 'Pop-Up', 'Truck Camper'],
         isHours: false
       },
       trailer: {
-        label: 'Trailers',
+        label: 'Trailer',
         desc: 'Dump trailers, cargo/enclosed, equipment haulers, utility, tilt & goosenecks',
         subtypes: ['Dump Trailer', 'Cargo / Enclosed', 'Equipment Hauler', 'Utility / Landscape', 'Gooseneck / Deckover', 'Tilt Bed', 'Snowmobile / ATV Trailer'],
         isHours: false
       },
       tractor: {
-        label: 'Tractors',
+        label: 'Tractor',
         desc: 'Sub-compact, compact & utility tractors with loaders & attachments',
         subtypes: ['Sub-Compact (<25 HP)', 'Compact Tractor (25-50 HP)', 'Utility Tractor (50+ HP)', 'Commercial Mower', 'Tractor Loader Backhoe'],
         isHours: true
@@ -122,25 +122,25 @@
         isHours: true
       },
       powersports: {
-        label: 'Powersports',
+        label: 'Powersport',
         desc: 'Side-by-sides (UTVs), ATVs, snowmobiles & youth models',
         subtypes: ['UTV / Side-by-Side', 'ATV / 4-Wheeler', 'Snowmobile', 'Youth Powersports'],
         isHours: false
       },
       motorcycle: {
-        label: 'Motorcycles',
+        label: 'Motorcycle',
         desc: 'Cruisers, touring, dual sports, adventure & sport bikes',
         subtypes: ['Cruiser', 'Touring / Bagger', 'Adventure / Dual Sport', 'Sport Bike', 'Dirt Bike'],
         isHours: false
       },
       boat_pwc: {
-        label: 'Boats & PWCs',
+        label: 'Boat / PWC',
         desc: 'Pontoon boats, fishing boats, personal watercraft (Jet Skis) & docks',
         subtypes: ['Personal Watercraft (Jet Ski)', 'Pontoon / Tritoon Boat', 'Fishing Boat', 'Bowrider / Deck Boat', 'Dock System'],
         isHours: true
       },
       container: {
-        label: 'Shipping Containers',
+        label: 'Shipping Container',
         desc: '20ft, 40ft standard, 40ft High Cube & custom storage containers',
         subtypes: ['20ft Standard Container', '40ft Standard Container', '40ft High Cube Container', 'Custom Modified Container'],
         isHours: false
@@ -365,15 +365,35 @@
     function App() {
       const [currentView, setCurrentView] = useState('sell'); // 'sell' | 'track' | 'portal'
       const [inquiries, setInquiries] = useState(() => {
-        const saved = localStorage.getItem('sell2sr1_inquiries_v2');
-        return saved ? JSON.parse(saved) : INITIAL_INQUIRIES_DATA;
+        try {
+          const saved = localStorage.getItem('sell2sr1_inquiries_v2');
+          return saved ? JSON.parse(saved) : INITIAL_INQUIRIES_DATA;
+        } catch (e) {
+          console.warn('LocalStorage read error:', e);
+          return INITIAL_INQUIRIES_DATA;
+        }
       });
       const [selectedInquiryId, setSelectedInquiryId] = useState(null);
       const [lastSubmittedRef, setLastSubmittedRef] = useState(null);
       const [isAuthenticated, setIsAuthenticated] = useState(false);
 
       useEffect(() => {
-        localStorage.setItem('sell2sr1_inquiries_v2', JSON.stringify(inquiries));
+        try {
+          // Keep inquiries safe for localStorage (strip heavy base64 strings so mobile never throws QuotaExceeded)
+          const safeInquiries = inquiries.map(item => ({
+            ...item,
+            photos: (item.photos || []).map(p => ({
+              id: p.id,
+              label: p.label,
+              url: (p.url && p.url.startsWith('data:') && p.url.length > 5000)
+                ? 'https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7?auto=format&fit=crop&w=1000&q=80'
+                : p.url
+            }))
+          }));
+          localStorage.setItem('sell2sr1_inquiries_v2', JSON.stringify(safeInquiries));
+        } catch (err) {
+          console.warn('LocalStorage save skipped (quota limit or private browsing):', err);
+        }
       }, [inquiries]);
 
       const handleNewInquiry = (newInquiry) => {
@@ -559,14 +579,14 @@
                 <div>
                   <h4 className="font-bold uppercase tracking-wider text-neutral-200 mb-3 text-[11px]">Types Of Units We Purchase</h4>
                   <ul className="space-y-1 text-neutral-400 text-xs">
-                    <li>RVs / Campers</li>
-                    <li>Trailers</li>
-                    <li>Tractors</li>
+                    <li>RV / Camper</li>
+                    <li>Trailer</li>
+                    <li>Tractor</li>
                     <li>Heavy Equipment</li>
-                    <li>Powersports</li>
-                    <li>Motorcycles</li>
-                    <li>Boats & PWCs</li>
-                    <li>Shipping Containers</li>
+                    <li>Powersport</li>
+                    <li>Motorcycle</li>
+                    <li>Boat / PWC</li>
+                    <li>Shipping Container</li>
                     <li>Other Equipment</li>
                   </ul>
                 </div>
@@ -678,27 +698,63 @@
         setFormData(prev => ({ ...prev, [field]: value }));
       };
 
-      const handleFileSelect = (e) => {
+      const compressImage = (file) => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              const maxDim = 1200;
+              let width = img.width;
+              let height = img.height;
+              if (width > maxDim || height > maxDim) {
+                if (width > height) {
+                  height = Math.round((height * maxDim) / width);
+                  width = maxDim;
+                } else {
+                  width = Math.round((width * maxDim) / height);
+                  height = maxDim;
+                }
+              }
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', 0.75));
+            };
+            img.onerror = () => resolve(e.target.result);
+            img.src = e.target.result;
+          };
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        });
+      };
+
+      const handleFileSelect = async (e) => {
         const files = Array.from(e.target.files || []);
         if (files.length === 0) return;
         setUploading(true);
 
-        files.forEach(file => {
-          const reader = new FileReader();
-          reader.onload = (uploadEvent) => {
-            setPhotos(prev => [
-              ...prev,
-              {
-                id: 'p-' + Math.random().toString(36).substr(2, 9),
-                url: uploadEvent.target.result,
-                label: file.name.split('.')[0] || 'Uploaded Photo',
-                uploadedAt: new Date().toISOString()
-              }
-            ]);
-            setUploading(false);
-          };
-          reader.readAsDataURL(file);
-        });
+        for (const file of files) {
+          try {
+            const compressedUrl = await compressImage(file);
+            if (compressedUrl) {
+              setPhotos(prev => [
+                ...prev,
+                {
+                  id: 'p-' + Math.random().toString(36).substr(2, 9),
+                  url: compressedUrl,
+                  label: file.name.split('.')[0] || 'Uploaded Photo',
+                  uploadedAt: new Date().toISOString()
+                }
+              ]);
+            }
+          } catch (err) {
+            console.error('Photo processing error:', err);
+          }
+        }
+        setUploading(false);
       };
 
       const handleLoadSamplePhotos = () => {
@@ -762,8 +818,8 @@
             category,
             subcategory: formData.subcategory,
             year: Number(formData.year) || 2022,
-            make: formData.make || 'Unit Make',
-            model: formData.model || 'Unit Model',
+            make: category === 'container' ? 'Shipping Container' : (formData.make || 'Unit Make'),
+            model: category === 'container' ? (formData.subcategory || 'Container') : (formData.model || 'Unit Model'),
             trimOrFloorplan: formData.trimOrFloorplan,
             vinOrSerial: formData.vinOrSerial || 'VIN-PENDING',
             mileageOrHours: Number(formData.mileageOrHours) || 0,
@@ -802,7 +858,9 @@
               authorRole: 'Intake Automation',
               createdAt: new Date().toLocaleTimeString(),
               category: 'general',
-              content: `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}. Routing to ${formData.preferredLocation.replace('_', ' ').toUpperCase()} appraisal desk.`
+              content: category === 'container'
+                ? `New shipping container inquiry submitted (Purchased: ${formData.year}, Box ID: ${formData.vinOrSerial}). Routing to ${formData.preferredLocation.replace('_', ' ').toUpperCase()} appraisal desk.`
+                : `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}. Routing to ${formData.preferredLocation.replace('_', ' ').toUpperCase()} appraisal desk.`
             }
           ]
         };
@@ -819,17 +877,21 @@
               'Accept': 'application/json'
             },
             body: JSON.stringify({
-              _subject: `New Unit Valuation Request [${refId}]: ${formData.year} ${formData.make} ${formData.model}`,
+              _subject: category === 'container'
+                ? `New Shipping Container Valuation Request [${refId}]: Box #${formData.vinOrSerial} (Purchased ${formData.year})`
+                : `New Unit Valuation Request [${refId}]: ${formData.year} ${formData.make} ${formData.model}`,
               Reference_ID: refId,
               Customer_Name: `${formData.firstName} ${formData.lastName}`,
               Customer_Email: formData.email,
               Customer_Phone: formData.phone,
               Preferred_Contact: formData.preferredContact,
               Preferred_Location: (LOCATIONS.find(l => l.id === formData.preferredLocation)?.name) || formData.preferredLocation,
-              Unit: `${formData.year} ${formData.make} ${formData.model} ${formData.trimOrFloorplan || ''}`,
+              Unit: category === 'container'
+                ? `Shipping Container (${formData.subcategory}) - Purchased: ${formData.year} - Box ID: ${formData.vinOrSerial}`
+                : `${formData.year} ${formData.make} ${formData.model} ${formData.trimOrFloorplan || ''}`,
               Subcategory: formData.subcategory,
-              VIN_or_Serial: formData.vinOrSerial || 'N/A',
-              Mileage_or_Hours: `${formData.mileageOrHours || 0} ${activeCatConfig.isHours ? 'Hours' : 'Miles'}`,
+              VIN_or_Box_ID: formData.vinOrSerial || 'N/A',
+              Mileage_or_Hours: category === 'container' ? 'N/A' : `${formData.mileageOrHours || 0} ${activeCatConfig.isHours ? 'Hours' : 'Miles'}`,
               Condition: formData.condition,
               Condition_Description: formData.conditionNotes || 'None',
               Title_Status: formData.titleStatus,
@@ -855,10 +917,10 @@
                   Valuation Request Received
                 </span>
                 <h2 className="text-2xl sm:text-3xl font-black text-white">
-                  Thank You, {submittedInquiry.customer.firstName}!
+                  Thank You, {submittedInquiry.customer?.firstName || 'Seller'}!
                 </h2>
                 <p className="text-sm text-neutral-400 max-w-md mx-auto leading-relaxed">
-                  Your unit details for your <strong className="text-white">{submittedInquiry.unit.year} {submittedInquiry.unit.make} {submittedInquiry.unit.model}</strong> have been sent to our appraisal desk.
+                  Your unit details for your <strong className="text-white">{submittedInquiry.unit?.year || ''} {submittedInquiry.unit?.make || ''} {submittedInquiry.unit?.model || ''}</strong> have been sent to our appraisal desk.
                 </p>
               </div>
 
@@ -866,13 +928,13 @@
                 <div className="flex items-center justify-between border-b border-neutral-850 pb-2">
                   <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Submission Reference</span>
                   <span className="font-mono text-sm font-bold text-white bg-neutral-900 px-2.5 py-1 rounded border border-neutral-800">
-                    {submittedInquiry.referenceId}
+                    {submittedInquiry.referenceId || ''}
                   </span>
                 </div>
                 <div className="space-y-2 text-xs text-neutral-300 pt-1">
                   <div className="flex items-start space-x-2">
                     <span className="text-emerald-400 font-bold mt-0.5">✓</span>
-                    <span><strong>Direct Reach Out:</strong> Our appraisal team will review your photos and details and contact you directly via phone (<span className="text-white">{submittedInquiry.customer.phone}</span>) or email (<span className="text-white">{submittedInquiry.customer.email}</span>).</span>
+                    <span><strong>Direct Reach Out:</strong> Our appraisal team will review your photos and details and contact you directly via phone (<span className="text-white">{submittedInquiry.customer?.phone || 'your phone'}</span>) or email (<span className="text-white">{submittedInquiry.customer?.email || 'your email'}</span>).</span>
                   </div>
                 </div>
               </div>
@@ -1025,89 +1087,123 @@
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Model Year */}
-                      <div>
-                        <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Model Year *</label>
-                        <input
-                          type="number"
-                          min="1970"
-                          max="2027"
-                          required
-                          value={formData.year}
-                          onChange={(e) => handleInputChange('year', e.target.value)}
-                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* Make */}
-                      <div>
-                        <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Make *</label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.make}
-                          onChange={(e) => handleInputChange('make', e.target.value)}
-                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* Model */}
-                      <div>
-                        <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Model *</label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.model}
-                          onChange={(e) => handleInputChange('model', e.target.value)}
-                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* VIN / Serial Number */}
-                      <div>
-                        <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                          VIN / Serial Number *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.vinOrSerial}
-                          onChange={(e) => handleInputChange('vinOrSerial', e.target.value.toUpperCase())}
-                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* Hours: Required for tractors, heavy equipment, boats & pwcs */}
-                      {requiresHours && (
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Hours *</label>
+                    {category === 'container' ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Year Purchased */}
+                        <div>
+                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                            Year Purchased *
+                          </label>
                           <input
                             type="number"
-                            min="0"
+                            min="1970"
+                            max="2027"
                             required
-                            value={formData.mileageOrHours}
-                            onChange={(e) => handleInputChange('mileageOrHours', e.target.value)}
+                            value={formData.year}
+                            onChange={(e) => handleInputChange('year', e.target.value)}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
-                      )}
 
-                      {/* Miles: Required for powersports and motorcycles */}
-                      {requiresMiles && (
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Miles *</label>
+                        {/* Box Identification Number */}
+                        <div>
+                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                            Box Identification Number *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={formData.vinOrSerial}
+                            onChange={(e) => handleInputChange('vinOrSerial', e.target.value.toUpperCase())}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Model Year */}
+                        <div>
+                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Model Year *</label>
                           <input
                             type="number"
-                            min="0"
+                            min="1970"
+                            max="2027"
                             required
-                            value={formData.mileageOrHours}
-                            onChange={(e) => handleInputChange('mileageOrHours', e.target.value)}
+                            value={formData.year}
+                            onChange={(e) => handleInputChange('year', e.target.value)}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
-                      )}
-                    </div>
+
+                        {/* Make */}
+                        <div>
+                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Make *</label>
+                          <input
+                            type="text"
+                            required
+                            value={formData.make}
+                            onChange={(e) => handleInputChange('make', e.target.value)}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Model */}
+                        <div>
+                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Model *</label>
+                          <input
+                            type="text"
+                            required
+                            value={formData.model}
+                            onChange={(e) => handleInputChange('model', e.target.value)}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* VIN / Serial Number */}
+                        <div>
+                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                            VIN / Serial Number *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={formData.vinOrSerial}
+                            onChange={(e) => handleInputChange('vinOrSerial', e.target.value.toUpperCase())}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Hours: Required for tractors, heavy equipment, boats & pwcs */}
+                        {requiresHours && (
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Hours *</label>
+                            <input
+                              type="number"
+                              min="0"
+                              required
+                              value={formData.mileageOrHours}
+                              onChange={(e) => handleInputChange('mileageOrHours', e.target.value)}
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            />
+                          </div>
+                        )}
+
+                        {/* Miles: Required for powersports and motorcycles */}
+                        {requiresMiles && (
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Miles *</label>
+                            <input
+                              type="number"
+                              min="0"
+                              required
+                              value={formData.mileageOrHours}
+                              onChange={(e) => handleInputChange('mileageOrHours', e.target.value)}
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="pt-4 flex items-center justify-between">
                       <button
@@ -1367,7 +1463,7 @@
                     >
                       {LOCATIONS.map(loc => (
                         <option key={loc.id} value={loc.id}>
-                          {loc.name} — {loc.address}
+                          {loc.name}
                         </option>
                       ))}
                     </select>
@@ -1376,7 +1472,7 @@
                   {/* Recap */}
                   <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 text-xs space-y-1 text-neutral-400">
                     <p className="font-semibold text-neutral-200">Submission Summary:</p>
-                    <p>• {formData.year} {formData.make} {formData.model} ({formData.subcategory})</p>
+                    <p>• {category === 'container' ? `Purchased: ${formData.year} | Box ID: ${formData.vinOrSerial || 'Pending'} (${formData.subcategory})` : `${formData.year} ${formData.make} ${formData.model} (${formData.subcategory})`}</p>
                     <p>• Category: {activeCatConfig.label} | Condition: {formData.condition}</p>
                     <p>• Photos: {photos.length} attached</p>
                   </div>
@@ -2225,8 +2321,45 @@
       );
     }
 
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+      }
+      static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+      }
+      componentDidCatch(error, errorInfo) {
+        console.error('ErrorBoundary caught error:', error, errorInfo);
+      }
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-4">
+              <h2 className="text-xl font-bold">Submission Confirmed</h2>
+              <p className="text-xs text-neutral-400 max-w-md">Your inquiry has been received by our appraisal desk. If you need to make changes or submit another unit, click below.</p>
+              <button 
+                onClick={() => {
+                  try { localStorage.removeItem('sell2sr1_inquiries_v2'); } catch(e){}
+                  window.location.reload();
+                }} 
+                className="px-5 py-2.5 bg-neutral-100 text-neutral-950 font-bold rounded-xl text-xs hover:bg-white transition-all shadow-md"
+              >
+                Return to Home
+              </button>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
+
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    root.render(
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    );
   </script>
 </body>
 </html>
