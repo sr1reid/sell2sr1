@@ -169,32 +169,45 @@
     async function saveInquiryToCloudRest(inquiry) {
       try {
         let clean = JSON.parse(JSON.stringify(inquiry));
-        let body = { fields: jsonToFirestoreFields(clean).mapValue.fields };
-        let jsonStr = JSON.stringify(body);
 
-        // Safeguard: If high-res videos/photos exceed Firestore's 1MB document limit, use previews for cloud sync
-        if (jsonStr.length > 900000 && clean.photos && clean.photos.length > 0) {
-          clean.photos = clean.photos.map(p => ({
-            id: p.id,
-            label: p.label,
-            url: p.thumbUrl || p.url?.slice(0, 50000) || '',
-            thumbUrl: p.thumbUrl || '',
-            isVideo: !!p.isVideo,
-            fileSize: p.fileSize,
-            fileType: p.fileType,
-            uploadedAt: p.uploadedAt
-          }));
-          body = { fields: jsonToFirestoreFields(clean).mapValue.fields };
+        // Firestore strictly enforces a 1MB (1,048,576 byte) document limit.
+        // For cloud database sync, ensure all photo/video payloads use lightweight thumbnails (~40KB each).
+        if (clean.photos && Array.isArray(clean.photos)) {
+          clean.photos = clean.photos.map(p => {
+            const safeThumb = (p.thumbUrl && p.thumbUrl.length < 150000)
+              ? p.thumbUrl
+              : (p.url && p.url.length < 150000)
+              ? p.url
+              : '';
+            return {
+              id: p.id || 'p-' + Math.random().toString(36).substr(2, 6),
+              label: p.label || 'Unit Media',
+              url: safeThumb,
+              thumbUrl: safeThumb,
+              isVideo: !!p.isVideo,
+              fileSize: p.fileSize || 0,
+              fileType: p.fileType || (p.isVideo ? 'video/mp4' : 'image/jpeg'),
+              uploadedAt: p.uploadedAt || new Date().toISOString()
+            };
+          });
         }
 
+        const body = { fields: jsonToFirestoreFields(clean).mapValue.fields };
         const url = `${FS_REST_BASE}/${inquiry.id}?key=${FS_API_KEY}`;
-        await fetch(url, {
+        const res = await fetch(url, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
         });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          console.error('Firestore save failed with HTTP', res.status, errData);
+        } else {
+          console.log('Inquiry successfully saved to Firestore:', inquiry.referenceId);
+        }
       } catch (e) {
-        console.warn('Cloud REST save notice:', e);
+        console.error('Cloud REST save notice:', e);
       }
     }
 
@@ -718,24 +731,28 @@
         // 2. Firebase SDK save
         if (db) {
           try {
-            let sdkInq = cleanInquiry;
-            if (JSON.stringify(sdkInq).length > 900000 && sdkInq.photos) {
-              sdkInq = {
-                ...sdkInq,
-                photos: sdkInq.photos.map(p => ({
-                  id: p.id,
-                  label: p.label,
-                  url: p.thumbUrl || p.url?.slice(0, 50000) || '',
-                  thumbUrl: p.thumbUrl || '',
+            let sdkInq = JSON.parse(JSON.stringify(cleanInquiry));
+            if (sdkInq.photos && Array.isArray(sdkInq.photos)) {
+              sdkInq.photos = sdkInq.photos.map(p => {
+                const safeThumb = (p.thumbUrl && p.thumbUrl.length < 150000)
+                  ? p.thumbUrl
+                  : (p.url && p.url.length < 150000)
+                  ? p.url
+                  : '';
+                return {
+                  id: p.id || 'p-' + Math.random().toString(36).substr(2, 6),
+                  label: p.label || 'Unit Media',
+                  url: safeThumb,
+                  thumbUrl: safeThumb,
                   isVideo: !!p.isVideo,
-                  fileSize: p.fileSize,
-                  fileType: p.fileType,
-                  uploadedAt: p.uploadedAt
-                }))
-              };
+                  fileSize: p.fileSize || 0,
+                  fileType: p.fileType || (p.isVideo ? 'video/mp4' : 'image/jpeg'),
+                  uploadedAt: p.uploadedAt || new Date().toISOString()
+                };
+              });
             }
             db.collection('inquiries').doc(newInquiry.id).set(sdkInq)
-              .catch(err => console.warn('Firestore new inquiry save notice:', err));
+              .catch(err => console.warn('Firestore SDK save notice:', err));
           } catch (e) {
             console.warn('Firestore write error:', e);
           }
@@ -753,21 +770,25 @@
         // 2. Firebase SDK save
         if (db) {
           try {
-            let sdkInq = cleanUpdated;
-            if (JSON.stringify(sdkInq).length > 900000 && sdkInq.photos) {
-              sdkInq = {
-                ...sdkInq,
-                photos: sdkInq.photos.map(p => ({
-                  id: p.id,
-                  label: p.label,
-                  url: p.thumbUrl || p.url?.slice(0, 50000) || '',
-                  thumbUrl: p.thumbUrl || '',
+            let sdkInq = JSON.parse(JSON.stringify(cleanUpdated));
+            if (sdkInq.photos && Array.isArray(sdkInq.photos)) {
+              sdkInq.photos = sdkInq.photos.map(p => {
+                const safeThumb = (p.thumbUrl && p.thumbUrl.length < 150000)
+                  ? p.thumbUrl
+                  : (p.url && p.url.length < 150000)
+                  ? p.url
+                  : '';
+                return {
+                  id: p.id || 'p-' + Math.random().toString(36).substr(2, 6),
+                  label: p.label || 'Unit Media',
+                  url: safeThumb,
+                  thumbUrl: safeThumb,
                   isVideo: !!p.isVideo,
-                  fileSize: p.fileSize,
-                  fileType: p.fileType,
-                  uploadedAt: p.uploadedAt
-                }))
-              };
+                  fileSize: p.fileSize || 0,
+                  fileType: p.fileType || (p.isVideo ? 'video/mp4' : 'image/jpeg'),
+                  uploadedAt: p.uploadedAt || new Date().toISOString()
+                };
+              });
             }
             db.collection('inquiries').doc(updated.id).set(sdkInq, { merge: true })
               .catch(err => console.warn('Firestore update notice:', err));
@@ -1284,6 +1305,39 @@
         });
       };
 
+      // Generate optimized lightweight JPEG thumbnail for cloud database sync (~40KB)
+      const compressImageToDataUrl = (dataUrl, maxDim = 800, quality = 0.65) => {
+        return new Promise((resolve) => {
+          if (!dataUrl) return resolve('');
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              let w = img.width;
+              let h = img.height;
+              if (w > maxDim || h > maxDim) {
+                if (w > h) {
+                  h = Math.round((h * maxDim) / w);
+                  w = maxDim;
+                } else {
+                  w = Math.round((w * maxDim) / h);
+                  h = maxDim;
+                }
+              }
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, w, h);
+              resolve(canvas.toDataURL('image/jpeg', quality));
+            } catch (e) {
+              resolve('');
+            }
+          };
+          img.onerror = () => resolve('');
+          img.src = dataUrl;
+        });
+      };
+
       const processFiles = async (filesList) => {
         const files = Array.from(filesList || []).filter(file => 
           file.type.startsWith('image/') || 
@@ -1307,7 +1361,7 @@
                 {
                   id: mediaId,
                   url: videoDataUrl || thumbUrl || '',
-                  thumbUrl: thumbUrl || videoDataUrl || '',
+                  thumbUrl: thumbUrl || '',
                   isVideo: true,
                   fileSize: file.size,
                   fileType: file.type || 'video/mp4',
@@ -1316,15 +1370,16 @@
                 }
               ]);
             } else {
-              // Full quality photo with NO resolution cap
+              // Full quality photo with NO resolution cap + optimized cloud thumbnail
               const fullDataUrl = await readFileAsDataUrl(file);
+              const cloudThumb = await compressImageToDataUrl(fullDataUrl, 800, 0.65);
               if (fullDataUrl) {
                 setPhotos(prev => [
                   ...prev,
                   {
                     id: mediaId,
                     url: fullDataUrl,
-                    thumbUrl: fullDataUrl,
+                    thumbUrl: cloudThumb || fullDataUrl.slice(0, 50000),
                     isVideo: false,
                     fileSize: file.size,
                     fileType: file.type || 'image/jpeg',
