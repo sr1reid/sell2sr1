@@ -171,13 +171,12 @@
         let clean = JSON.parse(JSON.stringify(inquiry));
 
         // Firestore strictly enforces a 1MB (1,048,576 byte) document limit.
-        // For cloud database sync, ensure all photo/video payloads use lightweight thumbnails (~40KB each).
+        // For cloud database sync, ensure photo/video payloads use lightweight thumbnails (~20KB each, max 8 items).
         if (clean.photos && Array.isArray(clean.photos)) {
-          clean.photos = clean.photos.map(p => {
-            const safeThumb = (p.thumbUrl && p.thumbUrl.length < 150000)
-              ? p.thumbUrl
-              : (p.url && p.url.length < 150000)
-              ? p.url
+          clean.photos = clean.photos.slice(0, 8).map(p => {
+            const rawThumb = p.thumbUrl || p.url || '';
+            const safeThumb = (typeof rawThumb === 'string' && rawThumb.length < 75000)
+              ? rawThumb
               : '';
             return {
               id: p.id || 'p-' + Math.random().toString(36).substr(2, 6),
@@ -203,11 +202,14 @@
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           console.error('Firestore save failed with HTTP', res.status, errData);
+          return false;
         } else {
           console.log('Inquiry successfully saved to Firestore:', inquiry.referenceId);
+          return true;
         }
       } catch (e) {
         console.error('Cloud REST save notice:', e);
+        return false;
       }
     }
 
@@ -656,7 +658,11 @@
               label: p.label,
               url: (p.url && p.url.startsWith('data:') && p.url.length > 5000)
                 ? 'https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7?auto=format&fit=crop&w=1000&q=80'
-                : p.url
+                : p.url,
+              thumbUrl: (p.thumbUrl && p.thumbUrl.startsWith('data:') && p.thumbUrl.length > 5000)
+                ? 'https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7?auto=format&fit=crop&w=1000&q=80'
+                : (p.thumbUrl || p.url),
+              isVideo: !!p.isVideo
             }))
           }));
           localStorage.setItem('sell2sr1_inquiries_v2', JSON.stringify(safeInquiries));
@@ -718,7 +724,7 @@
         };
       }, []);
 
-      const handleNewInquiry = (newInquiry) => {
+      const handleNewInquiry = async (newInquiry) => {
         setInquiries(prev => [newInquiry, ...prev]);
         setLastSubmittedRef(newInquiry.referenceId);
 
@@ -726,18 +732,17 @@
         const cleanInquiry = JSON.parse(JSON.stringify(newInquiry));
 
         // 1. Direct REST save (Guaranteed delivery)
-        saveInquiryToCloudRest(cleanInquiry);
+        const saved = await saveInquiryToCloudRest(cleanInquiry);
 
         // 2. Firebase SDK save
         if (db) {
           try {
             let sdkInq = JSON.parse(JSON.stringify(cleanInquiry));
             if (sdkInq.photos && Array.isArray(sdkInq.photos)) {
-              sdkInq.photos = sdkInq.photos.map(p => {
-                const safeThumb = (p.thumbUrl && p.thumbUrl.length < 150000)
-                  ? p.thumbUrl
-                  : (p.url && p.url.length < 150000)
-                  ? p.url
+              sdkInq.photos = sdkInq.photos.slice(0, 8).map(p => {
+                const rawThumb = p.thumbUrl || p.url || '';
+                const safeThumb = (typeof rawThumb === 'string' && rawThumb.length < 75000)
+                  ? rawThumb
                   : '';
                 return {
                   id: p.id || 'p-' + Math.random().toString(36).substr(2, 6),
@@ -757,26 +762,26 @@
             console.warn('Firestore write error:', e);
           }
         }
+        return saved;
       };
 
-      const handleUpdateInquiry = (updated) => {
+      const handleUpdateInquiry = async (updated) => {
         setInquiries(prev => prev.map(item => item.id === updated.id ? updated : item));
 
         const cleanUpdated = JSON.parse(JSON.stringify(updated));
 
         // 1. Direct REST save
-        saveInquiryToCloudRest(cleanUpdated);
+        await saveInquiryToCloudRest(cleanUpdated);
 
         // 2. Firebase SDK save
         if (db) {
           try {
             let sdkInq = JSON.parse(JSON.stringify(cleanUpdated));
             if (sdkInq.photos && Array.isArray(sdkInq.photos)) {
-              sdkInq.photos = sdkInq.photos.map(p => {
-                const safeThumb = (p.thumbUrl && p.thumbUrl.length < 150000)
-                  ? p.thumbUrl
-                  : (p.url && p.url.length < 150000)
-                  ? p.url
+              sdkInq.photos = sdkInq.photos.slice(0, 8).map(p => {
+                const rawThumb = p.thumbUrl || p.url || '';
+                const safeThumb = (typeof rawThumb === 'string' && rawThumb.length < 75000)
+                  ? rawThumb
                   : '';
                 return {
                   id: p.id || 'p-' + Math.random().toString(36).substr(2, 6),
@@ -1194,73 +1199,147 @@
         setFormData(prev => ({ ...prev, [field]: value }));
       };
 
-      // Reads file at 100% native resolution with NO resolution cap
-      const readFileAsDataUrl = (file) => {
+      // Generates a crisp, lightweight JPEG thumbnail (~20KB) directly from a File or Blob
+      const compressImageFile = (file, maxDim = 480, quality = 0.55) => {
         return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target.result);
-          reader.onerror = () => resolve(null);
-          reader.readAsDataURL(file);
+          if (!file) return resolve('');
+          let objectUrl = '';
+          try {
+            objectUrl = URL.createObjectURL(file);
+          } catch (e) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              compressImageToDataUrl(ev.target.result, maxDim, quality).then(resolve);
+            };
+            reader.onerror = () => resolve('');
+            reader.readAsDataURL(file);
+            return;
+          }
+
+          const img = new Image();
+          const cleanup = () => {
+            if (objectUrl) {
+              try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+            }
+          };
+
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              let w = img.width || 480;
+              let h = img.height || 360;
+              if (w > maxDim || h > maxDim) {
+                if (w > h) {
+                  h = Math.round((h * maxDim) / w);
+                  w = maxDim;
+                } else {
+                  w = Math.round((w * maxDim) / h);
+                  h = maxDim;
+                }
+              }
+              canvas.width = Math.max(1, w);
+              canvas.height = Math.max(1, h);
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              cleanup();
+              resolve(canvas.toDataURL('image/jpeg', quality));
+            } catch (err) {
+              cleanup();
+              resolve('');
+            }
+          };
+
+          img.onerror = () => {
+            cleanup();
+            try {
+              const reader = new FileReader();
+              reader.onload = (ev) => {
+                const res = ev.target.result;
+                if (typeof res === 'string' && res.startsWith('data:image/')) {
+                  compressImageToDataUrl(res, maxDim, quality).then(resolve);
+                } else {
+                  resolve('');
+                }
+              };
+              reader.onerror = () => resolve('');
+              reader.readAsDataURL(file);
+            } catch (e) {
+              resolve('');
+            }
+          };
+
+          img.src = objectUrl;
         });
       };
 
-      // Extract a thumbnail preview from a video file
+      // Extract a lightweight thumbnail preview (~20KB) from a video file
       const extractVideoThumbnail = (file) => {
         return new Promise((resolve) => {
+          let objectUrl = '';
           try {
-            const video = document.createElement('video');
-            video.preload = 'metadata';
-            video.muted = true;
-            video.playsInline = true;
-            const url = URL.createObjectURL(file);
-            video.src = url;
-
-            const timer = setTimeout(() => {
-              URL.revokeObjectURL(url);
-              resolve(null);
-            }, 6000);
-
-            video.onloadedmetadata = () => {
-              video.currentTime = Math.min(1.0, video.duration > 0 ? video.duration * 0.2 : 0.5);
-            };
-
-            video.onseeked = () => {
-              clearTimeout(timer);
-              try {
-                const canvas = document.createElement('canvas');
-                const maxDim = 800;
-                let w = video.videoWidth || 640;
-                let h = video.videoHeight || 360;
-                if (w > maxDim || h > maxDim) {
-                  if (w > h) {
-                    h = Math.round((h * maxDim) / w);
-                    w = maxDim;
-                  } else {
-                    w = Math.round((w * maxDim) / h);
-                    h = maxDim;
-                  }
-                }
-                canvas.width = w;
-                canvas.height = h;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, w, h);
-                const thumbData = canvas.toDataURL('image/jpeg', 0.8);
-                URL.revokeObjectURL(url);
-                resolve(thumbData);
-              } catch (e) {
-                URL.revokeObjectURL(url);
-                resolve(null);
-              }
-            };
-
-            video.onerror = () => {
-              clearTimeout(timer);
-              URL.revokeObjectURL(url);
-              resolve(null);
-            };
+            objectUrl = URL.createObjectURL(file);
           } catch (e) {
-            resolve(null);
+            return resolve('');
           }
+
+          const video = document.createElement('video');
+          video.preload = 'metadata';
+          video.muted = true;
+          video.playsInline = true;
+
+          let cleaned = false;
+          const cleanup = () => {
+            if (cleaned) return;
+            cleaned = true;
+            if (objectUrl) {
+              try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+            }
+          };
+
+          const timer = setTimeout(() => {
+            cleanup();
+            resolve('');
+          }, 6000);
+
+          video.onloadedmetadata = () => {
+            video.currentTime = Math.min(1.0, video.duration > 0 ? video.duration * 0.2 : 0.5);
+          };
+
+          video.onseeked = () => {
+            clearTimeout(timer);
+            try {
+              const canvas = document.createElement('canvas');
+              const maxDim = 480;
+              let w = video.videoWidth || 480;
+              let h = video.videoHeight || 270;
+              if (w > maxDim || h > maxDim) {
+                if (w > h) {
+                  h = Math.round((h * maxDim) / w);
+                  w = maxDim;
+                } else {
+                  w = Math.round((w * maxDim) / h);
+                  h = maxDim;
+                }
+              }
+              canvas.width = Math.max(1, w);
+              canvas.height = Math.max(1, h);
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              cleanup();
+              resolve(canvas.toDataURL('image/jpeg', 0.55));
+            } catch (e) {
+              cleanup();
+              resolve('');
+            }
+          };
+
+          video.onerror = () => {
+            clearTimeout(timer);
+            cleanup();
+            resolve('');
+          };
+
+          video.src = objectUrl;
         });
       };
 
@@ -1271,9 +1350,9 @@
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const maxDim = 800; // Reduced size for fast email delivery
-            let w = img.width;
-            let h = img.height;
+            const maxDim = 480; // Reduced size for fast email delivery
+            let w = img.width || 480;
+            let h = img.height || 360;
             if (w > maxDim || h > maxDim) {
               if (w > h) {
                 h = Math.round((h * maxDim) / w);
@@ -1283,38 +1362,38 @@
                 h = maxDim;
               }
             }
-            canvas.width = w;
-            canvas.height = h;
+            canvas.width = Math.max(1, w);
+            canvas.height = Math.max(1, h);
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
             if (isVideo) {
               ctx.fillStyle = 'rgba(0,0,0,0.65)';
-              ctx.fillRect(8, h - 30, 130, 22);
+              ctx.fillRect(8, canvas.height - 30, 130, 22);
               ctx.fillStyle = '#ffffff';
               ctx.font = 'bold 10px sans-serif';
-              ctx.fillText('▶ VIDEO PREVIEW', 14, h - 15);
+              ctx.fillText('▶ VIDEO PREVIEW', 14, canvas.height - 15);
             }
 
             canvas.toBlob((blob) => {
               resolve(blob);
-            }, 'image/jpeg', 0.70);
+            }, 'image/jpeg', 0.65);
           };
           img.onerror = () => resolve(null);
           img.src = dataUrlOrUrl;
         });
       };
 
-      // Generate optimized lightweight JPEG thumbnail for cloud database sync (~40KB)
-      const compressImageToDataUrl = (dataUrl, maxDim = 800, quality = 0.65) => {
+      // Generate optimized lightweight JPEG thumbnail for cloud database sync (~20KB)
+      const compressImageToDataUrl = (dataUrl, maxDim = 480, quality = 0.55) => {
         return new Promise((resolve) => {
           if (!dataUrl) return resolve('');
           const img = new Image();
           img.onload = () => {
             try {
               const canvas = document.createElement('canvas');
-              let w = img.width;
-              let h = img.height;
+              let w = img.width || 480;
+              let h = img.height || 360;
               if (w > maxDim || h > maxDim) {
                 if (w > h) {
                   h = Math.round((h * maxDim) / w);
@@ -1324,10 +1403,10 @@
                   h = maxDim;
                 }
               }
-              canvas.width = w;
-              canvas.height = h;
+              canvas.width = Math.max(1, w);
+              canvas.height = Math.max(1, h);
               const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, w, h);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
               resolve(canvas.toDataURL('image/jpeg', quality));
             } catch (e) {
               resolve('');
@@ -1355,34 +1434,33 @@
 
             if (isVideo) {
               const thumbUrl = await extractVideoThumbnail(file);
-              const videoDataUrl = await readFileAsDataUrl(file);
-              setPhotos(prev => [
-                ...prev,
-                {
-                  id: mediaId,
-                  url: videoDataUrl || thumbUrl || '',
-                  thumbUrl: thumbUrl || '',
-                  isVideo: true,
-                  fileSize: file.size,
-                  fileType: file.type || 'video/mp4',
-                  label: label,
-                  uploadedAt: new Date().toISOString()
-                }
-              ]);
-            } else {
-              // Full quality photo with NO resolution cap + optimized cloud thumbnail
-              const fullDataUrl = await readFileAsDataUrl(file);
-              const cloudThumb = await compressImageToDataUrl(fullDataUrl, 800, 0.65);
-              if (fullDataUrl) {
+              if (thumbUrl) {
                 setPhotos(prev => [
                   ...prev,
                   {
                     id: mediaId,
-                    url: fullDataUrl,
-                    thumbUrl: cloudThumb || fullDataUrl.slice(0, 50000),
+                    url: thumbUrl,
+                    thumbUrl: thumbUrl,
+                    isVideo: true,
+                    fileSize: file.size,
+                    fileType: file.type || 'video/mp4',
+                    label: label,
+                    uploadedAt: new Date().toISOString()
+                  }
+                ]);
+              }
+            } else {
+              const thumbUrl = await compressImageFile(file, 480, 0.55);
+              if (thumbUrl) {
+                setPhotos(prev => [
+                  ...prev,
+                  {
+                    id: mediaId,
+                    url: thumbUrl,
+                    thumbUrl: thumbUrl,
                     isVideo: false,
                     fileSize: file.size,
-                    fileType: file.type || 'image/jpeg',
+                    fileType: 'image/jpeg',
                     label: label,
                     uploadedAt: new Date().toISOString()
                   }
@@ -1527,7 +1605,7 @@
           ]
         };
 
-        onSubmit(newInquiry);
+        await onSubmit(newInquiry);
         setSubmittedInquiry(newInquiry);
 
         // Send email notification to dealership team and confirmation copy to submitter
@@ -3075,7 +3153,7 @@
       const [offerNotes, setOfferNotes] = useState(inquiry.offers?.[0]?.notes || 'Subject to physical inspection and title verification.');
       const [newNoteText, setNewNoteText] = useState('');
       const [activeMedia, setActiveMedia] = useState(inquiry.photos?.[0] || null);
-      const [activePhoto, setActivePhoto] = useState(inquiry.photos?.[0]?.url);
+      const [activePhoto, setActivePhoto] = useState(inquiry.photos?.[0]?.url || inquiry.photos?.[0]?.thumbUrl || '');
       const [outreachStaffName, setOutreachStaffName] = useState(inquiry.outreach?.staffName || '');
       const [reachedOut, setReachedOut] = useState(inquiry.outreach?.reachedOut || false);
       const [reachedOutAt, setReachedOutAt] = useState(inquiry.outreach?.reachedOutAt || null);
@@ -3367,14 +3445,20 @@
                       Photos & Videos ({inquiry.photos?.length || 0})
                     </span>
                     {activePhoto && (
-                      <a
-                        href={activePhoto}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-neutral-400 hover:text-white underline flex items-center gap-1"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (activePhoto) {
+                            const w = window.open('');
+                            if (w) {
+                              w.document.write(`<!DOCTYPE html><html><head><title>SR1 Media Preview</title></head><body style="margin:0;background:#0a0a0a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${activePhoto}" style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,0.8);"/></body></html>`);
+                            }
+                          }
+                        }}
+                        className="text-[10px] text-neutral-400 hover:text-white underline flex items-center gap-1 cursor-pointer bg-transparent border-0 p-0"
                       >
-                        Full Resolution Original ↗
-                      </a>
+                        View Full Size ↗
+                      </button>
                     )}
                   </div>
                   <div className="rounded-xl overflow-hidden aspect-video bg-black border border-neutral-800 flex items-center justify-center relative">
@@ -3396,12 +3480,13 @@
                   </div>
                   <div className="flex space-x-2 overflow-x-auto pb-1">
                     {(inquiry.photos || []).map(p => {
-                      const isSelected = activePhoto === p.url;
+                      const currentSrc = p.url || p.thumbUrl;
+                      const isSelected = activePhoto === currentSrc;
                       return (
                         <button
                           key={p.id}
                           onClick={() => {
-                            setActivePhoto(p.url);
+                            setActivePhoto(currentSrc);
                             setActiveMedia(p);
                           }}
                           className={`flex-shrink-0 w-16 h-12 rounded border relative overflow-hidden bg-neutral-900 ${isSelected ? 'border-neutral-200 ring-1 ring-white' : 'border-neutral-800 opacity-60'}`}
