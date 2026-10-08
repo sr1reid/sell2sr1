@@ -52,9 +52,10 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Google Firebase SDKs (Real-Time Cloud Sync) -->
+  <!-- Google Firebase SDKs (Real-Time Cloud Sync & Storage) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -102,6 +103,7 @@
     };
 
     let db = null;
+    let storage = null;
     try {
       if (typeof firebase !== 'undefined') {
         const app = (!firebase.apps || !firebase.apps.length)
@@ -116,9 +118,53 @@
             db = firebase.firestore();
           }
         }
+        try {
+          storage = app.storage ? app.storage() : firebase.storage();
+        } catch (e3) {
+          try {
+            storage = firebase.storage();
+          } catch (e4) {
+            console.warn('Firebase Storage initialization notice:', e4);
+          }
+        }
       }
     } catch (err) {
       console.warn('Firebase initialization notice:', err);
+    }
+
+    // Direct Firebase Cloud Storage upload for raw photos and videos
+    async function uploadMediaFileToStorage(file) {
+      try {
+        if (!storage && typeof firebase !== 'undefined' && firebase.storage) {
+          try { storage = firebase.storage(); } catch (e) {}
+        }
+        if (!storage) {
+          throw new Error('Firebase Storage not available');
+        }
+
+        const ext = file.name ? file.name.split('.').pop().toLowerCase() : (file.type?.startsWith('video/') ? 'mp4' : 'jpg');
+        const cleanName = (file.name || 'upload')
+          .replace(/[^a-zA-Z0-9._-]/g, '_')
+          .toLowerCase();
+        const path = `inquiries/${Date.now()}_${Math.random().toString(36).substr(2, 6)}_${cleanName}`;
+        const ref = storage.ref(path);
+        
+        let contentType = file.type || '';
+        if (!contentType) {
+          if (ext === 'heic' || ext === 'heif') contentType = 'image/heic';
+          else if (ext === 'mov') contentType = 'video/quicktime';
+          else if (ext === 'mp4') contentType = 'video/mp4';
+          else contentType = 'image/jpeg';
+        }
+
+        const metadata = { contentType };
+        const snapshot = await ref.put(file, metadata);
+        const downloadUrl = await snapshot.ref.getDownloadURL();
+        return downloadUrl;
+      } catch (err) {
+        console.warn('Firebase Storage upload error:', err);
+        return null;
+      }
     }
 
     // Convert JavaScript object to Firestore REST typed format
@@ -171,18 +217,18 @@
         let clean = JSON.parse(JSON.stringify(inquiry));
 
         // Firestore strictly enforces a 1MB (1,048,576 byte) document limit.
-        // For cloud database sync, ensure photo/video payloads use lightweight thumbnails (~20KB each, max 8 items).
         if (clean.photos && Array.isArray(clean.photos)) {
-          clean.photos = clean.photos.slice(0, 8).map(p => {
+          clean.photos = clean.photos.slice(0, 12).map(p => {
+            const isHttp = (p.url && typeof p.url === 'string' && p.url.startsWith('http'));
             const rawThumb = p.thumbUrl || p.url || '';
-            const safeThumb = (typeof rawThumb === 'string' && rawThumb.length < 75000)
-              ? rawThumb
-              : '';
+            const safeThumb = isHttp 
+              ? p.url 
+              : (typeof rawThumb === 'string' && rawThumb.length < 75000 ? rawThumb : '');
             return {
               id: p.id || 'p-' + Math.random().toString(36).substr(2, 6),
               label: p.label || 'Unit Media',
-              url: safeThumb,
-              thumbUrl: safeThumb,
+              url: isHttp ? p.url : safeThumb,
+              thumbUrl: isHttp ? (p.thumbUrl || p.url) : safeThumb,
               isVideo: !!p.isVideo,
               fileSize: p.fileSize || 0,
               fileType: p.fileType || (p.isVideo ? 'video/mp4' : 'image/jpeg'),
@@ -1179,6 +1225,7 @@
 
       const [photos, setPhotos] = useState([]);
       const [uploading, setUploading] = useState(false);
+      const [uploadStatus, setUploadStatus] = useState('');
       const [isDragging, setIsDragging] = useState(false);
 
       const activeCatConfig = CATEGORIES[category] || CATEGORIES.rv;
@@ -1426,45 +1473,72 @@
         if (files.length === 0) return;
         setUploading(true);
 
-        for (const file of files) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
           try {
+            setUploadStatus(`Uploading file ${i + 1} of ${files.length}...`);
             const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name);
             const mediaId = 'm-' + Math.random().toString(36).substr(2, 9);
             const label = file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo');
 
-            if (isVideo) {
-              const thumbUrl = await extractVideoThumbnail(file);
-              if (thumbUrl) {
-                setPhotos(prev => [
-                  ...prev,
-                  {
-                    id: mediaId,
-                    url: thumbUrl,
-                    thumbUrl: thumbUrl,
-                    isVideo: true,
-                    fileSize: file.size,
-                    fileType: file.type || 'video/mp4',
-                    label: label,
-                    uploadedAt: new Date().toISOString()
-                  }
-                ]);
-              }
+            // 1. Direct upload to Firebase Cloud Storage bucket
+            let cloudUrl = null;
+            try {
+              cloudUrl = await uploadMediaFileToStorage(file);
+            } catch (storageErr) {
+              console.warn('Storage upload notice, falling back:', storageErr);
+            }
+
+            if (cloudUrl) {
+              setPhotos(prev => [
+                ...prev,
+                {
+                  id: mediaId,
+                  url: cloudUrl,
+                  thumbUrl: cloudUrl,
+                  isVideo: isVideo,
+                  fileSize: file.size,
+                  fileType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
+                  label: label,
+                  uploadedAt: new Date().toISOString()
+                }
+              ]);
             } else {
-              const thumbUrl = await compressImageFile(file, 480, 0.55);
-              if (thumbUrl) {
-                setPhotos(prev => [
-                  ...prev,
-                  {
-                    id: mediaId,
-                    url: thumbUrl,
-                    thumbUrl: thumbUrl,
-                    isVideo: false,
-                    fileSize: file.size,
-                    fileType: 'image/jpeg',
-                    label: label,
-                    uploadedAt: new Date().toISOString()
-                  }
-                ]);
+              // 2. Client-side fallback if storage bucket was unreachable
+              if (isVideo) {
+                const thumbUrl = await extractVideoThumbnail(file);
+                if (thumbUrl) {
+                  setPhotos(prev => [
+                    ...prev,
+                    {
+                      id: mediaId,
+                      url: thumbUrl,
+                      thumbUrl: thumbUrl,
+                      isVideo: true,
+                      fileSize: file.size,
+                      fileType: file.type || 'video/mp4',
+                      label: label,
+                      uploadedAt: new Date().toISOString()
+                    }
+                  ]);
+                }
+              } else {
+                const thumbUrl = await compressImageFile(file, 480, 0.55);
+                if (thumbUrl) {
+                  setPhotos(prev => [
+                    ...prev,
+                    {
+                      id: mediaId,
+                      url: thumbUrl,
+                      thumbUrl: thumbUrl,
+                      isVideo: false,
+                      fileSize: file.size,
+                      fileType: 'image/jpeg',
+                      label: label,
+                      uploadedAt: new Date().toISOString()
+                    }
+                  ]);
+                }
               }
             }
           } catch (err) {
@@ -1472,6 +1546,7 @@
           }
         }
         setUploading(false);
+        setUploadStatus('');
       };
 
       const handleFileSelect = async (e) => {
@@ -2310,7 +2385,10 @@
                         Choose Photos & Videos
                       </label>
                       {uploading && (
-                        <p className="text-xs text-amber-400 mt-2 font-medium">Processing full-quality media...</p>
+                        <p className="text-xs text-amber-400 mt-2 font-medium animate-pulse flex items-center justify-center gap-1.5">
+                          <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                          {uploadStatus || 'Uploading photos & videos to cloud storage...'}
+                        </p>
                       )}
                     </div>
 
@@ -2365,7 +2443,12 @@
                     </button>
                     <button
                       type="button"
+                      disabled={uploading}
                       onClick={() => {
+                        if (uploading) {
+                          alert('Please wait for photos to finish uploading to cloud storage before continuing.');
+                          return;
+                        }
                         if (!formData.conditionNotes.trim()) {
                           alert('Please describe the condition of the unit and any flaws or issues');
                           return;
@@ -2376,9 +2459,13 @@
                         }
                         setStep(4);
                       }}
-                      className="px-6 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
+                      className={`px-6 py-3 font-bold text-xs rounded-xl transition-all ${
+                        uploading 
+                          ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700' 
+                          : 'bg-neutral-100 hover:bg-white text-neutral-950'
+                      }`}
                     >
-                      Continue to Location & Contact →
+                      {uploading ? 'Uploading Media...' : 'Continue to Location & Contact →'}
                     </button>
                   </div>
                 </div>
@@ -2504,9 +2591,14 @@
                     </button>
                     <button
                       type="submit"
-                      className="px-8 py-3.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-xl text-xs transition-all"
+                      disabled={uploading}
+                      className={`px-8 py-3.5 font-bold rounded-xl text-xs transition-all ${
+                        uploading 
+                          ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700' 
+                          : 'bg-neutral-100 hover:bg-white text-neutral-950'
+                      }`}
                     >
-                      Submit for Cash Valuation →
+                      {uploading ? 'Uploading Media...' : 'Submit for Cash Valuation →'}
                     </button>
                   </div>
                 </div>
