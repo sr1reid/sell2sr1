@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
   <title>sell2sr1.com | SR1 Companies Vehicle & Equipment Acquisition</title>
   <meta name="description" content="Sell your RVs, trailers, tractors, heavy equipment, powersports, motorcycles, boats, and shipping containers directly to SR1 Companies. Locations throughout Maine and New Hampshire.">
   <!-- Progressive Web App / Mobile App Meta Tags (iPhone & Android) -->
@@ -70,6 +70,7 @@
       padding: 0;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
+      touch-action: manipulation;
     }
     #root {
       overflow-x: hidden;
@@ -92,11 +93,13 @@
       background: #27272a;
       border-radius: 3px;
     }
-    /* Prevent iOS Safari from auto-zooming when tapping form inputs */
-    @media screen and (max-width: 768px) {
-      input, select, textarea {
-        font-size: 16px !important;
-      }
+    /* CRITICAL: Force minimum 16px on ALL inputs, selects, textareas to permanently eliminate iOS Safari auto-zoom */
+    input, select, textarea,
+    input[type="text"], input[type="number"], input[type="email"], input[type="tel"], input[type="search"],
+    input:focus, select:focus, textarea:focus,
+    .text-xs input, input.text-xs, .text-sm input, input.text-sm {
+      font-size: 16px !important;
+      -webkit-text-size-adjust: 100% !important;
     }
   </style>
 </head>
@@ -104,7 +107,29 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useMemo } = React;
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // --- BULLETPROOF IOS SAFARI AUTO-ZOOM SHIELD ---
+    if (typeof window !== 'undefined') {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      if (isIOS) {
+        // Enforce maximum-scale=1.0 on touchstart of any form input
+        document.addEventListener('touchstart', (e) => {
+          if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) {
+            const vp = document.querySelector('meta[name="viewport"]');
+            if (vp) {
+              vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover');
+            }
+          }
+        }, { passive: true });
+        // Cleanly reset any unwanted horizontal viewport offset when exiting inputs
+        document.addEventListener('focusout', (e) => {
+          if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target?.tagName)) {
+            window.scrollTo({ left: 0, top: window.pageYOffset });
+          }
+        });
+      }
+    }
 
     // --- FIREBASE INITIALIZATION & FIRESTORE CLOUD DATABASE ---
     const FS_PROJECT_ID = 'sell2sr1';
@@ -1267,6 +1292,29 @@
         setFormData(prev => ({ ...prev, [field]: value }));
       };
 
+      // Auto-scroll view back up to the start of the next page/step on step changes
+      const isFirstStepMount = useRef(true);
+      useEffect(() => {
+        if (isFirstStepMount.current) {
+          isFirstStepMount.current = false;
+          return;
+        }
+        const target = document.getElementById('sell-form-card');
+        if (target) {
+          const yOffset = -75; // sticky header spacing
+          const y = target.getBoundingClientRect().top + window.pageYOffset + yOffset;
+          window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+        } else {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }, [step]);
+
+      useEffect(() => {
+        if (submittedInquiry) {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }, [submittedInquiry]);
+
       // Generates a crisp, lightweight JPEG thumbnail (~20KB) directly from a File or Blob
       const compressImageFile = (file, maxDim = 480, quality = 0.55) => {
         return new Promise((resolve) => {
@@ -1930,7 +1978,7 @@
             </div>
 
             {/* NEUTRAL STEPPER */}
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-2.5 sm:p-3 mb-8">
+            <div id="sell-form-card" className="bg-neutral-900 border border-neutral-800 rounded-xl p-2.5 sm:p-3 mb-8">
               <div className="grid grid-cols-4 gap-1 sm:gap-2 text-center text-[10px] sm:text-xs font-semibold">
                 <div className={`py-2 px-1 rounded-lg transition-all ${step >= 1 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
                   <span>1. Category</span>
@@ -2068,7 +2116,7 @@
                               required
                               value={formData.salespersonName}
                               onChange={(e) => handleInputChange('salespersonName', e.target.value)}
-                              className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                              className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                             />
                             <p className="text-[11px] text-neutral-500 mt-1">
                               We will connect this appraisal directly to your salesperson's deal file.
@@ -2130,7 +2178,7 @@
                             required
                             value={formData.year}
                             onChange={(e) => handleInputChange('year', e.target.value)}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
 
@@ -2144,7 +2192,7 @@
                             required
                             value={formData.vinOrSerial}
                             onChange={(e) => handleInputChange('vinOrSerial', e.target.value.toUpperCase())}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
                       </div>
@@ -2160,7 +2208,7 @@
                             required
                             value={formData.year}
                             onChange={(e) => handleInputChange('year', e.target.value)}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
 
@@ -2172,7 +2220,7 @@
                             required
                             value={formData.make}
                             onChange={(e) => handleInputChange('make', e.target.value)}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
 
@@ -2184,7 +2232,7 @@
                             required
                             value={formData.model}
                             onChange={(e) => handleInputChange('model', e.target.value)}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
 
@@ -2198,7 +2246,7 @@
                             required
                             value={formData.vinOrSerial}
                             onChange={(e) => handleInputChange('vinOrSerial', e.target.value.toUpperCase())}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
 
@@ -2212,7 +2260,7 @@
                               required
                               value={formData.mileageOrHours}
                               onChange={(e) => handleInputChange('mileageOrHours', e.target.value)}
-                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                             />
                           </div>
                         )}
@@ -2227,7 +2275,7 @@
                               required
                               value={formData.mileageOrHours}
                               onChange={(e) => handleInputChange('mileageOrHours', e.target.value)}
-                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                             />
                           </div>
                         )}
@@ -2322,7 +2370,7 @@
                       required
                       value={formData.conditionNotes}
                       onChange={(e) => handleInputChange('conditionNotes', e.target.value)}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                     ></textarea>
                   </div>
 
@@ -2333,7 +2381,7 @@
                       <select
                         value={formData.titleStatus}
                         onChange={(e) => handleInputChange('titleStatus', e.target.value)}
-                        className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-xs font-medium"
+                        className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-base sm:text-sm font-medium"
                       >
                         <option value="owned_not_titleable">Owned outright - not titleable</option>
                         <option value="owned_clean_title">Owned outright - clean title in hand</option>
@@ -2353,7 +2401,7 @@
                           required
                           value={formData.estimatedPayoff}
                           onChange={(e) => handleInputChange('estimatedPayoff', e.target.value)}
-                          className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-xs"
+                          className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-base sm:text-sm"
                         />
                       </div>
                     )}
@@ -2509,7 +2557,7 @@
                         required
                         value={formData.firstName}
                         onChange={(e) => handleInputChange('firstName', e.target.value)}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                       />
                     </div>
 
@@ -2520,7 +2568,7 @@
                         required
                         value={formData.lastName}
                         onChange={(e) => handleInputChange('lastName', e.target.value)}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                       />
                     </div>
                   </div>
@@ -2534,7 +2582,7 @@
                         required
                         value={formData.phone}
                         onChange={(e) => handleInputChange('phone', e.target.value)}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                       />
                     </div>
 
@@ -2545,7 +2593,7 @@
                         required
                         value={formData.email}
                         onChange={(e) => handleInputChange('email', e.target.value)}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                       />
                     </div>
                   </div>
@@ -2559,7 +2607,7 @@
                       required
                       value={formData.preferredLocation}
                       onChange={(e) => handleInputChange('preferredLocation', e.target.value)}
-                      className={`w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-xs font-semibold focus:ring-1 focus:ring-neutral-400 focus:outline-none ${
+                      className={`w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-base sm:text-sm font-semibold focus:ring-1 focus:ring-neutral-400 focus:outline-none ${
                         !formData.preferredLocation ? 'text-neutral-500' : 'text-white'
                       }`}
                     >
@@ -2745,7 +2793,7 @@
                         required 
                         value={formData.name} 
                         onChange={(e) => setFormData({...formData, name: e.target.value})}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                       />
                     </div>
                     <div>
@@ -2755,7 +2803,7 @@
                         required 
                         value={formData.email} 
                         onChange={(e) => setFormData({...formData, email: e.target.value})}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                       />
                     </div>
                   </div>
@@ -2767,7 +2815,7 @@
                         type="tel" 
                         value={formData.phone} 
                         onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                       />
                     </div>
                     <div>
@@ -2775,7 +2823,7 @@
                       <select 
                         value={formData.unitType} 
                         onChange={(e) => setFormData({...formData, unitType: e.target.value})}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                       >
                         <option value="General Question">General Question</option>
                         <option value="Cash Offer Inquiry">Cash Offer Question</option>
@@ -2794,7 +2842,7 @@
                       value={formData.message} 
                       onChange={(e) => setFormData({...formData, message: e.target.value})}
                       placeholder="Type your question or details about your unit here..." 
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-xs focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                     ></textarea>
                   </div>
 
