@@ -1830,50 +1830,7 @@
             _replyto: formData.email
           };
 
-          // Generate reduced-size preview blobs (max 3 items) for fast email delivery
-          const previewBlobs = [];
-          if (photos.length > 0) {
-            const previewItems = photos.slice(0, 3);
-            for (let i = 0; i < previewItems.length; i++) {
-              const item = previewItems[i];
-              try {
-                const blob = await createEmailPreviewBlob(item.thumbUrl || item.url, item.isVideo);
-                if (blob) {
-                  previewBlobs.push({
-                    blob,
-                    filename: item.isVideo ? `preview_${i + 1}_video.jpg` : `preview_${i + 1}.jpg`
-                  });
-                }
-              } catch (e) {
-                console.warn('Preview blob error:', e);
-              }
-            }
-          }
-
-          const emailFormData = new FormData();
-          for (const [key, val] of Object.entries(appraisalPayload)) {
-            emailFormData.append(key, val);
-          }
-
-          if (ccEmails.length > 0) {
-            emailFormData.append('_cc', ccEmails.join(','));
-          }
-
-          // Attach reduced-size preview images (max 3)
-          previewBlobs.forEach((p, idx) => {
-            emailFormData.append(`attachment_${idx + 1}`, p.blob, p.filename);
-          });
-
-          // 1. Dispatch appraisal alert to dealership-specific team with attached preview images
-          fetch(`https://formsubmit.co/ajax/${encodeURIComponent(primaryEmail)}`, {
-            method: 'POST',
-            headers: { 
-              'Accept': 'application/json'
-            },
-            body: emailFormData
-          }).catch(err => console.error('Appraisal email dispatch error:', err));
-
-          // 2. Dispatch professional branded confirmation email to customer from appraisals@sr1companies.com
+          // 1. Dispatch professional branded confirmation email to customer from appraisals@sr1companies.com immediately
           if (formData.email && formData.email.includes('@')) {
             const confirmationPayload = {
               referenceId: refId,
@@ -1911,6 +1868,7 @@
             })
             .then(res => res.json())
             .then(resData => {
+              console.log('Confirmation email result:', resData);
               // If the Cloudflare function detects no API key configured yet, gracefully fall back
               if (resData && resData.warning) {
                 console.warn('API key not set for /api/send-confirmation, falling back to FormSubmit receipt.');
@@ -1934,7 +1892,6 @@
             })
             .catch(err => {
               console.error('Confirmation email API error, falling back:', err);
-              // Graceful fallback if running in dev environment without Cloudflare functions
               fetch(`https://formsubmit.co/ajax/${encodeURIComponent(formData.email.trim())}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -1953,6 +1910,39 @@
               }).catch(e => console.error('Fallback receipt error:', e));
             });
           }
+
+          // 2. Build email FormData and dispatch internal appraisal alert
+          const emailFormData = new FormData();
+          for (const [key, val] of Object.entries(appraisalPayload)) {
+            emailFormData.append(key, val);
+          }
+
+          if (ccEmails.length > 0) {
+            emailFormData.append('_cc', ccEmails.join(','));
+          }
+
+          if (photos.length > 0) {
+            const previewItems = photos.slice(0, 3);
+            for (let i = 0; i < previewItems.length; i++) {
+              const item = previewItems[i];
+              try {
+                const blob = await createEmailPreviewBlob(item.thumbUrl || item.url, item.isVideo);
+                if (blob) {
+                  emailFormData.append(`attachment_${i + 1}`, blob, item.isVideo ? `preview_${i + 1}_video.jpg` : `preview_${i + 1}.jpg`);
+                }
+              } catch (e) {
+                console.warn('Preview blob error:', e);
+              }
+            }
+          }
+
+          fetch(`https://formsubmit.co/ajax/${encodeURIComponent(primaryEmail)}`, {
+            method: 'POST',
+            headers: { 
+              'Accept': 'application/json'
+            },
+            body: emailFormData
+          }).catch(err => console.error('Appraisal email dispatch error:', err));
         } catch (e) {
           console.error('Email error:', e);
         }
