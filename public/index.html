@@ -477,7 +477,7 @@
     const INITIAL_INQUIRIES_DATA = [
       {
         id: 'inq-101',
-        referenceId: 'SR1-SELL-1042',
+        referenceId: '1042',
         createdAt: '2026-09-21T17:30:00Z',
         updatedAt: '2026-09-21T18:15:00Z',
         stage: 'new',
@@ -529,7 +529,7 @@
       },
       {
         id: 'inq-102',
-        referenceId: 'SR1-SELL-1043',
+        referenceId: '1043',
         createdAt: '2026-09-21T15:20:00Z',
         updatedAt: '2026-09-21T16:45:00Z',
         stage: 'offer_sent',
@@ -592,7 +592,7 @@
       },
       {
         id: 'inq-103',
-        referenceId: 'SR1-SELL-1044',
+        referenceId: '1044',
         createdAt: '2026-09-21T11:10:00Z',
         updatedAt: '2026-09-21T14:30:00Z',
         stage: 'accepted',
@@ -1692,7 +1692,7 @@
           alert('Please agree to the marketing and outreach consent to proceed with your valuation.');
           return;
         }
-        const refId = 'SR1-SELL-' + Math.floor(1000 + Math.random() * 9000);
+        const refId = String(Math.floor(1000 + Math.random() * 9000));
         const locationName = (LOCATIONS.find(l => l.id === formData.preferredLocation)?.name) || formData.preferredLocation || 'SR1 Dealership';
         const locationEmails = getNotificationEmailsForLocation(formData.preferredLocation);
         const primaryEmail = locationEmails[0] || 'appraisals@sr1companies.com';
@@ -1857,7 +1857,7 @@
               photosCount: photos.length
             };
 
-            // Post to Cloudflare Pages Function endpoint
+            // Dispatch branded confirmation email to customer from appraisals@sr1companies.com via Cloudflare Pages Function
             fetch('/api/send-confirmation', {
               method: 'POST',
               headers: {
@@ -1868,46 +1868,13 @@
             })
             .then(res => res.json())
             .then(resData => {
-              console.log('Confirmation email result:', resData);
-              // If the Cloudflare function detects no API key configured yet, gracefully fall back
-              if (resData && resData.warning) {
-                console.warn('API key not set for /api/send-confirmation, falling back to FormSubmit receipt.');
-                fetch(`https://formsubmit.co/ajax/${encodeURIComponent(formData.email.trim())}`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                  body: JSON.stringify({
-                    _subject: `We Received Your Valuation Request [${refId}] - SR1 Companies`,
-                    _replyto: 'appraisals@sr1companies.com',
-                    Reference_Number: refId,
-                    Greeting: `Thank you, ${formData.firstName}! We have received your ${formData.intent === 'trade' ? 'trade-in' : 'valuation'} request.`,
-                    Your_Unit: unitSummary,
-                    Transaction_Type: formData.intent === 'trade' ? 'Trade-In on Purchase' : 'Outright Sale to SR1',
-                    Assigned_Salesperson: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? (formData.salespersonName || 'Pending Assignment') : 'Not Applicable',
-                    Closest_Dealership: locationName,
-                    Next_Steps: 'Our appraisal team is reviewing your unit details and condition photos. We will reach out directly with your valuation or any questions.',
-                    Contact_SR1: 'If you have questions in the meantime, you can reach our appraisal desk directly at appraisals@sr1companies.com.'
-                  })
-                }).catch(e => console.error('Fallback receipt error:', e));
+              console.log('Confirmation email response:', resData);
+              if (!resData.success) {
+                console.error('Confirmation email error from server:', resData);
               }
             })
             .catch(err => {
-              console.error('Confirmation email API error, falling back:', err);
-              fetch(`https://formsubmit.co/ajax/${encodeURIComponent(formData.email.trim())}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({
-                  _subject: `We Received Your Valuation Request [${refId}] - SR1 Companies`,
-                  _replyto: 'appraisals@sr1companies.com',
-                  Reference_Number: refId,
-                  Greeting: `Thank you, ${formData.firstName}! We have received your ${formData.intent === 'trade' ? 'trade-in' : 'valuation'} request.`,
-                  Your_Unit: unitSummary,
-                  Transaction_Type: formData.intent === 'trade' ? 'Trade-In on Purchase' : 'Outright Sale to SR1',
-                  Assigned_Salesperson: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? (formData.salespersonName || 'Pending Assignment') : 'Not Applicable',
-                  Closest_Dealership: locationName,
-                  Next_Steps: 'Our appraisal team is reviewing your unit details and condition photos. We will reach out directly with your valuation or any questions.',
-                  Contact_SR1: 'If you have questions in the meantime, you can reach our appraisal desk directly at appraisals@sr1companies.com.'
-                })
-              }).catch(e => console.error('Fallback receipt error:', e));
+              console.error('Confirmation email dispatch network error:', err);
             });
           }
 
