@@ -2,8 +2,7 @@
 // Handles dispatch of professional, branded confirmation emails from appraisals@sr1companies.com
 // Supports: Resend (default/recommended), Brevo, Postmark, SendGrid via environment variables.
 
-export async function onRequestPost(context) {
-  const { request, env } = context;
+export async function onRequestPost({ request, env }) {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -94,7 +93,7 @@ export async function onRequestPost(context) {
             <td style="padding: 32px 32px 20px 32px;">
               <!-- Ref Pill -->
               <div style="margin-bottom: 16px;">
-                <span style="display: inline-block; padding: 4px 12px; background-color: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; font-family: monospace, Consolas, sans-serif; font-size: 13px; font-weight: 700; color: #34d399; letter-spacing: 0.5px;">
+                <span style="display: inline-block; padding: 4px 12px; background-color: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; font-family: monospace, Consolas, sans-serif; font-size: 12px; font-weight: 700; color: #34d399; letter-spacing: 0.5px;">
                   REF: ${refNum}
                 </span>
               </div>
@@ -288,13 +287,16 @@ Turner, ME • Manchester, ME • Hermon, ME • Londonderry, NH
     let sendResult = null;
     let providerUsed = 'none';
 
+    const resendKey = env.RESEND_API_KEY || 
+      Object.entries(env || {}).find(([k]) => k.toUpperCase().includes('RESEND'))?.[1];
+
     // 1. Resend (Primary recommendation)
-    if (env.RESEND_API_KEY) {
+    if (resendKey) {
       providerUsed = 'resend';
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+          'Authorization': `Bearer ${resendKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -397,6 +399,7 @@ Turner, ME • Manchester, ME • Hermon, ME • Londonderry, NH
       return new Response(JSON.stringify({
         success: false,
         warning: 'No email provider API key configured (RESEND_API_KEY, BREVO_API_KEY, POSTMARK_SERVER_TOKEN, or SENDGRID_API_KEY).',
+        detectedKeys: Object.keys(env || {}),
         referenceId: refNum
       }), {
         status: 200,
