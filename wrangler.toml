@@ -8,5 +8,5 @@ directory = "./public"
 binding = "ASSETS"
 
 [vars]
-RESEND_API_KEY = "re_tELAVhxT_53N76tMzwN6Pt1JzkVyQKQSsj9"
 CONFIRMATION_FROM_EMAIL = "appraisals@sr1companies.com"
+CONFIRMATION_FROM_NAME = "SR1 Companies Appraisals"
