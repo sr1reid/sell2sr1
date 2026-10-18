@@ -474,6 +474,105 @@
       declined: { label: 'Declined / Passed', color: 'bg-neutral-900 text-neutral-500 border-neutral-800' }
     };
 
+    function normalizeInquiry(inq) {
+      if (!inq || typeof inq !== 'object') return null;
+      const rawRef = inq.referenceId || inq.id || '';
+      const cleanRef = String(rawRef).replace(/^SR1-SELL-/i, '') || String(Math.floor(1000 + Math.random() * 9000));
+      const id = inq.id || `inq-${cleanRef}`;
+      
+      const unit = inq.unit && typeof inq.unit === 'object' ? inq.unit : {};
+      const customer = inq.customer && typeof inq.customer === 'object' ? inq.customer : {};
+      const financials = inq.financials && typeof inq.financials === 'object' ? inq.financials : {};
+
+      return {
+        ...inq,
+        id,
+        referenceId: cleanRef,
+        createdAt: inq.createdAt || new Date().toISOString(),
+        updatedAt: inq.updatedAt || new Date().toISOString(),
+        stage: inq.stage && STAGES[inq.stage] ? inq.stage : 'new',
+        intent: inq.intent === 'trade' ? 'trade' : 'sell',
+        workingWithSalesperson: inq.workingWithSalesperson || 'no',
+        salespersonName: inq.salespersonName || '',
+        assignedStaffName: inq.assignedStaffName || '',
+        preferredLocation: inq.preferredLocation || inq.dealershipLocation || 'turner_me',
+        customer: {
+          firstName: customer.firstName || 'Client',
+          lastName: customer.lastName || '',
+          email: customer.email || '',
+          phone: customer.phone || '',
+          preferredContact: customer.preferredContact || 'phone',
+          city: customer.city || '',
+          state: customer.state || '',
+          zipCode: customer.zipCode || ''
+        },
+        unit: {
+          category: unit.category || 'other',
+          subcategory: unit.subcategory || 'Equipment',
+          year: unit.year || '',
+          make: unit.make || 'Unknown Make',
+          model: unit.model || '',
+          trimOrFloorplan: unit.trimOrFloorplan || '',
+          vinOrSerial: unit.vinOrSerial || 'VIN-PENDING',
+          mileageOrHours: Number(unit.mileageOrHours) || 0,
+          isHours: !!unit.isHours,
+          specs: unit.specs && typeof unit.specs === 'object' ? unit.specs : {},
+          condition: unit.condition || 'Good',
+          conditionNotes: unit.conditionNotes || '',
+          tireOrTrackCondition: unit.tireOrTrackCondition || '',
+          knownIssuesOrDamage: unit.knownIssuesOrDamage || ''
+        },
+        financials: {
+          titleStatus: financials.titleStatus || 'Owned outright',
+          lienHolderName: financials.lienHolderName || '',
+          estimatedPayoff: Number(financials.estimatedPayoff) || 0,
+          askingPrice: Number(financials.askingPrice) || 0
+        },
+        photos: Array.isArray(inq.photos) ? inq.photos : [],
+        offers: Array.isArray(inq.offers) ? inq.offers : [],
+        notes: Array.isArray(inq.notes) ? inq.notes : [],
+        outreach: (inq.outreach && typeof inq.outreach === 'object') ? {
+          reachedOut: !!inq.outreach.reachedOut,
+          staffName: inq.outreach.staffName || '',
+          reachedOutAt: inq.outreach.reachedOutAt || null
+        } : { reachedOut: false, staffName: '', reachedOutAt: null }
+      };
+    }
+
+    function getLocationName(locId) {
+      if (!locId) return 'SR1 Turner, ME';
+      const found = LOCATIONS.find(l => l.id === locId || l.name === locId);
+      if (found) return found.name;
+      const legacyMap = {
+        'turner_me': 'SR1 Turner, ME',
+        'manchester_me': 'SR1 Manchester, ME',
+        'hermon_me': 'SR1 Hermon, ME',
+        'loudon_nh': 'SR1 Loudon, NH',
+        'epsom_nh': 'SR1 Epsom, NH',
+        'orono_me': 'SR1 Orono, ME',
+        'houlton_me': 'SR1 Houlton, ME',
+        'caribou_me': 'SR1 Caribou, ME'
+      };
+      return legacyMap[locId] || locId;
+    }
+
+    function formatInquiryDate(dateStr) {
+      if (!dateStr) return { date: 'Recently', time: '' };
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return { date: 'Recently', time: '' };
+        const now = new Date();
+        const isToday = d.toDateString() === now.toDateString();
+        const dateFormatted = isToday 
+          ? 'Today' 
+          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+        const timeFormatted = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        return { date: dateFormatted, time: timeFormatted };
+      } catch (e) {
+        return { date: 'Recently', time: '' };
+      }
+    }
+
     const INITIAL_INQUIRIES_DATA = [
       {
         id: 'inq-101',
@@ -695,10 +794,11 @@
       const [inquiries, setInquiries] = useState(() => {
         try {
           const saved = localStorage.getItem('sell2sr1_inquiries_v2');
-          return saved ? JSON.parse(saved) : INITIAL_INQUIRIES_DATA;
+          const list = saved ? JSON.parse(saved) : INITIAL_INQUIRIES_DATA;
+          return (Array.isArray(list) ? list : INITIAL_INQUIRIES_DATA).map(normalizeInquiry).filter(Boolean);
         } catch (e) {
           console.warn('LocalStorage read error:', e);
-          return INITIAL_INQUIRIES_DATA;
+          return INITIAL_INQUIRIES_DATA.map(normalizeInquiry).filter(Boolean);
         }
       });
       const [selectedInquiryId, setSelectedInquiryId] = useState(null);
@@ -743,15 +843,15 @@
       useEffect(() => {
         try {
           // Keep inquiries safe for localStorage (strip heavy base64 strings so mobile never throws QuotaExceeded)
-          const safeInquiries = inquiries.map(item => ({
+          const safeInquiries = (inquiries || []).map(normalizeInquiry).filter(Boolean).map(item => ({
             ...item,
             photos: (item.photos || []).map(p => ({
               id: p.id,
               label: p.label,
-              url: (p.url && p.url.startsWith('data:') && p.url.length > 5000)
+              url: (p.url && typeof p.url === 'string' && p.url.startsWith('data:') && p.url.length > 5000)
                 ? 'https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7?auto=format&fit=crop&w=1000&q=80'
                 : p.url,
-              thumbUrl: (p.thumbUrl && p.thumbUrl.startsWith('data:') && p.thumbUrl.length > 5000)
+              thumbUrl: (p.thumbUrl && typeof p.thumbUrl === 'string' && p.thumbUrl.startsWith('data:') && p.thumbUrl.length > 5000)
                 ? 'https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7?auto=format&fit=crop&w=1000&q=80'
                 : (p.thumbUrl || p.url),
               isVideo: !!p.isVideo
@@ -769,8 +869,9 @@
 
         const mergeInquiries = (cloudList) => {
           if (!cloudList || cloudList.length === 0) return;
-          cloudList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-          setInquiries(cloudList);
+          const normalized = cloudList.map(normalizeInquiry).filter(Boolean);
+          normalized.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          setInquiries(normalized);
         };
 
         // 1. Immediate fetch from Cloud REST API on startup
@@ -817,11 +918,12 @@
       }, []);
 
       const handleNewInquiry = async (newInquiry) => {
-        setInquiries(prev => [newInquiry, ...prev]);
-        setLastSubmittedRef(newInquiry.referenceId);
+        const normalized = normalizeInquiry(newInquiry);
+        setInquiries(prev => [normalized, ...(prev || []).filter(i => i.id !== normalized.id)]);
+        setLastSubmittedRef(normalized.referenceId);
 
         // Sanitize object (strips undefined values that Firestore rejects)
-        const cleanInquiry = JSON.parse(JSON.stringify(newInquiry));
+        const cleanInquiry = JSON.parse(JSON.stringify(normalized));
 
         // 1. Direct REST save (Guaranteed delivery)
         const saved = await saveInquiryToCloudRest(cleanInquiry);
@@ -848,7 +950,7 @@
                 };
               });
             }
-            db.collection('inquiries').doc(newInquiry.id).set(sdkInq)
+            db.collection('inquiries').doc(normalized.id).set(sdkInq)
               .catch(err => console.warn('Firestore SDK save notice:', err));
           } catch (e) {
             console.warn('Firestore write error:', e);
@@ -858,9 +960,10 @@
       };
 
       const handleUpdateInquiry = async (updated) => {
-        setInquiries(prev => prev.map(item => item.id === updated.id ? updated : item));
+        const normalized = normalizeInquiry(updated);
+        setInquiries(prev => (prev || []).map(item => item.id === normalized.id ? normalized : item));
 
-        const cleanUpdated = JSON.parse(JSON.stringify(updated));
+        const cleanUpdated = JSON.parse(JSON.stringify(normalized));
 
         // 1. Direct REST save
         await saveInquiryToCloudRest(cleanUpdated);
@@ -2924,24 +3027,54 @@
       const [filterLocation, setFilterLocation] = useState('all');
       const [filterIntent, setFilterIntent] = useState('all'); // 'all', 'trade', 'sell'
       const [searchTerm, setSearchTerm] = useState('');
-      const [viewMode, setViewMode] = useState('board');
+      const [viewMode, setViewMode] = useState(() => {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const mode = params.get('mode');
+          if (mode === 'table' || mode === 'list') return 'table';
+          return localStorage.getItem('sell2sr1_portal_view') || 'board';
+        } catch (e) {
+          return 'board';
+        }
+      });
+      const [sortField, setSortField] = useState('date'); // 'date', 'ref', 'unit', 'customer', 'stage', 'offer'
+      const [sortDirection, setSortDirection] = useState('desc'); // 'asc', 'desc'
       const [showInstallGuide, setShowInstallGuide] = useState(false);
       const [copiedLink, setCopiedLink] = useState(false);
 
+      const handleSetViewMode = (mode) => {
+        setViewMode(mode);
+        try {
+          localStorage.setItem('sell2sr1_portal_view', mode);
+        } catch (e) {}
+      };
+
+      const handleSort = (field) => {
+        if (sortField === field) {
+          setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+          setSortField(field);
+          setSortDirection(field === 'date' || field === 'offer' ? 'desc' : 'asc');
+        }
+      };
+
       const metrics = useMemo(() => {
-        const total = inquiries.length;
-        const newCount = inquiries.filter(i => i.stage === 'new').length;
-        const appraisingCount = inquiries.filter(i => i.stage === 'appraising').length;
-        const offersSent = inquiries.filter(i => i.stage === 'offer_sent').length;
-        const accepted = inquiries.filter(i => i.stage === 'accepted' || i.stage === 'inspection' || i.stage === 'purchased').length;
+        const list = Array.isArray(inquiries) ? inquiries : [];
+        const total = list.length;
+        const newCount = list.filter(i => i && i.stage === 'new').length;
+        const appraisingCount = list.filter(i => i && i.stage === 'appraising').length;
+        const offersSent = list.filter(i => i && i.stage === 'offer_sent').length;
+        const accepted = list.filter(i => i && (i.stage === 'accepted' || i.stage === 'inspection' || i.stage === 'purchased')).length;
 
         return { total, newCount, appraisingCount, offersSent, accepted };
       }, [inquiries]);
 
       const filtered = useMemo(() => {
-        return inquiries.filter(inq => {
+        const list = Array.isArray(inquiries) ? inquiries : [];
+        return list.filter(inq => {
+          if (!inq) return false;
           if (filterStage !== 'all' && inq.stage !== filterStage) return false;
-          if (filterCategory !== 'all' && inq.unit.category !== filterCategory) return false;
+          if (filterCategory !== 'all' && inq.unit?.category !== filterCategory) return false;
           if (filterLocation !== 'all' && inq.preferredLocation !== filterLocation) return false;
           if (filterIntent !== 'all') {
             const inqIntent = inq.intent || 'sell';
@@ -2949,18 +3082,50 @@
           }
           if (searchTerm.trim()) {
             const term = searchTerm.toLowerCase();
-            const matchesCustomer = `${inq.customer.firstName} ${inq.customer.lastName}`.toLowerCase().includes(term);
-            const matchesRef = inq.referenceId.toLowerCase().includes(term);
-            const matchesUnit = `${inq.unit.year} ${inq.unit.make} ${inq.unit.model}`.toLowerCase().includes(term);
-            const matchesVin = (inq.unit.vinOrSerial || '').toLowerCase().includes(term);
-            const matchesSalesperson = (inq.salespersonName || '').toLowerCase().includes(term);
-            return matchesCustomer || matchesRef || matchesUnit || matchesVin || matchesSalesperson;
+            const custName = `${inq.customer?.firstName || ''} ${inq.customer?.lastName || ''}`.toLowerCase();
+            const ref = String(inq.referenceId || '').toLowerCase();
+            const unitStr = `${inq.unit?.year || ''} ${inq.unit?.make || ''} ${inq.unit?.model || ''}`.toLowerCase();
+            const vinStr = String(inq.unit?.vinOrSerial || '').toLowerCase();
+            const salesStr = String(inq.salespersonName || '').toLowerCase();
+            const locStr = getLocationName(inq.preferredLocation).toLowerCase();
+            const phoneStr = String(inq.customer?.phone || '').toLowerCase();
+            const emailStr = String(inq.customer?.email || '').toLowerCase();
+            return custName.includes(term) || ref.includes(term) || unitStr.includes(term) || vinStr.includes(term) || salesStr.includes(term) || locStr.includes(term) || phoneStr.includes(term) || emailStr.includes(term);
           }
           return true;
         });
       }, [inquiries, filterStage, filterCategory, filterLocation, filterIntent, searchTerm]);
 
-      const selectedInquiry = inquiries.find(i => i.id === selectedInquiryId);
+      const sorted = useMemo(() => {
+        return [...filtered].sort((a, b) => {
+          let valA = '';
+          let valB = '';
+          if (sortField === 'date') {
+            valA = new Date(a.createdAt || 0).getTime();
+            valB = new Date(b.createdAt || 0).getTime();
+          } else if (sortField === 'ref') {
+            valA = String(a.referenceId || '');
+            valB = String(b.referenceId || '');
+          } else if (sortField === 'unit') {
+            valA = `${a.unit?.year || ''} ${a.unit?.make || ''} ${a.unit?.model || ''}`.trim().toLowerCase();
+            valB = `${b.unit?.year || ''} ${b.unit?.make || ''} ${b.unit?.model || ''}`.trim().toLowerCase();
+          } else if (sortField === 'customer') {
+            valA = `${a.customer?.lastName || ''} ${a.customer?.firstName || ''}`.trim().toLowerCase();
+            valB = `${b.customer?.lastName || ''} ${b.customer?.firstName || ''}`.trim().toLowerCase();
+          } else if (sortField === 'stage') {
+            valA = a.stage || '';
+            valB = b.stage || '';
+          } else if (sortField === 'offer') {
+            valA = (Array.isArray(a.offers) && a.offers.length > 0) ? (Number(a.offers[a.offers.length - 1].amount) || 0) : -1;
+            valB = (Array.isArray(b.offers) && b.offers.length > 0) ? (Number(b.offers[b.offers.length - 1].amount) || 0) : -1;
+          }
+          if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+          if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }, [filtered, sortField, sortDirection]);
+
+      const selectedInquiry = (inquiries || []).find(i => i && i.id === selectedInquiryId);
 
       return (
         <div className="py-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
@@ -3003,14 +3168,14 @@
 
               <div className="bg-neutral-950 p-1 rounded-lg flex items-center space-x-1 border border-neutral-800 text-xs">
                 <button
-                  onClick={() => setViewMode('board')}
-                  className={`px-3 py-1.5 rounded-md font-semibold transition-all ${viewMode === 'board' ? 'bg-neutral-100 text-neutral-950' : 'text-neutral-400 hover:text-white'}`}
+                  onClick={() => handleSetViewMode('board')}
+                  className={`px-3 py-1.5 rounded-md font-semibold transition-all ${viewMode === 'board' ? 'bg-neutral-100 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`}
                 >
                   Kanban
                 </button>
                 <button
-                  onClick={() => setViewMode('list')}
-                  className={`px-3 py-1.5 rounded-md font-semibold transition-all ${viewMode === 'list' ? 'bg-neutral-100 text-neutral-950' : 'text-neutral-400 hover:text-white'}`}
+                  onClick={() => handleSetViewMode('table')}
+                  className={`px-3 py-1.5 rounded-md font-semibold transition-all ${(viewMode === 'table' || viewMode === 'list') ? 'bg-neutral-100 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`}
                 >
                   Table
                 </button>
@@ -3219,65 +3384,202 @@
               })}
             </div>
           ) : (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden text-xs">
-              <table className="w-full text-left">
-                <thead className="bg-neutral-950 text-neutral-400 uppercase font-semibold border-b border-neutral-800 text-[10px]">
-                  <tr>
-                    <th className="p-3">Ref ID</th>
-                    <th className="p-3">Type</th>
-                    <th className="p-3">Unit</th>
-                    <th className="p-3">Customer</th>
-                    <th className="p-3">Location</th>
-                    <th className="p-3">Outreach Status</th>
-                    <th className="p-3">Stage</th>
-                    <th className="p-3">Offer</th>
-                    <th className="p-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-800">
-                  {filtered.map(item => (
-                    <tr key={item.id} className="hover:bg-neutral-850">
-                      <td className="p-3 font-mono text-neutral-400">{item.referenceId}</td>
-                      <td className="p-3">
-                        {item.intent === 'trade' ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950 border border-blue-800 text-blue-300 block w-max">
-                            🔄 Trade {item.salespersonName ? `(${item.salespersonName})` : ''}
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-800 text-neutral-350 block w-max">
-                            💵 Sell
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 font-bold text-white">{item.unit.year} {item.unit.make} {item.unit.model}</td>
-                      <td className="p-3">{item.customer.firstName} {item.customer.lastName}</td>
-                      <td className="p-3">{LOCATIONS.find(l => l.id === item.preferredLocation)?.name}</td>
-                      <td className="p-3">
-                        {item.outreach?.reachedOut ? (
-                          <span className="text-emerald-400 font-semibold text-[11px] flex items-center space-x-1">
-                            <span>✓</span>
-                            <span>{item.outreach.staffName}</span>
-                          </span>
-                        ) : (
-                          <span className="text-amber-400 text-[11px]">⏳ Needs Outreach</span>
-                        )}
-                      </td>
-                      <td className="p-3">{STAGES[item.stage]?.label}</td>
-                      <td className="p-3 font-bold text-white">
-                        {item.offers.length > 0 ? `$${item.offers[item.offers.length - 1].amount.toLocaleString()}` : '-'}
-                      </td>
-                      <td className="p-3 text-right">
-                        <button
-                          onClick={() => setSelectedInquiryId(item.id)}
-                          className="px-2.5 py-1 bg-neutral-100 text-neutral-950 font-bold rounded text-[11px]"
-                        >
-                          Appraise
-                        </button>
-                      </td>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[980px]">
+                  <thead className="bg-neutral-950 text-neutral-400 uppercase font-semibold border-b border-neutral-800 text-[10px] select-none tracking-wider">
+                    <tr>
+                      <th onClick={() => handleSort('ref')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center space-x-1">
+                          <span>Ref #</span>
+                          {sortField === 'ref' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                        </div>
+                      </th>
+                      <th onClick={() => handleSort('date')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center space-x-1">
+                          <span>Submitted</span>
+                          {sortField === 'date' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                        </div>
+                      </th>
+                      <th className="p-3.5">Type</th>
+                      <th onClick={() => handleSort('unit')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center space-x-1">
+                          <span>Unit Details</span>
+                          {sortField === 'unit' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                        </div>
+                      </th>
+                      <th onClick={() => handleSort('customer')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center space-x-1">
+                          <span>Customer</span>
+                          {sortField === 'customer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                        </div>
+                      </th>
+                      <th className="p-3.5">Location</th>
+                      <th className="p-3.5">Outreach</th>
+                      <th onClick={() => handleSort('stage')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center space-x-1">
+                          <span>Stage</span>
+                          {sortField === 'stage' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                        </div>
+                      </th>
+                      <th onClick={() => handleSort('offer')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
+                        <div className="flex items-center space-x-1">
+                          <span>Offer</span>
+                          {sortField === 'offer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                        </div>
+                      </th>
+                      <th className="p-3.5 text-right">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-800 text-xs">
+                    {sorted.length === 0 ? (
+                      <tr>
+                        <td colSpan="10" className="p-12 text-center text-neutral-400 space-y-3">
+                          <p className="text-sm font-semibold text-neutral-300">No inquiries found matching your filters</p>
+                          <p className="text-xs text-neutral-500">Try clearing search terms or changing category / location filters</p>
+                          {(searchTerm || filterStage !== 'all' || filterCategory !== 'all' || filterLocation !== 'all' || filterIntent !== 'all') && (
+                            <button
+                              onClick={() => {
+                                setSearchTerm('');
+                                setFilterStage('all');
+                                setFilterCategory('all');
+                                setFilterLocation('all');
+                                setFilterIntent('all');
+                              }}
+                              className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-white rounded-lg text-xs font-semibold transition-all mt-2"
+                            >
+                              Reset All Filters
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ) : (
+                      sorted.map(item => {
+                        const dateInfo = formatInquiryDate(item.createdAt);
+                        const hasPhotos = Array.isArray(item.photos) && item.photos.length > 0;
+                        const lastOffer = (Array.isArray(item.offers) && item.offers.length > 0)
+                          ? item.offers[item.offers.length - 1]
+                          : null;
+                        const stageConfig = STAGES[item.stage] || STAGES.new;
+
+                        return (
+                          <tr
+                            key={item.id}
+                            onClick={() => setSelectedInquiryId(item.id)}
+                            className="hover:bg-neutral-850/80 cursor-pointer transition-colors group"
+                          >
+                            <td className="p-3.5 font-mono text-xs">
+                              <span className="font-bold text-neutral-200 bg-neutral-950 group-hover:border-neutral-700 px-2 py-1 rounded-md border border-neutral-800 inline-block shadow-sm">
+                                #{item.referenceId}
+                              </span>
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              <div className="font-medium text-neutral-300">{dateInfo.date}</div>
+                              <div className="text-[10px] text-neutral-500">{dateInfo.time}</div>
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              {item.intent === 'trade' ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950/90 border border-blue-700/80 text-blue-300 inline-flex items-center space-x-1 shadow-sm" title={item.salespersonName ? `Trade-In: Salesperson ${item.salespersonName}` : 'Trade-In'}>
+                                  <span>🔄 Trade</span>
+                                  {item.salespersonName && <span>• {item.salespersonName.split(' ')[0]}</span>}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-800 text-neutral-300 border border-neutral-700 inline-block">
+                                  💵 Sell
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3.5 max-w-[260px]">
+                              <div className="font-bold text-white text-xs truncate">
+                                {item.unit?.year} {item.unit?.make} {item.unit?.model} {item.unit?.trimOrFloorplan || ''}
+                              </div>
+                              <div className="text-[11px] text-neutral-400 mt-0.5 flex items-center space-x-2">
+                                <span>{item.unit?.subcategory || CATEGORIES[item.unit?.category]?.label || 'Unit'}</span>
+                                {item.unit?.mileageOrHours > 0 && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{item.unit.mileageOrHours.toLocaleString()} {item.unit.isHours ? 'hrs' : 'mi'}</span>
+                                  </>
+                                )}
+                                {hasPhotos && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-[10px] text-neutral-400">📷 {item.photos.length}</span>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3.5">
+                              <div className="font-bold text-neutral-200">
+                                {item.customer?.firstName} {item.customer?.lastName}
+                              </div>
+                              <div className="text-[11px] text-neutral-400 font-mono mt-0.5">
+                                {item.customer?.phone || item.customer?.email || 'No contact'}
+                              </div>
+                              {/* 1-Tap contact buttons */}
+                              {item.customer?.phone && (
+                                <div className="flex items-center gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
+                                  <a
+                                    href={`tel:${item.customer.phone}`}
+                                    className="px-2 py-0.5 bg-neutral-950 hover:bg-neutral-800 text-neutral-300 rounded text-[10px] border border-neutral-800 font-semibold"
+                                    title="Call client"
+                                  >
+                                    📞 Call
+                                  </a>
+                                  <a
+                                    href={`sms:${item.customer.phone}`}
+                                    className="px-2 py-0.5 bg-neutral-950 hover:bg-neutral-800 text-neutral-300 rounded text-[10px] border border-neutral-800 font-semibold"
+                                    title="Text client"
+                                  >
+                                    💬 Text
+                                  </a>
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-3.5 text-neutral-300 text-xs">
+                              {getLocationName(item.preferredLocation)}
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              {item.outreach?.reachedOut ? (
+                                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 shadow-sm">
+                                  <span>✓</span>
+                                  <span>{item.outreach.staffName || 'Contacted'}</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-950/60 border border-amber-800/60 text-amber-300">
+                                  <span>⏳ Needs Outreach</span>
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold border inline-block ${stageConfig.color}`}>
+                                {stageConfig.label}
+                              </span>
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              {lastOffer && typeof lastOffer.amount === 'number' ? (
+                                <span className="font-bold text-white font-mono text-sm">
+                                  ${lastOffer.amount.toLocaleString()}
+                                </span>
+                              ) : (
+                                <span className="text-neutral-500 font-mono text-xs">-</span>
+                              )}
+                            </td>
+                            <td className="p-3.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => setSelectedInquiryId(item.id)}
+                                className="px-3 py-1.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-lg text-xs shadow-sm transition-all"
+                              >
+                                Appraise
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
