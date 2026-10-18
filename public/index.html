@@ -1089,7 +1089,9 @@
 
           {/* MAIN HEADER */}
           <header className="sticky top-0 z-40 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-800">
-            <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2">
+            <div className={`mx-auto px-3 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2 ${
+              currentView === 'portal' ? 'max-w-[1760px] w-full' : 'max-w-7xl'
+            }`}>
               
               <div onClick={goToHome} role="button" aria-label="SR1 Home" className="cursor-pointer shrink-0">
                 <SR1HeaderLogo />
@@ -3027,25 +3029,22 @@
       const [filterLocation, setFilterLocation] = useState('all');
       const [filterIntent, setFilterIntent] = useState('all'); // 'all', 'trade', 'sell'
       const [searchTerm, setSearchTerm] = useState('');
-      const [viewMode, setViewMode] = useState(() => {
+      const [mobileLayout, setMobileLayout] = useState(() => {
         try {
-          const params = new URLSearchParams(window.location.search);
-          const mode = params.get('mode');
-          if (mode === 'table' || mode === 'list') return 'table';
-          return localStorage.getItem('sell2sr1_portal_view') || 'board';
+          return localStorage.getItem('sell2sr1_mobile_layout') || 'cards';
         } catch (e) {
-          return 'board';
+          return 'cards';
         }
       });
-      const [sortField, setSortField] = useState('date'); // 'date', 'ref', 'unit', 'customer', 'stage', 'offer'
+      const [sortField, setSortField] = useState('date'); // 'date', 'ref', 'unit', 'customer', 'location', 'stage', 'offer', 'type'
       const [sortDirection, setSortDirection] = useState('desc'); // 'asc', 'desc'
       const [showInstallGuide, setShowInstallGuide] = useState(false);
       const [copiedLink, setCopiedLink] = useState(false);
 
-      const handleSetViewMode = (mode) => {
-        setViewMode(mode);
+      const handleSetMobileLayout = (layout) => {
+        setMobileLayout(layout);
         try {
-          localStorage.setItem('sell2sr1_portal_view', mode);
+          localStorage.setItem('sell2sr1_mobile_layout', layout);
         } catch (e) {}
       };
 
@@ -3106,12 +3105,18 @@
           } else if (sortField === 'ref') {
             valA = String(a.referenceId || '');
             valB = String(b.referenceId || '');
+          } else if (sortField === 'type') {
+            valA = a.intent || 'sell';
+            valB = b.intent || 'sell';
           } else if (sortField === 'unit') {
             valA = `${a.unit?.year || ''} ${a.unit?.make || ''} ${a.unit?.model || ''}`.trim().toLowerCase();
             valB = `${b.unit?.year || ''} ${b.unit?.make || ''} ${b.unit?.model || ''}`.trim().toLowerCase();
           } else if (sortField === 'customer') {
             valA = `${a.customer?.lastName || ''} ${a.customer?.firstName || ''}`.trim().toLowerCase();
             valB = `${b.customer?.lastName || ''} ${b.customer?.firstName || ''}`.trim().toLowerCase();
+          } else if (sortField === 'location') {
+            valA = getLocationName(a.preferredLocation).toLowerCase();
+            valB = getLocationName(b.preferredLocation).toLowerCase();
           } else if (sortField === 'stage') {
             valA = a.stage || '';
             valB = b.stage || '';
@@ -3128,14 +3133,14 @@
       const selectedInquiry = (inquiries || []).find(i => i && i.id === selectedInquiryId);
 
       return (
-        <div className="py-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+        <div className="py-4 sm:py-6 max-w-[1760px] w-full mx-auto px-2 sm:px-6 lg:px-8 space-y-4 sm:space-y-6">
           
           {/* HEADER */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-neutral-900 border border-neutral-800 p-4 rounded-2xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-neutral-900 border border-neutral-800 p-3.5 sm:p-4 rounded-2xl">
             <div className="flex items-center space-x-3">
               <img src="/icon-192.png" alt="SR1 Staff" className="w-10 h-10 rounded-xl border border-neutral-800 hidden sm:block object-cover" />
               <div>
-                <h1 className="text-lg font-bold text-white">Staff Appraisal & Purchasing Desk</h1>
+                <h1 className="text-base sm:text-lg font-bold text-white">Staff Appraisal & Purchasing Desk</h1>
                 <p className="text-xs text-neutral-400">Direct mobile & desktop appraisal portal for SR1 Companies</p>
               </div>
             </div>
@@ -3166,16 +3171,21 @@
                 <span>Install Mobile App</span>
               </button>
 
-              <div className="bg-neutral-950 p-1 rounded-lg flex items-center space-x-1 border border-neutral-800 text-xs">
+              {/* MOBILE ONLY VIEW TOGGLE: CARDS VS TABLE */}
+              <div className="md:hidden bg-neutral-950 p-1 rounded-lg flex items-center space-x-1 border border-neutral-800 text-xs">
                 <button
-                  onClick={() => handleSetViewMode('board')}
-                  className={`px-3 py-1.5 rounded-md font-semibold transition-all ${viewMode === 'board' ? 'bg-neutral-100 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`}
+                  type="button"
+                  onClick={() => handleSetMobileLayout('cards')}
+                  className={`px-2.5 py-1 rounded-md font-semibold text-[11px] transition-all ${mobileLayout === 'cards' ? 'bg-neutral-100 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`}
+                  title="Mobile Card Layout"
                 >
-                  Kanban
+                  Cards
                 </button>
                 <button
-                  onClick={() => handleSetViewMode('table')}
-                  className={`px-3 py-1.5 rounded-md font-semibold transition-all ${(viewMode === 'table' || viewMode === 'list') ? 'bg-neutral-100 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`}
+                  type="button"
+                  onClick={() => handleSetMobileLayout('table')}
+                  className={`px-2.5 py-1 rounded-md font-semibold text-[11px] transition-all ${mobileLayout === 'table' ? 'bg-neutral-100 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`}
+                  title="Compact Table Layout"
                 >
                   Table
                 </button>
@@ -3198,390 +3208,654 @@
             </div>
           </div>
 
-          {/* KPI STATS */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-xl">
-              <span className="text-[11px] font-semibold text-neutral-400">Total Inquiries</span>
-              <div className="text-xl font-bold text-white mt-1">{metrics.total}</div>
+          {/* INTERACTIVE KPI STATS CARDS */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setFilterStage('all')}
+              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
+                filterStage === 'all'
+                  ? 'bg-neutral-850 border-white/70 shadow-lg ring-1 ring-white/30'
+                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-neutral-400">Total Inquiries</span>
+                {filterStage === 'all' && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
+              </div>
+              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.total}</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterStage('new')}
+              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
+                filterStage === 'new'
+                  ? 'bg-neutral-850 border-amber-500/80 shadow-lg ring-1 ring-amber-500/30'
+                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-amber-400">Awaiting Review</span>
+                {filterStage === 'new' && <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>}
+              </div>
+              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.newCount}</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterStage('appraising')}
+              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
+                filterStage === 'appraising'
+                  ? 'bg-neutral-850 border-blue-500/80 shadow-lg ring-1 ring-blue-500/30'
+                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-blue-400">Under Appraisal</span>
+                {filterStage === 'appraising' && <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>}
+              </div>
+              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.appraisingCount}</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterStage('offer_sent')}
+              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
+                filterStage === 'offer_sent'
+                  ? 'bg-neutral-850 border-purple-500/80 shadow-lg ring-1 ring-purple-500/30'
+                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-purple-400">Offers Sent</span>
+                {filterStage === 'offer_sent' && <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>}
+              </div>
+              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.offersSent}</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterStage('accepted')}
+              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all col-span-2 sm:col-span-1 ${
+                filterStage === 'accepted'
+                  ? 'bg-neutral-850 border-emerald-500/80 shadow-lg ring-1 ring-emerald-500/30'
+                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-emerald-400">Deals Accepted</span>
+                {filterStage === 'accepted' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>}
+              </div>
+              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.accepted}</div>
+            </button>
+          </div>
+
+          {/* SEARCH & FILTERS BAR */}
+          <div className="bg-neutral-900 border border-neutral-800 p-3 sm:p-4 rounded-xl space-y-3 text-xs">
+            {/* Top row: search & dropdowns */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
+              <div className="flex-1 min-w-[240px] relative">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search customer, make/model, VIN, reference #, phone..."
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg pl-8 pr-8 py-2 text-white placeholder-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-400"
+                />
+                <span className="absolute left-2.5 top-2.5 text-neutral-500 text-xs">🔍</span>
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-2.5 top-2 text-neutral-400 hover:text-white text-sm"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-neutral-400 text-[11px]">Category:</span>
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none"
+                  >
+                    <option value="all">All Categories</option>
+                    {Object.entries(CATEGORIES).map(([k, v]) => (
+                      <option key={k} value={k}>{v.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-neutral-400 text-[11px]">Type:</span>
+                  <select
+                    value={filterIntent}
+                    onChange={(e) => setFilterIntent(e.target.value)}
+                    className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none"
+                  >
+                    <option value="all">Trade & Sell (All)</option>
+                    <option value="trade">Trade-Ins Only</option>
+                    <option value="sell">Outright Sales Only</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-neutral-400 text-[11px]">Location:</span>
+                  <select
+                    value={filterLocation}
+                    onChange={(e) => setFilterLocation(e.target.value)}
+                    className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none"
+                  >
+                    <option value="all">All Store Locations</option>
+                    {LOCATIONS.map(loc => (
+                      <option key={loc.id} value={loc.id}>{loc.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
-            <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-xl">
-              <span className="text-[11px] font-semibold text-neutral-400">Awaiting Review</span>
-              <div className="text-xl font-bold text-white mt-1">{metrics.newCount}</div>
-            </div>
-            <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-xl">
-              <span className="text-[11px] font-semibold text-neutral-400">Under Appraisal</span>
-              <div className="text-xl font-bold text-white mt-1">{metrics.appraisingCount}</div>
-            </div>
-            <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-xl">
-              <span className="text-[11px] font-semibold text-neutral-400">Offers Sent</span>
-              <div className="text-xl font-bold text-white mt-1">{metrics.offersSent}</div>
-            </div>
-            <div className="bg-neutral-900 border border-neutral-800 p-3.5 rounded-xl col-span-2 sm:col-span-1">
-              <span className="text-[11px] font-semibold text-neutral-400">Deals Accepted</span>
-              <div className="text-xl font-bold text-white mt-1">{metrics.accepted}</div>
+
+            {/* Bottom row: Stage pill tabs + Results counter */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-800/80">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setFilterStage('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    filterStage === 'all'
+                      ? 'bg-neutral-100 text-neutral-950 shadow-sm'
+                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+                  }`}
+                >
+                  All ({metrics.total})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStage('new')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    filterStage === 'new'
+                      ? 'bg-amber-400 text-neutral-950 shadow-sm'
+                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+                  }`}
+                >
+                  Awaiting Review ({metrics.newCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStage('appraising')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    filterStage === 'appraising'
+                      ? 'bg-blue-400 text-neutral-950 shadow-sm'
+                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+                  }`}
+                >
+                  Under Appraisal ({metrics.appraisingCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStage('offer_sent')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    filterStage === 'offer_sent'
+                      ? 'bg-purple-400 text-neutral-950 shadow-sm'
+                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+                  }`}
+                >
+                  Offers Sent ({metrics.offersSent})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStage('accepted')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    filterStage === 'accepted'
+                      ? 'bg-emerald-400 text-neutral-950 shadow-sm'
+                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+                  }`}
+                >
+                  Deals Accepted ({metrics.accepted})
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 text-neutral-400 text-xs">
+                <span>
+                  Showing <strong className="text-white">{sorted.length}</strong> of {inquiries.length} inquiries
+                </span>
+                {(searchTerm || filterStage !== 'all' || filterCategory !== 'all' || filterLocation !== 'all' || filterIntent !== 'all') && (
+                  <button
+                    onClick={() => {
+                      setSearchTerm('');
+                      setFilterStage('all');
+                      setFilterCategory('all');
+                      setFilterLocation('all');
+                      setFilterIntent('all');
+                    }}
+                    className="text-amber-400 hover:text-amber-300 font-semibold underline text-xs ml-1"
+                  >
+                    Clear Filters
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* FILTER BAR */}
-          <div className="bg-neutral-900 border border-neutral-800 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex-1 min-w-[200px]">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search customer, make/model, VIN, reference..."
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:ring-1 focus:ring-neutral-400"
-              />
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <span className="text-neutral-400">Category:</span>
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1 text-white"
-              >
-                <option value="all">All Categories</option>
-                {Object.entries(CATEGORIES).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <span className="text-neutral-400">Type:</span>
-              <select
-                value={filterIntent}
-                onChange={(e) => setFilterIntent(e.target.value)}
-                className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1 text-white"
-              >
-                <option value="all">Trade & Sell (All)</option>
-                <option value="trade">Trade-Ins Only</option>
-                <option value="sell">Outright Sales Only</option>
-              </select>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <span className="text-neutral-400">Location:</span>
-              <select
-                value={filterLocation}
-                onChange={(e) => setFilterLocation(e.target.value)}
-                className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1 text-white"
-              >
-                <option value="all">All Store Locations</option>
-                {LOCATIONS.map(loc => (
-                  <option key={loc.id} value={loc.id}>{loc.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* KANBAN OR TABLE VIEW */}
-          {viewMode === 'board' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {['new', 'appraising', 'offer_sent', 'accepted'].map(stageKey => {
-                const stageInquiries = filtered.filter(i => i.stage === stageKey);
-                const stageConfig = STAGES[stageKey];
+          {/* MOBILE CARD STREAM (phones < md when mobileLayout === 'cards') */}
+          <div className={`${mobileLayout === 'cards' ? 'block md:hidden' : 'hidden'} space-y-3`}>
+            {sorted.length === 0 ? (
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center text-neutral-400 space-y-3">
+                <p className="text-sm font-semibold text-neutral-300">No inquiries found matching your filters</p>
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setFilterStage('all');
+                    setFilterCategory('all');
+                    setFilterLocation('all');
+                    setFilterIntent('all');
+                  }}
+                  className="px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-white rounded-lg text-xs font-semibold"
+                >
+                  Reset All Filters
+                </button>
+              </div>
+            ) : (
+              sorted.map(item => {
+                const dateInfo = formatInquiryDate(item.createdAt);
+                const hasPhotos = Array.isArray(item.photos) && item.photos.length > 0;
+                const firstThumb = hasPhotos ? (item.photos[0].thumbUrl || item.photos[0].url) : null;
+                const lastOffer = (Array.isArray(item.offers) && item.offers.length > 0)
+                  ? item.offers[item.offers.length - 1]
+                  : null;
+                const stageConfig = STAGES[item.stage] || STAGES.new;
 
                 return (
-                  <div key={stageKey} className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-3.5 flex flex-col space-y-3 min-h-[480px]">
-                    <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
-                      <h3 className="font-bold text-xs uppercase tracking-wider text-neutral-200">{stageConfig.label}</h3>
-                      <span className="text-[10px] bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded font-mono font-bold">
-                        {stageInquiries.length}
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedInquiryId(item.id)}
+                    className="bg-neutral-900 border border-neutral-800 hover:border-neutral-700 active:border-neutral-600 rounded-2xl p-3.5 space-y-3 shadow-md transition-all cursor-pointer"
+                  >
+                    {/* Top Row: Ref #, Date, Intent, Stage */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono text-xs font-bold text-neutral-200 bg-neutral-950 px-2 py-0.5 rounded border border-neutral-800">
+                          #{item.referenceId}
+                        </span>
+                        <span className="text-[11px] text-neutral-400">
+                          {dateInfo.date} • {dateInfo.time}
+                        </span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${stageConfig.color}`}>
+                        {stageConfig.label}
                       </span>
                     </div>
 
-                    <div className="flex-1 space-y-2.5 overflow-y-auto">
-                      {stageInquiries.length === 0 ? (
-                        <div className="h-28 flex items-center justify-center text-[11px] text-neutral-600 border border-dashed border-neutral-800 rounded-xl">
-                          No inquiries in stage
+                    {/* Unit Details + Thumbnail */}
+                    <div className="flex items-start gap-3">
+                      {firstThumb ? (
+                        <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-black border border-neutral-800 shrink-0">
+                          <img src={firstThumb} alt="" className="w-full h-full object-cover" />
+                          <span className="absolute bottom-1 right-1 bg-black/80 text-white text-[9px] px-1 py-0.2 rounded font-bold">
+                            📷 {item.photos.length}
+                          </span>
                         </div>
                       ) : (
-                        stageInquiries.map(item => (
-                          <div
-                            key={item.id}
-                            onClick={() => setSelectedInquiryId(item.id)}
-                            className="bg-neutral-950 hover:bg-neutral-850 border border-neutral-800 hover:border-neutral-600 rounded-xl p-3 cursor-pointer transition-all space-y-2"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-mono text-neutral-400 bg-neutral-900 px-1.5 py-0.5 rounded">
-                                {item.referenceId}
-                              </span>
-                              <div className="flex items-center space-x-1">
-                                {item.intent === 'trade' ? (
-                                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-blue-950/80 border border-blue-700/80 text-blue-300 rounded" title={item.salespersonName ? `Trade-In: Salesperson ${item.salespersonName}` : 'Trade-In'}>
-                                    🔄 Trade {item.salespersonName ? `• ${item.salespersonName.split(' ')[0]}` : ''}
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-neutral-900 border border-neutral-750 text-neutral-400 rounded">
-                                    💵 Sell
-                                  </span>
-                                )}
-                                <span className="text-[10px] uppercase font-semibold text-neutral-400">
-                                  {CATEGORIES[item.unit.category]?.label}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div>
-                              <h4 className="font-bold text-xs text-white">
-                                {item.unit.year} {item.unit.make} {item.unit.model}
-                              </h4>
-                              <p className="text-[11px] text-neutral-400">
-                                {item.unit.subcategory} • {item.unit.mileageOrHours.toLocaleString()} {item.unit.isHours ? 'hrs' : 'mi'}
-                              </p>
-                            </div>
-
-                            <div className="text-[11px] text-neutral-400 flex items-center justify-between pt-1 border-t border-neutral-850">
-                              <span>{item.customer.firstName} {item.customer.lastName}</span>
-                              <span className="text-neutral-500">{item.customer.city}, {item.customer.state}</span>
-                            </div>
-
-                            {/* Client Outreach Badge */}
-                            <div className="flex items-center justify-between text-[10px] pt-1 border-t border-neutral-900">
-                              <span className="text-neutral-400 font-mono">{item.customer.phone}</span>
-                              {item.outreach?.reachedOut ? (
-                                <span className="text-emerald-400 font-semibold flex items-center space-x-1">
-                                  <span>✓</span>
-                                  <span>{item.outreach.staffName}</span>
-                                </span>
-                              ) : (
-                                <span className="text-amber-400 font-medium">⏳ Needs Outreach</span>
-                              )}
-                            </div>
-
-                            {/* Mobile 1-Tap Contact Action Buttons */}
-                            <div className="flex items-center gap-1.5 pt-1.5 border-t border-neutral-900" onClick={(e) => e.stopPropagation()}>
-                              <a
-                                href={`tel:${item.customer.phone}`}
-                                title="Call customer"
-                                className="flex-1 py-1 px-2 bg-neutral-900 hover:bg-neutral-850 text-neutral-300 hover:text-white rounded-lg text-[10px] font-semibold text-center flex items-center justify-center gap-1 border border-neutral-800 transition-colors"
-                              >
-                                <span>📞</span> Call
-                              </a>
-                              <a
-                                href={`sms:${item.customer.phone}`}
-                                title="Text customer"
-                                className="flex-1 py-1 px-2 bg-neutral-900 hover:bg-neutral-850 text-neutral-300 hover:text-white rounded-lg text-[10px] font-semibold text-center flex items-center justify-center gap-1 border border-neutral-800 transition-colors"
-                              >
-                                <span>💬</span> Text
-                              </a>
-                              <a
-                                href={`mailto:${item.customer.email}`}
-                                title="Email customer"
-                                className="flex-1 py-1 px-2 bg-neutral-900 hover:bg-neutral-850 text-neutral-300 hover:text-white rounded-lg text-[10px] font-semibold text-center flex items-center justify-center gap-1 border border-neutral-800 transition-colors"
-                              >
-                                <span>✉️</span> Email
-                              </a>
-                            </div>
-                          </div>
-                        ))
+                        <div className="w-16 h-16 rounded-xl bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-center shrink-0 text-neutral-500">
+                          <span className="text-xl">
+                            {item.unit.category === 'rv' ? '🏕️' : item.unit.category === 'powersports' ? '🏍️' : item.unit.category === 'trailer' ? '🚛' : item.unit.category === 'tractor' ? '🚜' : '📦'}
+                          </span>
+                        </div>
                       )}
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {item.intent === 'trade' ? (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-950 border border-blue-700 text-blue-300">
+                              🔄 Trade {item.salespersonName ? `• ${item.salespersonName.split(' ')[0]}` : ''}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-neutral-800 text-neutral-300 border border-neutral-700">
+                              💵 Sell
+                            </span>
+                          )}
+                          <span className="text-[10px] uppercase font-semibold text-neutral-400">
+                            {CATEGORIES[item.unit.category]?.label || 'Unit'}
+                          </span>
+                        </div>
+
+                        <h3 className="font-bold text-white text-sm mt-0.5 truncate">
+                          {item.unit.year} {item.unit.make} {item.unit.model}
+                        </h3>
+                        <p className="text-[11px] text-neutral-400">
+                          {item.unit.subcategory || 'Standard'} • {item.unit.mileageOrHours > 0 ? `${item.unit.mileageOrHours.toLocaleString()} ${item.unit.isHours ? 'hrs' : 'mi'}` : 'N/A'}
+                        </p>
+                        {item.unit.vinOrSerial && (
+                          <p className="text-[10px] text-neutral-500 font-mono truncate">
+                            VIN: {item.unit.vinOrSerial}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Customer & Location Row */}
+                    <div className="bg-neutral-950/70 border border-neutral-850 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-bold text-white text-xs truncate">
+                          {item.customer.firstName} {item.customer.lastName}
+                        </div>
+                        <div className="text-[10px] text-neutral-400 truncate">
+                          📍 {getLocationName(item.preferredLocation)}
+                        </div>
+                      </div>
+
+                      {/* 1-Tap Call and Text */}
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                        <a
+                          href={`tel:${item.customer.phone}`}
+                          className="px-2.5 py-1 bg-neutral-850 hover:bg-neutral-800 text-neutral-200 rounded-lg text-[11px] font-bold border border-neutral-750 flex items-center gap-1 shadow-sm"
+                        >
+                          📞 Call
+                        </a>
+                        <a
+                          href={`sms:${item.customer.phone}`}
+                          className="px-2.5 py-1 bg-neutral-850 hover:bg-neutral-800 text-neutral-200 rounded-lg text-[11px] font-bold border border-neutral-750 flex items-center gap-1 shadow-sm"
+                        >
+                          💬 Text
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Outreach, Offer, and Appraise Button */}
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-neutral-850">
+                      <div className="flex items-center gap-2">
+                        {item.outreach?.reachedOut ? (
+                          <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1">
+                            <span>✓</span>
+                            <span>{item.outreach.staffName || 'Contacted'}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-amber-400">
+                            ⏳ Needs Outreach
+                          </span>
+                        )}
+
+                        <span className="text-neutral-600">•</span>
+
+                        {lastOffer && typeof lastOffer.amount === 'number' ? (
+                          <span className="text-xs font-bold text-white font-mono">
+                            ${lastOffer.amount.toLocaleString()}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-neutral-500">No Offer</span>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => setSelectedInquiryId(item.id)}
+                        className="px-3 py-1.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-lg text-xs shadow-sm transition-all"
+                      >
+                        Appraise →
+                      </button>
                     </div>
                   </div>
                 );
-              })}
-            </div>
-          ) : (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[980px]">
-                  <thead className="bg-neutral-950 text-neutral-400 uppercase font-semibold border-b border-neutral-800 text-[10px] select-none tracking-wider">
-                    <tr>
-                      <th onClick={() => handleSort('ref')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center space-x-1">
-                          <span>Ref #</span>
-                          {sortField === 'ref' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
-                        </div>
-                      </th>
-                      <th onClick={() => handleSort('date')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center space-x-1">
-                          <span>Submitted</span>
-                          {sortField === 'date' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
-                        </div>
-                      </th>
-                      <th className="p-3.5">Type</th>
-                      <th onClick={() => handleSort('unit')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center space-x-1">
-                          <span>Unit Details</span>
-                          {sortField === 'unit' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
-                        </div>
-                      </th>
-                      <th onClick={() => handleSort('customer')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center space-x-1">
-                          <span>Customer</span>
-                          {sortField === 'customer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
-                        </div>
-                      </th>
-                      <th className="p-3.5">Location</th>
-                      <th className="p-3.5">Outreach</th>
-                      <th onClick={() => handleSort('stage')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center space-x-1">
-                          <span>Stage</span>
-                          {sortField === 'stage' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
-                        </div>
-                      </th>
-                      <th onClick={() => handleSort('offer')} className="p-3.5 cursor-pointer hover:text-white transition-colors">
-                        <div className="flex items-center space-x-1">
-                          <span>Offer</span>
-                          {sortField === 'offer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
-                        </div>
-                      </th>
-                      <th className="p-3.5 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-800 text-xs">
-                    {sorted.length === 0 ? (
-                      <tr>
-                        <td colSpan="10" className="p-12 text-center text-neutral-400 space-y-3">
-                          <p className="text-sm font-semibold text-neutral-300">No inquiries found matching your filters</p>
-                          <p className="text-xs text-neutral-500">Try clearing search terms or changing category / location filters</p>
-                          {(searchTerm || filterStage !== 'all' || filterCategory !== 'all' || filterLocation !== 'all' || filterIntent !== 'all') && (
-                            <button
-                              onClick={() => {
-                                setSearchTerm('');
-                                setFilterStage('all');
-                                setFilterCategory('all');
-                                setFilterLocation('all');
-                                setFilterIntent('all');
-                              }}
-                              className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-white rounded-lg text-xs font-semibold transition-all mt-2"
-                            >
-                              Reset All Filters
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ) : (
-                      sorted.map(item => {
-                        const dateInfo = formatInquiryDate(item.createdAt);
-                        const hasPhotos = Array.isArray(item.photos) && item.photos.length > 0;
-                        const lastOffer = (Array.isArray(item.offers) && item.offers.length > 0)
-                          ? item.offers[item.offers.length - 1]
-                          : null;
-                        const stageConfig = STAGES[item.stage] || STAGES.new;
+              })
+            )}
+          </div>
 
-                        return (
-                          <tr
-                            key={item.id}
-                            onClick={() => setSelectedInquiryId(item.id)}
-                            className="hover:bg-neutral-850/80 cursor-pointer transition-colors group"
+          {/* EXPANSIVE DATA TABLE (screens >= md or when mobileLayout === 'table') */}
+          <div className={`${mobileLayout === 'cards' ? 'hidden md:block' : 'block'} bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl`}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[1080px]">
+                <thead className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur-md text-neutral-400 uppercase font-semibold border-b border-neutral-800 text-[10px] select-none tracking-wider">
+                  <tr>
+                    <th onClick={() => handleSort('ref')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[90px]">
+                      <div className="flex items-center space-x-1">
+                        <span>Ref #</span>
+                        {sortField === 'ref' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort('date')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[110px]">
+                      <div className="flex items-center space-x-1">
+                        <span>Submitted</span>
+                        {sortField === 'date' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort('type')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[115px]">
+                      <div className="flex items-center space-x-1">
+                        <span>Type</span>
+                        {sortField === 'type' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort('unit')} className="p-3.5 cursor-pointer hover:text-white transition-colors min-w-[320px]">
+                      <div className="flex items-center space-x-1">
+                        <span>Unit Details</span>
+                        {sortField === 'unit' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort('customer')} className="p-3.5 cursor-pointer hover:text-white transition-colors min-w-[220px]">
+                      <div className="flex items-center space-x-1">
+                        <span>Customer</span>
+                        {sortField === 'customer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort('location')} className="p-3.5 cursor-pointer hover:text-white transition-colors min-w-[170px]">
+                      <div className="flex items-center space-x-1">
+                        <span>Store Location</span>
+                        {sortField === 'location' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                      </div>
+                    </th>
+                    <th className="p-3.5 min-w-[130px]">Outreach</th>
+                    <th onClick={() => handleSort('stage')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[130px]">
+                      <div className="flex items-center space-x-1">
+                        <span>Stage</span>
+                        {sortField === 'stage' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort('offer')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[110px]">
+                      <div className="flex items-center space-x-1">
+                        <span>Offer</span>
+                        {sortField === 'offer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+                      </div>
+                    </th>
+                    <th className="p-3.5 text-right w-[100px]">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800 text-xs">
+                  {sorted.length === 0 ? (
+                    <tr>
+                      <td colSpan="10" className="p-12 text-center text-neutral-400 space-y-3">
+                        <p className="text-sm font-semibold text-neutral-300">No inquiries found matching your filters</p>
+                        <p className="text-xs text-neutral-500">Try clearing search terms or changing category / location filters</p>
+                        {(searchTerm || filterStage !== 'all' || filterCategory !== 'all' || filterLocation !== 'all' || filterIntent !== 'all') && (
+                          <button
+                            onClick={() => {
+                              setSearchTerm('');
+                              setFilterStage('all');
+                              setFilterCategory('all');
+                              setFilterLocation('all');
+                              setFilterIntent('all');
+                            }}
+                            className="px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-white rounded-lg text-xs font-semibold transition-all mt-2 shadow-sm"
                           >
-                            <td className="p-3.5 font-mono text-xs">
-                              <span className="font-bold text-neutral-200 bg-neutral-950 group-hover:border-neutral-700 px-2 py-1 rounded-md border border-neutral-800 inline-block shadow-sm">
-                                #{item.referenceId}
+                            Reset All Filters
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ) : (
+                    sorted.map(item => {
+                      const dateInfo = formatInquiryDate(item.createdAt);
+                      const hasPhotos = Array.isArray(item.photos) && item.photos.length > 0;
+                      const firstThumb = hasPhotos ? (item.photos[0].thumbUrl || item.photos[0].url) : null;
+                      const lastOffer = (Array.isArray(item.offers) && item.offers.length > 0)
+                        ? item.offers[item.offers.length - 1]
+                        : null;
+                      const stageConfig = STAGES[item.stage] || STAGES.new;
+
+                      return (
+                        <tr
+                          key={item.id}
+                          onClick={() => setSelectedInquiryId(item.id)}
+                          className="hover:bg-neutral-850/80 cursor-pointer transition-colors group"
+                        >
+                          {/* Ref # */}
+                          <td className="p-3.5 font-mono text-xs whitespace-nowrap">
+                            <span className="font-bold text-neutral-200 bg-neutral-950 group-hover:border-neutral-700 px-2 py-1 rounded-md border border-neutral-800 inline-block shadow-sm">
+                              #{item.referenceId}
+                            </span>
+                          </td>
+
+                          {/* Submitted */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            <div className="font-medium text-neutral-200">{dateInfo.date}</div>
+                            <div className="text-[10px] text-neutral-500 font-mono">{dateInfo.time}</div>
+                          </td>
+
+                          {/* Type */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            {item.intent === 'trade' ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950/90 border border-blue-700/80 text-blue-300 inline-flex items-center space-x-1 shadow-sm" title={item.salespersonName ? `Trade-In: Salesperson ${item.salespersonName}` : 'Trade-In'}>
+                                <span>🔄 Trade</span>
+                                {item.salespersonName && <span>• {item.salespersonName.split(' ')[0]}</span>}
                               </span>
-                            </td>
-                            <td className="p-3.5 whitespace-nowrap">
-                              <div className="font-medium text-neutral-300">{dateInfo.date}</div>
-                              <div className="text-[10px] text-neutral-500">{dateInfo.time}</div>
-                            </td>
-                            <td className="p-3.5 whitespace-nowrap">
-                              {item.intent === 'trade' ? (
-                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950/90 border border-blue-700/80 text-blue-300 inline-flex items-center space-x-1 shadow-sm" title={item.salespersonName ? `Trade-In: Salesperson ${item.salespersonName}` : 'Trade-In'}>
-                                  <span>🔄 Trade</span>
-                                  {item.salespersonName && <span>• {item.salespersonName.split(' ')[0]}</span>}
-                                </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-800 text-neutral-300 border border-neutral-700 inline-block">
+                                💵 Sell
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Unit Details + Thumbnail */}
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-3">
+                              {firstThumb ? (
+                                <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-black border border-neutral-800 shrink-0 group-hover:border-neutral-700 transition-colors">
+                                  <img src={firstThumb} alt="" className="w-full h-full object-cover" />
+                                  <span className="absolute bottom-0.5 right-0.5 bg-black/85 text-[8px] text-white px-1 rounded font-bold">
+                                    📷{item.photos.length}
+                                  </span>
+                                </div>
                               ) : (
-                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-800 text-neutral-300 border border-neutral-700 inline-block">
-                                  💵 Sell
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-3.5 max-w-[260px]">
-                              <div className="font-bold text-white text-xs truncate">
-                                {item.unit?.year} {item.unit?.make} {item.unit?.model} {item.unit?.trimOrFloorplan || ''}
-                              </div>
-                              <div className="text-[11px] text-neutral-400 mt-0.5 flex items-center space-x-2">
-                                <span>{item.unit?.subcategory || CATEGORIES[item.unit?.category]?.label || 'Unit'}</span>
-                                {item.unit?.mileageOrHours > 0 && (
-                                  <>
-                                    <span>•</span>
-                                    <span>{item.unit.mileageOrHours.toLocaleString()} {item.unit.isHours ? 'hrs' : 'mi'}</span>
-                                  </>
-                                )}
-                                {hasPhotos && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-[10px] text-neutral-400">📷 {item.photos.length}</span>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                            <td className="p-3.5">
-                              <div className="font-bold text-neutral-200">
-                                {item.customer?.firstName} {item.customer?.lastName}
-                              </div>
-                              <div className="text-[11px] text-neutral-400 font-mono mt-0.5">
-                                {item.customer?.phone || item.customer?.email || 'No contact'}
-                              </div>
-                              {/* 1-Tap contact buttons */}
-                              {item.customer?.phone && (
-                                <div className="flex items-center gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
-                                  <a
-                                    href={`tel:${item.customer.phone}`}
-                                    className="px-2 py-0.5 bg-neutral-950 hover:bg-neutral-800 text-neutral-300 rounded text-[10px] border border-neutral-800 font-semibold"
-                                    title="Call client"
-                                  >
-                                    📞 Call
-                                  </a>
-                                  <a
-                                    href={`sms:${item.customer.phone}`}
-                                    className="px-2 py-0.5 bg-neutral-950 hover:bg-neutral-800 text-neutral-300 rounded text-[10px] border border-neutral-800 font-semibold"
-                                    title="Text client"
-                                  >
-                                    💬 Text
-                                  </a>
+                                <div className="w-12 h-12 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center shrink-0 text-base text-neutral-500">
+                                  {item.unit.category === 'rv' ? '🏕️' : item.unit.category === 'powersports' ? '🏍️' : item.unit.category === 'trailer' ? '🚛' : item.unit.category === 'tractor' ? '🚜' : '📦'}
                                 </div>
                               )}
-                            </td>
-                            <td className="p-3.5 text-neutral-300 text-xs">
-                              {getLocationName(item.preferredLocation)}
-                            </td>
-                            <td className="p-3.5 whitespace-nowrap">
-                              {item.outreach?.reachedOut ? (
-                                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 shadow-sm">
-                                  <span>✓</span>
-                                  <span>{item.outreach.staffName || 'Contacted'}</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-950/60 border border-amber-800/60 text-amber-300">
-                                  <span>⏳ Needs Outreach</span>
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-3.5 whitespace-nowrap">
-                              <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold border inline-block ${stageConfig.color}`}>
-                                {stageConfig.label}
+                              <div className="min-w-0 flex-1">
+                                <div className="font-bold text-white text-xs group-hover:text-blue-300 transition-colors">
+                                  {item.unit?.year} {item.unit?.make} {item.unit?.model} {item.unit?.trimOrFloorplan || ''}
+                                </div>
+                                <div className="text-[11px] text-neutral-400 mt-0.5 flex items-center space-x-2">
+                                  <span>{item.unit?.subcategory || CATEGORIES[item.unit?.category]?.label || 'Unit'}</span>
+                                  {item.unit?.mileageOrHours > 0 && (
+                                    <>
+                                      <span>•</span>
+                                      <span>{item.unit.mileageOrHours.toLocaleString()} {item.unit.isHours ? 'hrs' : 'mi'}</span>
+                                    </>
+                                  )}
+                                </div>
+                                {item.unit?.vinOrSerial && (
+                                  <div className="text-[10px] text-neutral-500 font-mono mt-0.5 truncate">
+                                    VIN: {item.unit.vinOrSerial}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Customer */}
+                          <td className="p-3.5">
+                            <div className="font-bold text-neutral-200">
+                              {item.customer?.firstName} {item.customer?.lastName}
+                            </div>
+                            <div className="text-[11px] text-neutral-400 font-mono mt-0.5">
+                              {item.customer?.phone || item.customer?.email || 'No contact'}
+                            </div>
+                            {item.customer?.phone && (
+                              <div className="flex items-center gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
+                                <a
+                                  href={`tel:${item.customer.phone}`}
+                                  className="px-2 py-0.5 bg-neutral-950 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded text-[10px] border border-neutral-800 font-semibold transition-colors"
+                                  title="Call client"
+                                >
+                                  📞 Call
+                                </a>
+                                <a
+                                  href={`sms:${item.customer.phone}`}
+                                  className="px-2 py-0.5 bg-neutral-950 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded text-[10px] border border-neutral-800 font-semibold transition-colors"
+                                  title="Text client"
+                                >
+                                  💬 Text
+                                </a>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Store Location */}
+                          <td className="p-3.5 text-neutral-300 text-xs">
+                            <div className="font-medium">{getLocationName(item.preferredLocation)}</div>
+                            {item.customer?.city && (
+                              <div className="text-[10px] text-neutral-500 mt-0.5">
+                                Client: {item.customer.city}, {item.customer.state}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Outreach */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            {item.outreach?.reachedOut ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 shadow-sm">
+                                <span>✓</span>
+                                <span>{item.outreach.staffName || 'Contacted'}</span>
                               </span>
-                            </td>
-                            <td className="p-3.5 whitespace-nowrap">
-                              {lastOffer && typeof lastOffer.amount === 'number' ? (
+                            ) : (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950/60 border border-amber-800/60 text-amber-300">
+                                <span>⏳ Needs Outreach</span>
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Stage */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold border inline-block ${stageConfig.color}`}>
+                              {stageConfig.label}
+                            </span>
+                          </td>
+
+                          {/* Offer */}
+                          <td className="p-3.5 whitespace-nowrap">
+                            {lastOffer && typeof lastOffer.amount === 'number' ? (
+                              <div>
                                 <span className="font-bold text-white font-mono text-sm">
                                   ${lastOffer.amount.toLocaleString()}
                                 </span>
-                              ) : (
-                                <span className="text-neutral-500 font-mono text-xs">-</span>
-                              )}
-                            </td>
-                            <td className="p-3.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                              <button
-                                onClick={() => setSelectedInquiryId(item.id)}
-                                className="px-3 py-1.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-lg text-xs shadow-sm transition-all"
-                              >
-                                Appraise
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                                {item.offers.length > 1 && (
+                                  <div className="text-[9px] text-neutral-400">
+                                    {item.offers.length} offers logged
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-neutral-500 font-mono text-xs">—</span>
+                            )}
+                          </td>
+
+                          {/* Action */}
+                          <td className="p-3.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => setSelectedInquiryId(item.id)}
+                              className="px-3.5 py-1.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-lg text-xs shadow-sm transition-all"
+                            >
+                              Appraise →
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
 
           {/* APPRAISAL MODAL */}
           {selectedInquiry && (
@@ -3882,8 +4156,8 @@
       };
 
       return (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-neutral-900 border border-neutral-750 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-xs">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
+          <div className="bg-neutral-900 border border-neutral-750 rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden text-xs">
             
             <div className="bg-neutral-950 p-4 border-b border-neutral-800 flex items-center justify-between">
               <div>
