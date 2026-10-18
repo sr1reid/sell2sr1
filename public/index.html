@@ -1790,7 +1790,9 @@
           return;
         }
         if (!formData.preferredLocation) {
-          alert('Please select your closest SR1 dealership location.');
+          alert(formData.intent === 'trade'
+            ? 'Please select your closest SR1 dealership that sells this type of unit.'
+            : 'Please select your closest SR1 dealership location.');
           return;
         }
         if (!formData.consentOptIn) {
@@ -2758,7 +2760,17 @@
                   {/* Closest Dealership Selection */}
                   <div>
                     <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                      Select your closest SR1 dealership *
+                      {formData.intent === 'trade' ? (
+                        <span>
+                          Select your closest SR1 dealership that sells this type of unit{' '}
+                          <span className="normal-case text-neutral-400 font-normal">
+                            (even if the trade is with another segment)
+                          </span>{' '}
+                          *
+                        </span>
+                      ) : (
+                        'Select your closest SR1 dealership *'
+                      )}
                     </label>
                     <select
                       required
