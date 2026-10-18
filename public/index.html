@@ -1370,6 +1370,7 @@
         phone: '',
         preferredContact: 'text',
         consentOptIn: false,
+        resaleAcknowledgement: false,
         city: '',
         state: 'ME',
         zipCode: ''
@@ -1799,6 +1800,10 @@
           alert('Please agree to the marketing and outreach consent to proceed with your valuation.');
           return;
         }
+        if (!formData.resaleAcknowledgement) {
+          alert('Please check the Resale Acknowledgement box to proceed with your valuation.');
+          return;
+        }
         const refId = String(Math.floor(1000 + Math.random() * 9000));
         const locationName = (LOCATIONS.find(l => l.id === formData.preferredLocation)?.name) || formData.preferredLocation || 'SR1 Dealership';
         const locationEmails = getNotificationEmailsForLocation(formData.preferredLocation);
@@ -1813,6 +1818,7 @@
           stage: 'new',
           preferredLocation: formData.preferredLocation,
           intent: formData.intent || 'sell',
+          resaleAcknowledgement: !!formData.resaleAcknowledgement,
           workingWithSalesperson: formData.intent === 'trade' ? formData.workingWithSalesperson : 'no',
           salespersonName: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? formData.salespersonName : '',
           assignedStaffName: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes' && formData.salespersonName) 
@@ -1934,6 +1940,7 @@
               ? `Attached: ${Math.min(photos.length, 3)} reduced-size preview thumbnail(s) for fast email loading. Full original resolution photos and videos are stored in the SR1 Staff Portal.`
               : 'No photos or videos attached',
             Marketing_Consent_OptIn: formData.consentOptIn ? 'YES (Consented to Calls, SMS & Email)' : 'NO',
+            Resale_Acknowledgement: formData.resaleAcknowledgement ? 'AGREED (Understands Dealership Purchase Pricing)' : 'NO',
             _replyto: formData.email
           };
 
@@ -2805,6 +2812,25 @@
                         <span className="font-semibold text-white">Communications & Outreach Consent *</span>
                         <p className="text-[11px] text-neutral-400 mt-1 leading-normal">
                           By checking this box, I consent to receive calls, SMS text messages, and email communications from SR1 Companies and its affiliated businesses regarding my valuation request, trade options, appraisal updates, and relevant dealership marketing promotions. Message & data rates may apply. Consent is not a condition of purchase, and you may opt out at any time.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* RESALE ACKNOWLEDGEMENT */}
+                  <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 space-y-2">
+                    <label className="flex items-start space-x-3 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        required
+                        checked={formData.resaleAcknowledgement}
+                        onChange={(e) => handleInputChange('resaleAcknowledgement', e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-neutral-100 focus:ring-0 cursor-pointer"
+                      />
+                      <div className="text-xs text-neutral-300 leading-relaxed">
+                        <span className="font-semibold text-white">Resale Acknowledgement *</span>
+                        <p className="text-[11px] text-neutral-400 mt-1 leading-normal">
+                          We are a dealership and would need to purchase this item for less than market or book value to be able to turn a profit and cover our expenses. We do not pay retail for items and do not want to waste your time if that is your expectation. However, if you want a quick, professional, no-hassle sale at a fair value—we can make that happen!
                         </p>
                       </div>
                     </label>
