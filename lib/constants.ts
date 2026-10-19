@@ -74,7 +74,7 @@ export const CATEGORIES: Record<VehicleCategory, {
   photoPrompts: { id: string; label: string; description: string; required: boolean }[];
 }> = {
   rv: {
-    label: 'RVs / Campers',
+    label: 'RV / Camper',
     description: 'Travel trailers, 5th wheels, motorhomes, toy haulers & truck campers',
     isHoursBased: false,
     subcategories: [
@@ -97,7 +97,7 @@ export const CATEGORIES: Record<VehicleCategory, {
     ]
   },
   trailer: {
-    label: 'Trailers',
+    label: 'Trailer',
     description: 'Dump trailers, cargo/enclosed, equipment haulers, utility, tilt & goosenecks',
     isHoursBased: false,
     subcategories: [
@@ -119,7 +119,7 @@ export const CATEGORIES: Record<VehicleCategory, {
     ]
   },
   tractor: {
-    label: 'Tractors',
+    label: 'Tractor',
     description: 'Sub-compact, compact, and utility tractors with loaders & attachments',
     isHoursBased: true,
     subcategories: [
@@ -173,7 +173,7 @@ export const CATEGORIES: Record<VehicleCategory, {
     ]
   },
   motorcycle: {
-    label: 'Motorcycles',
+    label: 'Motorcycle',
     description: 'Cruisers, touring, sport bikes, adventure & dual sports',
     isHoursBased: false,
     subcategories: [
@@ -191,7 +191,7 @@ export const CATEGORIES: Record<VehicleCategory, {
     ]
   },
   boat_pwc: {
-    label: 'Boats & PWCs',
+    label: 'Boat / PWC',
     description: 'Pontoon boats, fishing boats, bowriders, personal watercraft (Jet Skis) & docks',
     isHoursBased: true,
     subcategories: [
@@ -209,7 +209,7 @@ export const CATEGORIES: Record<VehicleCategory, {
     ]
   },
   container: {
-    label: 'Shipping Containers',
+    label: 'Shipping Container',
     description: '20ft, 40ft standard, 40ft High Cube & modified storage containers',
     isHoursBased: false,
     subcategories: [
@@ -255,6 +255,12 @@ export const STAGE_CONFIG: Record<InquiryStage, { label: string; color: string; 
     color: '#a1a1aa',
     badgeClass: 'bg-zinc-800 text-zinc-200 border-zinc-600',
     description: 'Staff is researching book value, comps and inspection items'
+  },
+  message_sent: {
+    label: 'Message Sent',
+    color: '#38bdf8',
+    badgeClass: 'bg-zinc-800 text-sky-300 border-sky-800/80 font-semibold',
+    description: 'Outreach message or question delivered to customer'
   },
   offer_sent: {
     label: 'Offer Sent',
