@@ -27,6 +27,7 @@ export type DealershipLocation =
 export type InquiryStage = 
   | 'new'            // Just submitted, awaiting staff review
   | 'appraising'     // Staff analyzing specs, running comps
+  | 'message_sent'   // Outreach message sent to seller
   | 'offer_sent'     // Offer delivered to customer
   | 'negotiating'    // Customer countered or discussing terms
   | 'accepted'       // Customer accepted offer
