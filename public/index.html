@@ -466,6 +466,7 @@
     const STAGES = {
       new: { label: 'New Inquiry', color: 'bg-neutral-800 text-neutral-200 border-neutral-700' },
       appraising: { label: 'Under Review', color: 'bg-neutral-800 text-neutral-300 border-neutral-600' },
+      message_sent: { label: 'Message Sent', color: 'bg-neutral-800 text-sky-300 border-sky-800/80 font-semibold' },
       offer_sent: { label: 'Offer Sent', color: 'bg-neutral-700 text-white border-neutral-500 font-semibold' },
       negotiating: { label: 'Counter / Discussing', color: 'bg-neutral-800 text-neutral-300 border-neutral-600' },
       accepted: { label: 'Offer Accepted', color: 'bg-white text-neutral-950 border-white font-bold' },
@@ -3112,10 +3113,11 @@
         const total = list.length;
         const newCount = list.filter(i => i && i.stage === 'new').length;
         const appraisingCount = list.filter(i => i && i.stage === 'appraising').length;
+        const messageSentCount = list.filter(i => i && i.stage === 'message_sent').length;
         const offersSent = list.filter(i => i && i.stage === 'offer_sent').length;
         const accepted = list.filter(i => i && (i.stage === 'accepted' || i.stage === 'inspection' || i.stage === 'purchased')).length;
 
-        return { total, newCount, appraisingCount, offersSent, accepted };
+        return { total, newCount, appraisingCount, messageSentCount, offersSent, accepted };
       }, [inquiries]);
 
       const filtered = useMemo(() => {
@@ -3256,7 +3258,7 @@
           </div>
 
           {/* INTERACTIVE KPI STATS CARDS */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 sm:gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3">
             <button
               type="button"
               onClick={() => setFilterStage('all')}
@@ -3299,10 +3301,26 @@
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-blue-400">Under Appraisal</span>
+                <span className="text-[11px] font-semibold text-blue-400">Under Review</span>
                 {filterStage === 'appraising' && <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>}
               </div>
               <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.appraisingCount}</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterStage('message_sent')}
+              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
+                filterStage === 'message_sent'
+                  ? 'bg-neutral-850 border-sky-500/80 shadow-lg ring-1 ring-sky-500/30'
+                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-sky-400">Message Sent</span>
+                {filterStage === 'message_sent' && <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span>}
+              </div>
+              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.messageSentCount}</div>
             </button>
 
             <button
@@ -3324,7 +3342,7 @@
             <button
               type="button"
               onClick={() => setFilterStage('accepted')}
-              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all col-span-2 sm:col-span-1 ${
+              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
                 filterStage === 'accepted'
                   ? 'bg-neutral-850 border-emerald-500/80 shadow-lg ring-1 ring-emerald-500/30'
                   : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
@@ -3439,7 +3457,18 @@
                       : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
                   }`}
                 >
-                  Under Appraisal ({metrics.appraisingCount})
+                  Under Review ({metrics.appraisingCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStage('message_sent')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    filterStage === 'message_sent'
+                      ? 'bg-sky-400 text-neutral-950 shadow-sm'
+                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+                  }`}
+                >
+                  Message Sent ({metrics.messageSentCount})
                 </button>
                 <button
                   type="button"
