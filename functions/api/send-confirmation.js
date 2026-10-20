@@ -95,8 +95,13 @@ export async function onRequestPost({ request, env }) {
         box-sizing: border-box !important;
       }
       .header-badge {
-        font-size: 10px !important;
-        padding: 4px 8px !important;
+        font-size: 9px !important;
+        padding: 4px 6px !important;
+        letter-spacing: 0.3px !important;
+      }
+      .header-cell img {
+        height: 28px !important;
+        max-height: 28px !important;
       }
       .ref-pill {
         font-size: 11px !important;
@@ -104,15 +109,15 @@ export async function onRequestPost({ request, env }) {
     }
   </style>
 </head>
-<body style="margin: 0; padding: 0; background-color: #0a0a0a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #e5e5e5;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #0a0a0a; min-height: 100vh;">
+<body style="margin: 0; padding: 0; background-color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #1f2937;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #e5e7eb; min-height: 100vh;">
     <tr>
       <td align="center" class="email-body-cell" style="padding: 28px 12px 48px 12px;">
-        <table role="presentation" class="email-container" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #121212; border: 1px solid #262626; border-radius: 16px; overflow: hidden; box-shadow: 0 12px 36px rgba(0,0,0,0.65);">
+        <table role="presentation" class="email-container" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #f3f4f6; border: 1px solid #d1d5db; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.08);">
           
           <!-- Header with Brand Logo and Employee-Owned Badge -->
           <tr>
-            <td class="header-cell" style="padding: 24px 32px 22px 32px; border-bottom: 1px solid #1f1f1f;">
+            <td class="header-cell" style="padding: 22px 32px; background-color: #cbd5e1; border-bottom: 1px solid #b0b8c4;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td align="left" style="vertical-align: middle;">
@@ -121,7 +126,7 @@ export async function onRequestPost({ request, env }) {
                     </a>
                   </td>
                   <td align="right" style="vertical-align: middle;">
-                    <span class="header-badge" style="display: inline-block; padding: 5px 12px; background-color: #1a1a1a; border: 1px solid #2e2e2e; border-radius: 999px; font-size: 11px; font-weight: 700; color: #d4d4d4; text-transform: uppercase; letter-spacing: 0.8px; white-space: nowrap;">
+                    <span class="header-badge" style="display: inline-block; padding: 5px 12px; background-color: #1e293b; border: 1px solid #0f172a; border-radius: 999px; font-size: 11px; font-weight: 700; color: #ffffff; text-transform: uppercase; letter-spacing: 0.8px; white-space: nowrap;">
                       100% Employee-Owned
                     </span>
                   </td>
@@ -135,15 +140,15 @@ export async function onRequestPost({ request, env }) {
             <td class="content-cell" style="padding: 30px 32px 20px 32px;">
               <!-- Ref Pill -->
               <div style="margin-bottom: 16px;">
-                <span class="ref-pill" style="display: inline-block; padding: 4px 12px; background-color: #1c1c1c; border: 1px solid #333333; border-radius: 6px; font-family: monospace, Consolas, sans-serif; font-size: 12px; font-weight: 700; color: #e5e5e5; letter-spacing: 0.5px;">
+                <span class="ref-pill" style="display: inline-block; padding: 4px 12px; background-color: #e5e7eb; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace, Consolas, sans-serif; font-size: 12px; font-weight: 700; color: #1f2937; letter-spacing: 0.5px;">
                   REF: ${refNum}
                 </span>
               </div>
 
-              <h1 style="margin: 0 0 12px 0; font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px; line-height: 1.3;">
+              <h1 style="margin: 0 0 12px 0; font-size: 24px; font-weight: 800; color: #111827; letter-spacing: -0.3px; line-height: 1.3;">
                 Valuation Request Received
               </h1>
-              <p style="margin: 0 0 20px 0; font-size: 15px; color: #a3a3a3; line-height: 1.6;">
+              <p style="margin: 0 0 20px 0; font-size: 15px; color: #4b5563; line-height: 1.6;">
                 Hi ${firstName}, thank you for giving SR1 the opportunity to make you an offer on your item. Our appraisal team has received your submission and is actively reviewing your unit details.
               </p>
             </td>
@@ -152,16 +157,16 @@ export async function onRequestPost({ request, env }) {
           <!-- Itemized Unit Card -->
           <tr>
             <td class="card-cell" style="padding: 0 32px 24px 32px;">
-              <table role="presentation" class="inner-card" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #171717; border: 1px solid #262626; border-radius: 12px; padding: 20px;">
+              <table role="presentation" class="inner-card" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
                 <tr>
-                  <td style="padding-bottom: 16px; border-bottom: 1px solid #262626;">
-                    <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #a3a3a3;">
+                  <td style="padding-bottom: 16px; border-bottom: 1px solid #e5e7eb;">
+                    <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #6b7280;">
                       Submitted Unit Details
                     </span>
-                    <div style="font-size: 18px; font-weight: 800; color: #ffffff; margin-top: 4px;">
+                    <div style="font-size: 18px; font-weight: 800; color: #111827; margin-top: 4px;">
                       ${unitTitle}
                     </div>
-                    ${unit?.category ? `<div style="font-size: 13px; color: #a3a3a3; margin-top: 2px;">${unit.category}${subcategory}</div>` : ''}
+                    ${unit?.category ? `<div style="font-size: 13px; color: #4b5563; margin-top: 2px;">${unit.category}${subcategory}</div>` : ''}
                   </td>
                 </tr>
 
@@ -172,41 +177,41 @@ export async function onRequestPost({ request, env }) {
                       <tr>
                         <!-- Reported Condition -->
                         <td class="stat-tile-wrap" width="50%" style="width: 50%; vertical-align: top; padding: 0 8px 12px 0;">
-                          <div style="background-color: #121212; border: 1px solid #242424; border-radius: 8px; padding: 12px 14px;">
-                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #737373; letter-spacing: 0.5px;">Reported Condition</div>
-                            <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 3px;">${condition}</div>
+                          <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">Reported Condition</div>
+                            <div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px;">${condition}</div>
                           </div>
                         </td>
                         <!-- Estimated Hours / Mileage -->
                         <td class="stat-tile-wrap" width="50%" style="width: 50%; vertical-align: top; padding: 0 0 12px 8px;">
-                          <div style="background-color: #121212; border: 1px solid #242424; border-radius: 8px; padding: 12px 14px;">
-                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #737373; letter-spacing: 0.5px;">${mileageHoursLabel}</div>
-                            <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 3px;">${mileageHoursValue}</div>
+                          <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">${mileageHoursLabel}</div>
+                            <div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px;">${mileageHoursValue}</div>
                           </div>
                         </td>
                       </tr>
                       <tr>
                         <!-- Transaction Type -->
                         <td class="stat-tile-wrap" width="50%" style="width: 50%; vertical-align: top; padding: 0 8px 12px 0;">
-                          <div style="background-color: #121212; border: 1px solid #242424; border-radius: 8px; padding: 12px 14px;">
-                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #737373; letter-spacing: 0.5px;">Transaction Type</div>
-                            <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 3px;">${transactionType}</div>
+                          <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">Transaction Type</div>
+                            <div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px;">${transactionType}</div>
                           </div>
                         </td>
                         <!-- Preferred Dealership -->
                         <td class="stat-tile-wrap" width="50%" style="width: 50%; vertical-align: top; padding: 0 0 12px 8px;">
-                          <div style="background-color: #121212; border: 1px solid #242424; border-radius: 8px; padding: 12px 14px;">
-                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #737373; letter-spacing: 0.5px;">Preferred Dealership</div>
-                            <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 3px;">${location}</div>
+                          <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">Preferred Dealership</div>
+                            <div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px;">${location}</div>
                           </div>
                         </td>
                       </tr>
                       ${salesperson !== 'Direct Appraisal Request' ? `
                       <tr>
                         <td colspan="2" class="stat-tile-wrap" style="vertical-align: top; padding: 0 0 12px 0;">
-                          <div style="background-color: #121212; border: 1px dashed #333333; border-radius: 8px; padding: 12px 14px;">
-                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #737373; letter-spacing: 0.5px;">Assigned Salesperson</div>
-                            <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 3px;">${salesperson}</div>
+                          <div style="background-color: #f9fafb; border: 1px dashed #d1d5db; border-radius: 8px; padding: 12px 14px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">Assigned Salesperson</div>
+                            <div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px;">${salesperson}</div>
                           </div>
                         </td>
                       </tr>` : ''}
@@ -216,7 +221,7 @@ export async function onRequestPost({ request, env }) {
 
                 ${photosCount > 0 ? `
                 <tr>
-                  <td style="padding-top: 4px; font-size: 12px; color: #d4d4d4; font-weight: 600;">
+                  <td style="padding-top: 4px; font-size: 12px; color: #15803d; font-weight: 600;">
                     ✓ ${photosCount} photo${photosCount > 1 ? 's' : ''} successfully archived for assessment
                   </td>
                 </tr>` : ''}
@@ -227,45 +232,45 @@ export async function onRequestPost({ request, env }) {
           <!-- Next Steps Timeline -->
           <tr>
             <td class="timeline-cell" style="padding: 0 32px 28px 32px;">
-              <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #737373; margin-bottom: 14px;">
+              <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #4b5563; margin-bottom: 14px;">
                 What Happens Next
               </div>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td style="width: 32px; vertical-align: top; padding-right: 14px; padding-bottom: 16px;">
-                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #262626; border: 1px solid #404040; color: #ffffff; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
+                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #111827; color: #ffffff; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
                       1
                     </div>
                   </td>
                   <td style="vertical-align: top; padding-bottom: 16px;">
-                    <div style="font-size: 14px; font-weight: 700; color: #ffffff;">Market Appraisal</div>
-                    <div style="font-size: 13px; color: #a3a3a3; line-height: 1.5; margin-top: 2px;">
+                    <div style="font-size: 14px; font-weight: 700; color: #111827;">Market Appraisal</div>
+                    <div style="font-size: 13px; color: #4b5563; line-height: 1.5; margin-top: 2px;">
                       Our appraisal team evaluates current book value, internal sales comps, auction comps, dealer network values, and your units condition details.
                     </div>
                   </td>
                 </tr>
                 <tr>
                   <td style="width: 32px; vertical-align: top; padding-right: 14px; padding-bottom: 16px;">
-                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #1a1a1a; border: 1px solid #2e2e2e; color: #a3a3a3; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
+                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #e5e7eb; border: 1px solid #d1d5db; color: #374151; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
                       2
                     </div>
                   </td>
                   <td style="vertical-align: top; padding-bottom: 16px;">
-                    <div style="font-size: 14px; font-weight: 700; color: #ffffff;">Written Offer</div>
-                    <div style="font-size: 13px; color: #a3a3a3; line-height: 1.5; margin-top: 2px;">
+                    <div style="font-size: 14px; font-weight: 700; color: #111827;">Written Offer</div>
+                    <div style="font-size: 13px; color: #4b5563; line-height: 1.5; margin-top: 2px;">
                       We reach out by phone or email with a competitive purchase valuation or credit toward your new item.
                     </div>
                   </td>
                 </tr>
                 <tr>
                   <td style="width: 32px; vertical-align: top; padding-right: 14px;">
-                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #1a1a1a; border: 1px solid #2e2e2e; color: #a3a3a3; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
+                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #e5e7eb; border: 1px solid #d1d5db; color: #374151; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
                       3
                     </div>
                   </td>
                   <td style="vertical-align: top;">
-                    <div style="font-size: 14px; font-weight: 700; color: #ffffff;">Title, Payoff & Hassle-Free Transfer</div>
-                    <div style="font-size: 13px; color: #a3a3a3; line-height: 1.5; margin-top: 2px;">
+                    <div style="font-size: 14px; font-weight: 700; color: #111827;">Title, Payoff & Hassle-Free Transfer</div>
+                    <div style="font-size: 13px; color: #4b5563; line-height: 1.5; margin-top: 2px;">
                       We manage loan payoffs, title paperwork, and pickup or drop-off logistics.
                     </div>
                   </td>
@@ -277,15 +282,15 @@ export async function onRequestPost({ request, env }) {
           <!-- Direct Contact Box -->
           <tr>
             <td class="contact-cell" style="padding: 0 32px 32px 32px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #171717; border: 1px dashed #2e2e2e; border-radius: 12px; padding: 18px 20px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #ffffff; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 18px 20px;">
                 <tr>
                   <td>
-                    <div style="font-size: 13px; font-weight: 700; color: #ffffff;">Need to make an update or have questions?</div>
-                    <div style="font-size: 13px; color: #a3a3a3; line-height: 1.5; margin-top: 4px;">
+                    <div style="font-size: 13px; font-weight: 700; color: #111827;">Need to make an update or have questions?</div>
+                    <div style="font-size: 13px; color: #4b5563; line-height: 1.5; margin-top: 4px;">
                       Simply reply directly to this email or reach our centralized appraisal desk at:
                     </div>
                     <div style="margin-top: 8px;">
-                      <a href="mailto:appraisals@sr1companies.com" style="color: #ffffff; font-weight: 700; text-decoration: underline; font-size: 14px;">
+                      <a href="mailto:appraisals@sr1companies.com" style="color: #111827; font-weight: 700; text-decoration: underline; font-size: 14px;">
                         appraisals@sr1companies.com
                       </a>
                     </div>
@@ -297,20 +302,20 @@ export async function onRequestPost({ request, env }) {
 
           <!-- Corporate Footer -->
           <tr>
-            <td class="footer-cell" style="padding: 24px 32px; background-color: #0d0d0d; border-top: 1px solid #1f1f1f; text-align: center;">
-              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #a3a3a3; margin-bottom: 10px;">
+            <td class="footer-cell" style="padding: 24px 32px; background-color: #e2e8f0; border-top: 1px solid #cbd5e1; text-align: center;">
+              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
                 Who We Work With
               </div>
-              <div style="font-size: 12px; color: #888888; line-height: 1.8; margin-bottom: 18px; max-width: 480px; margin-left: auto; margin-right: auto;">
-                <div>&bull; <strong style="color: #d4d4d4;">Banks &amp; Credit Unions</strong> looking to liquidate repos</div>
-                <div>&bull; <strong style="color: #d4d4d4;">Dealers</strong> looking to bank trades</div>
-                <div>&bull; <strong style="color: #d4d4d4;">End consumers</strong> looking to turn their toys into cash</div>
+              <div style="font-size: 12px; color: #64748b; line-height: 1.8; margin-bottom: 18px; max-width: 480px; margin-left: auto; margin-right: auto;">
+                <div>&bull; <strong style="color: #334155;">Banks &amp; Credit Unions</strong> looking to liquidate repos</div>
+                <div>&bull; <strong style="color: #334155;">Dealers</strong> looking to bank trades</div>
+                <div>&bull; <strong style="color: #334155;">End consumers</strong> looking to turn their toys into cash</div>
               </div>
 
-              <div style="font-size: 12px; font-weight: 700; color: #d4d4d4; margin-bottom: 6px;">
+              <div style="font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px;">
                 SR1 Companies
               </div>
-              <div style="font-size: 11px; color: #737373;">
+              <div style="font-size: 11px; color: #64748b;">
                 &copy; ${new Date().getFullYear()} SR1 Companies. 100% Employee-Owned. All rights reserved.
               </div>
             </td>
