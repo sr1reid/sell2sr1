@@ -304,7 +304,7 @@ export async function onRequestPost({ request, env }) {
           <tr>
             <td class="footer-cell" style="padding: 24px 32px; background-color: #e2e8f0; border-top: 1px solid #cbd5e1; text-align: center;">
               <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
-                Who We Work With
+                Who We Purchase From
               </div>
               <div style="font-size: 12px; color: #64748b; line-height: 1.8; margin-bottom: 18px; max-width: 480px; margin-left: auto; margin-right: auto;">
                 <div>&bull; <strong style="color: #334155;">Banks &amp; Credit Unions</strong> looking to liquidate repos</div>
@@ -349,7 +349,7 @@ WHAT TO EXPECT NEXT:
 2. Written Offer: We reach out by phone or email with a competitive purchase valuation or credit toward your new item.
 3. Easy Settlement: We coordinate paperwork, title, loan payoffs, and unit transfer.
 
-WHO WE WORK WITH:
+WHO WE PURCHASE FROM:
 • Banks & Credit Unions looking to liquidate repos
 • Dealers looking to bank trades
 • End consumers looking to turn their toys into cash
