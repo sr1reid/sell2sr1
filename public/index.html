@@ -472,7 +472,8 @@
       accepted: { label: 'Offer Accepted', color: 'bg-white text-neutral-950 border-white font-bold', activeBadge: 'bg-emerald-400 text-neutral-950' },
       inspection: { label: 'Inspection / Logistics', color: 'bg-neutral-800 text-neutral-300 border-neutral-600', activeBadge: 'bg-teal-400 text-neutral-950' },
       purchased: { label: 'Purchased & Closed', color: 'bg-white text-neutral-950 border-white font-bold', activeBadge: 'bg-green-400 text-neutral-950' },
-      declined: { label: 'Declined / Passed', color: 'bg-neutral-900 text-neutral-500 border-neutral-800', activeBadge: 'bg-rose-500 text-white' }
+      declined: { label: 'Declined / Passed', color: 'bg-neutral-900 text-neutral-500 border-neutral-800', activeBadge: 'bg-rose-500 text-white' },
+      archived: { label: 'Archived', color: 'bg-neutral-900 text-neutral-500 border-neutral-800', activeBadge: 'bg-zinc-600 text-white' }
     };
 
     function normalizeInquiry(inq) {
@@ -485,13 +486,20 @@
       const customer = inq.customer && typeof inq.customer === 'object' ? inq.customer : {};
       const financials = inq.financials && typeof inq.financials === 'object' ? inq.financials : {};
 
+      const isArchived = inq.isArchived !== undefined ? !!inq.isArchived : (inq.stage === 'archived');
+      const stage = inq.stage && STAGES[inq.stage] ? inq.stage : (isArchived ? 'archived' : 'new');
+
       return {
         ...inq,
         id,
         referenceId: cleanRef,
         createdAt: inq.createdAt || new Date().toISOString(),
         updatedAt: inq.updatedAt || new Date().toISOString(),
-        stage: inq.stage && STAGES[inq.stage] ? inq.stage : 'new',
+        stage,
+        isArchived,
+        archivedAt: inq.archivedAt || null,
+        archivedBy: inq.archivedBy || null,
+        previousStage: inq.previousStage || (stage !== 'archived' ? stage : 'new'),
         intent: inq.intent === 'trade' ? 'trade' : 'sell',
         workingWithSalesperson: inq.workingWithSalesperson || 'no',
         salespersonName: inq.salespersonName || '',
@@ -751,6 +759,72 @@
         notes: [
           { id: 'n3', authorName: 'Sarah Jenkins', authorRole: 'Trailer Appraiser', createdAt: '2026-09-21 14:30', category: 'inspection', content: 'Drop-off confirmed for Friday at Turner location. Payment ready upon physical check.' }
         ]
+      },
+      {
+        id: 'inq-104',
+        referenceId: '1045',
+        createdAt: '2026-09-18T10:15:00Z',
+        updatedAt: '2026-09-22T14:00:00Z',
+        stage: 'archived',
+        isArchived: true,
+        previousStage: 'declined',
+        archivedAt: '2026-09-22T14:00:00Z',
+        archivedBy: 'Reid Lanpher',
+        preferredLocation: 'epsom_nh',
+        intent: 'sell',
+        workingWithSalesperson: 'no',
+        salespersonName: '',
+        assignedStaffName: 'Reid Lanpher',
+        customer: {
+          firstName: 'Kevin',
+          lastName: "O'Connor",
+          email: 'kevin.oconnor.outdoors@gmail.com',
+          phone: '(603) 556-9124',
+          preferredContact: 'text',
+          city: 'Concord',
+          state: 'NH',
+          zipCode: '03301'
+        },
+        unit: {
+          category: 'powersports',
+          subcategory: 'UTV / Side-by-Side (SxS)',
+          year: 2020,
+          make: 'Polaris',
+          model: 'RZR XP 1000 Premium',
+          trimOrFloorplan: 'Ride Command Edition',
+          vinOrSerial: '4XASE99A5L829104',
+          mileageOrHours: 1420,
+          isHours: false,
+          specs: { horsepower: 110, cabType: 'Open ROPS', engineCc: 999 },
+          condition: 'Good',
+          conditionNotes: 'Trail ridden in Northern NH. Clean plastics, winch installed.',
+          tireOrTrackCondition: 'Good (approx 65% tread)',
+          knownIssuesOrDamage: 'Minor scratches on passenger lower door'
+        },
+        financials: {
+          titleStatus: 'Clean Title in Hand',
+          askingPrice: 16500
+        },
+        photos: [
+          { id: 'p6', url: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=1000&q=80', label: 'RZR Profile' }
+        ],
+        offers: [
+          {
+            id: 'off-3',
+            amount: 14200,
+            estRetailValue: 16800,
+            expirationDate: '2026-09-25',
+            status: 'rejected',
+            createdAt: '2026-09-19 11:00',
+            createdBy: 'Reid Lanpher',
+            notes: 'Offered $14,200 cash buy. Seller held firm on $16k.',
+            customerPayoffEstimate: 0,
+            calculatedNetEquity: 14200
+          }
+        ],
+        notes: [
+          { id: 'n4', authorName: 'Reid Lanpher', authorRole: 'Managing Buyer', createdAt: '2026-09-22 14:00', category: 'general', content: 'Inquiry archived. Customer chose to keep unit for hunting season.' }
+        ]
       }
     ];
 
@@ -794,6 +868,11 @@
       });
       const [inquiries, setInquiries] = useState(() => {
         try {
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('reset') === '1') {
+            try { localStorage.removeItem('sell2sr1_inquiries_v2'); } catch (e) {}
+            return INITIAL_INQUIRIES_DATA.map(normalizeInquiry).filter(Boolean);
+          }
           const saved = localStorage.getItem('sell2sr1_inquiries_v2');
           const list = saved ? JSON.parse(saved) : INITIAL_INQUIRIES_DATA;
           return (Array.isArray(list) ? list : INITIAL_INQUIRIES_DATA).map(normalizeInquiry).filter(Boolean);
@@ -1143,7 +1222,7 @@
           </header>
 
           {/* DYNAMIC VIEW CONTENT */}
-          <main className="flex-1">
+          <main className="flex-1 w-full max-w-full overflow-x-hidden">
             {currentView === 'sell' && (
               <CustomerSellFlow 
                 key={sellFlowKey}
@@ -3144,11 +3223,15 @@
       );
     }
 
-    // ==========================================
-    // 3. STAFF APPRAISAL PORTAL (NEUTRAL THEME)
-    // ==========================================
     function StaffPortalView({ inquiries, onUpdateInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onSyncSamplesToCloud }) {
-      const [filterStage, setFilterStage] = useState('all');
+      const [filterStage, setFilterStage] = useState(() => {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          return params.get('stage') || 'all';
+        } catch (e) {
+          return 'all';
+        }
+      });
       const [filterCategory, setFilterCategory] = useState('all');
       const [filterLocation, setFilterLocation] = useState('all');
       const [filterIntent, setFilterIntent] = useState('all'); // 'all', 'trade', 'sell'
@@ -3183,13 +3266,25 @@
 
       const stageCounts = useMemo(() => {
         const list = Array.isArray(inquiries) ? inquiries : [];
-        const counts = { all: list.length };
+        let allActive = 0;
+        let archived = 0;
+        const counts = {};
         Object.keys(STAGES).forEach(k => { counts[k] = 0; });
         list.forEach(inq => {
-          if (inq && inq.stage && counts[inq.stage] !== undefined) {
-            counts[inq.stage] += 1;
+          if (!inq) return;
+          const isArch = inq.isArchived || inq.stage === 'archived';
+          if (isArch) {
+            archived += 1;
+            counts.archived = (counts.archived || 0) + 1;
+          } else {
+            allActive += 1;
+            if (inq.stage && counts[inq.stage] !== undefined) {
+              counts[inq.stage] += 1;
+            }
           }
         });
+        counts.all = allActive;
+        counts.archived = archived;
         return counts;
       }, [inquiries]);
 
@@ -3197,7 +3292,17 @@
         const list = Array.isArray(inquiries) ? inquiries : [];
         return list.filter(inq => {
           if (!inq) return false;
-          if (filterStage !== 'all' && inq.stage !== filterStage) return false;
+          const isArch = inq.isArchived || inq.stage === 'archived';
+
+          if (filterStage === 'archived') {
+            if (!isArch) return false;
+          } else if (filterStage === 'all') {
+            if (isArch) return false;
+          } else {
+            if (isArch) return false;
+            if (inq.stage !== filterStage) return false;
+          }
+
           if (filterCategory !== 'all' && inq.unit?.category !== filterCategory) return false;
           if (filterLocation !== 'all' && inq.preferredLocation !== filterLocation) return false;
           if (filterIntent !== 'all') {
@@ -3255,10 +3360,66 @@
         });
       }, [filtered, sortField, sortDirection]);
 
+      const handleArchiveInquiry = (inq) => {
+        if (!inq) return;
+        const confirmMsg = `Archive inquiry #${inq.referenceId} (${inq.unit?.year || ''} ${inq.unit?.make || ''} ${inq.unit?.model || ''})?\n\nIt will be hidden from the active pipeline and moved to the Archived tab.`;
+        if (!confirm(confirmMsg)) return;
+
+        const now = new Date().toISOString();
+        const prevStage = (inq.stage && inq.stage !== 'archived') ? inq.stage : 'new';
+        const archiveNote = {
+          id: 'note-' + Date.now(),
+          authorName: staffUser?.name || 'SR1 Staff',
+          authorRole: 'Appraiser',
+          createdAt: new Date().toLocaleTimeString(),
+          category: 'general',
+          content: 'Inquiry archived.'
+        };
+
+        const updated = {
+          ...inq,
+          isArchived: true,
+          stage: 'archived',
+          previousStage: prevStage,
+          archivedAt: now,
+          archivedBy: staffUser?.name || 'Staff Appraiser',
+          notes: Array.isArray(inq.notes) ? [...inq.notes, archiveNote] : [archiveNote],
+          updatedAt: now
+        };
+
+        onUpdateInquiry(updated);
+      };
+
+      const handleUnarchiveInquiry = (inq) => {
+        if (!inq) return;
+        const restoredStage = (inq.previousStage && inq.previousStage !== 'archived') ? inq.previousStage : 'new';
+        const now = new Date().toISOString();
+        const unarchiveNote = {
+          id: 'note-' + Date.now(),
+          authorName: staffUser?.name || 'SR1 Staff',
+          authorRole: 'Appraiser',
+          createdAt: new Date().toLocaleTimeString(),
+          category: 'general',
+          content: `Inquiry restored from archive back to ${STAGES[restoredStage]?.label || 'active pipeline'}.`
+        };
+
+        const updated = {
+          ...inq,
+          isArchived: false,
+          stage: restoredStage,
+          archivedAt: null,
+          archivedBy: null,
+          notes: Array.isArray(inq.notes) ? [...inq.notes, unarchiveNote] : [unarchiveNote],
+          updatedAt: now
+        };
+
+        onUpdateInquiry(updated);
+      };
+
       const selectedInquiry = (inquiries || []).find(i => i && i.id === selectedInquiryId);
 
       return (
-        <div className="py-4 sm:py-6 max-w-[1760px] w-full mx-auto px-2 sm:px-6 lg:px-8 space-y-4 sm:space-y-6">
+        <div className="py-4 sm:py-6 max-w-[1760px] w-full mx-auto px-2 sm:px-6 lg:px-8 space-y-4 sm:space-y-6 overflow-x-hidden">
           
           {/* HEADER */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-neutral-900 border border-neutral-800 p-3.5 sm:p-4 rounded-2xl">
@@ -3333,8 +3494,8 @@
           {/* SEARCH & FILTERS BAR */}
           <div className="bg-neutral-900 border border-neutral-800 p-3 sm:p-4 rounded-xl space-y-3 text-xs">
             {/* Top row: search & dropdowns */}
-            <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
-              <div className="flex-1 min-w-[240px] relative">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-3">
+              <div className="w-full md:flex-1 min-w-0 relative">
                 <input
                   type="text"
                   value={searchTerm}
@@ -3354,12 +3515,12 @@
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center space-x-1.5">
-                  <span className="text-neutral-400 text-[11px]">Category:</span>
+                <div className="flex items-center space-x-1.5 flex-1 sm:flex-none">
+                  <span className="text-neutral-400 text-[11px] shrink-0">Category:</span>
                   <select
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
-                    className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none"
+                    className="w-full sm:w-auto bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none max-w-[150px] sm:max-w-none"
                   >
                     <option value="all">All Categories</option>
                     {Object.entries(CATEGORIES).map(([k, v]) => (
@@ -3368,12 +3529,12 @@
                   </select>
                 </div>
 
-                <div className="flex items-center space-x-1.5">
-                  <span className="text-neutral-400 text-[11px]">Type:</span>
+                <div className="flex items-center space-x-1.5 flex-1 sm:flex-none">
+                  <span className="text-neutral-400 text-[11px] shrink-0">Type:</span>
                   <select
                     value={filterIntent}
                     onChange={(e) => setFilterIntent(e.target.value)}
-                    className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none"
+                    className="w-full sm:w-auto bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none max-w-[150px] sm:max-w-none"
                   >
                     <option value="all">Trade & Sell (All)</option>
                     <option value="trade">Trade-Ins Only</option>
@@ -3381,12 +3542,12 @@
                   </select>
                 </div>
 
-                <div className="flex items-center space-x-1.5">
-                  <span className="text-neutral-400 text-[11px]">Location:</span>
+                <div className="flex items-center space-x-1.5 flex-1 sm:flex-none">
+                  <span className="text-neutral-400 text-[11px] shrink-0">Location:</span>
                   <select
                     value={filterLocation}
                     onChange={(e) => setFilterLocation(e.target.value)}
-                    className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none"
+                    className="w-full sm:w-auto bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none max-w-[180px] sm:max-w-none"
                   >
                     <option value="all">All Store Locations</option>
                     {LOCATIONS.map(loc => (
@@ -3409,9 +3570,9 @@
                       : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
                   }`}
                 >
-                  All ({stageCounts.all || 0})
+                  All Active ({stageCounts.all || 0})
                 </button>
-                {Object.entries(STAGES).map(([stageKey, config]) => {
+                {Object.entries(STAGES).filter(([k]) => k !== 'archived').map(([stageKey, config]) => {
                   const count = stageCounts[stageKey] || 0;
                   const isActive = filterStage === stageKey;
                   const activeClass = config.activeBadge || 'bg-neutral-100 text-neutral-950';
@@ -3430,11 +3591,28 @@
                     </button>
                   );
                 })}
+
+                <span className="text-neutral-700 hidden sm:inline px-0.5">|</span>
+
+                {/* ARCHIVED STAGE TAB */}
+                <button
+                  type="button"
+                  onClick={() => setFilterStage('archived')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                    filterStage === 'archived'
+                      ? 'bg-zinc-650 text-white border border-zinc-500 shadow-sm'
+                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+                  }`}
+                  title="View archived inquiries"
+                >
+                  <span>📦 Archived</span>
+                  <span>({stageCounts.archived || 0})</span>
+                </button>
               </div>
 
               <div className="flex items-center gap-2 text-neutral-400 text-xs">
                 <span>
-                  Showing <strong className="text-white">{sorted.length}</strong> of {inquiries.length} inquiries
+                  Showing <strong className="text-white">{sorted.length}</strong> of {filterStage === 'archived' ? (stageCounts.archived || 0) : (stageCounts.all || 0)} {filterStage === 'archived' ? 'archived' : 'active'} inquiries
                 </span>
                 {(searchTerm || filterStage !== 'all' || filterCategory !== 'all' || filterLocation !== 'all' || filterIntent !== 'all') && (
                   <button
@@ -3455,7 +3633,7 @@
           </div>
 
           {/* MOBILE CARD STREAM (phones < md when mobileLayout === 'cards') */}
-          <div className={`${mobileLayout === 'cards' ? 'block md:hidden' : 'hidden'} space-y-3`}>
+          <div className={`${mobileLayout === 'cards' ? 'block md:hidden' : 'hidden'} space-y-3 w-full max-w-full overflow-hidden`}>
             {sorted.length === 0 ? (
               <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center text-neutral-400 space-y-3">
                 <p className="text-sm font-semibold text-neutral-300">No inquiries found matching your filters</p>
@@ -3486,7 +3664,7 @@
                   <div
                     key={item.id}
                     onClick={() => setSelectedInquiryId(item.id)}
-                    className="bg-neutral-900 border border-neutral-800 hover:border-neutral-700 active:border-neutral-600 rounded-2xl p-3.5 space-y-3 shadow-md transition-all cursor-pointer"
+                    className="bg-neutral-900 border border-neutral-800 hover:border-neutral-700 active:border-neutral-600 rounded-2xl p-3.5 space-y-3 shadow-md transition-all cursor-pointer w-full max-w-full overflow-hidden"
                   >
                     {/* Top Row: Ref #, Date, Intent, Stage */}
                     <div className="flex items-center justify-between gap-2">
@@ -3581,8 +3759,8 @@
                       </div>
                     </div>
 
-                    {/* Bottom Row: Outreach, Offer, and Appraise Button */}
-                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-neutral-850">
+                    {/* Bottom Row: Outreach & Offer Info */}
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-850 text-xs">
                       <div className="flex items-center gap-2">
                         {item.outreach?.reachedOut ? (
                           <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1">
@@ -3606,12 +3784,41 @@
                         )}
                       </div>
 
+                      {item.isArchived || item.stage === 'archived' ? (
+                        <span className="text-[10px] text-amber-400 font-semibold px-2 py-0.5 bg-amber-950/60 border border-amber-800/80 rounded">
+                          📦 Archived
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {/* Action Row: Appraise + Archive/Restore */}
+                    <div className="flex items-center gap-2 pt-1" onClick={e => e.stopPropagation()}>
                       <button
+                        type="button"
                         onClick={() => setSelectedInquiryId(item.id)}
-                        className="px-3 py-1.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-lg text-xs shadow-sm transition-all"
+                        className="flex-1 min-w-0 py-2 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-xl text-xs text-center shadow-sm transition-all truncate"
                       >
                         Appraise →
                       </button>
+                      {item.isArchived || item.stage === 'archived' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleUnarchiveInquiry(item)}
+                          className="px-3 py-2 bg-neutral-950 hover:bg-neutral-800 text-amber-400 hover:text-amber-300 border border-neutral-800 hover:border-amber-700/60 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0"
+                          title="Restore to active pipeline"
+                        >
+                          ↩️ Restore
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleArchiveInquiry(item)}
+                          className="px-3 py-2 bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0"
+                          title="Archive inquiry"
+                        >
+                          📦 Archive
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -3643,38 +3850,38 @@
                         {sortField === 'type' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
                       </div>
                     </th>
-                    <th onClick={() => handleSort('unit')} className="p-3.5 cursor-pointer hover:text-white transition-colors min-w-[320px]">
+                    <th onClick={() => handleSort('unit')} className="p-3.5 cursor-pointer hover:text-white transition-colors min-w-[270px]">
                       <div className="flex items-center space-x-1">
                         <span>Unit Details</span>
                         {sortField === 'unit' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
                       </div>
                     </th>
-                    <th onClick={() => handleSort('customer')} className="p-3.5 cursor-pointer hover:text-white transition-colors min-w-[220px]">
+                    <th onClick={() => handleSort('customer')} className="p-3.5 cursor-pointer hover:text-white transition-colors min-w-[170px]">
                       <div className="flex items-center space-x-1">
                         <span>Customer</span>
                         {sortField === 'customer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
                       </div>
                     </th>
-                    <th onClick={() => handleSort('location')} className="p-3.5 cursor-pointer hover:text-white transition-colors min-w-[170px]">
+                    <th onClick={() => handleSort('location')} className="p-3.5 cursor-pointer hover:text-white transition-colors min-w-[140px]">
                       <div className="flex items-center space-x-1">
                         <span>Store Location</span>
                         {sortField === 'location' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
                       </div>
                     </th>
-                    <th className="p-3.5 min-w-[130px]">Outreach</th>
-                    <th onClick={() => handleSort('stage')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[130px]">
+                    <th className="p-3.5 min-w-[110px]">Outreach</th>
+                    <th onClick={() => handleSort('stage')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[115px]">
                       <div className="flex items-center space-x-1">
                         <span>Stage</span>
                         {sortField === 'stage' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
                       </div>
                     </th>
-                    <th onClick={() => handleSort('offer')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[110px]">
+                    <th onClick={() => handleSort('offer')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[90px]">
                       <div className="flex items-center space-x-1">
                         <span>Offer</span>
                         {sortField === 'offer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
                       </div>
                     </th>
-                    <th className="p-3.5 text-right w-[100px]">Action</th>
+                    <th className="p-3.5 text-right w-[165px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800 text-xs">
@@ -3866,12 +4073,33 @@
 
                           {/* Action */}
                           <td className="p-3.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                            <button
-                              onClick={() => setSelectedInquiryId(item.id)}
-                              className="px-3.5 py-1.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-lg text-xs shadow-sm transition-all"
-                            >
-                              Appraise →
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => setSelectedInquiryId(item.id)}
+                                className="px-3.5 py-1.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-lg text-xs shadow-sm transition-all"
+                              >
+                                Appraise →
+                              </button>
+                              {item.isArchived || item.stage === 'archived' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnarchiveInquiry(item)}
+                                  className="px-2.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-amber-400 hover:text-amber-300 border border-neutral-800 hover:border-amber-700/60 font-semibold rounded-lg text-xs transition-all"
+                                  title="Restore to active pipeline"
+                                >
+                                  ↩️ Restore
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleArchiveInquiry(item)}
+                                  className="px-2.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700 font-semibold rounded-lg text-xs transition-all"
+                                  title="Archive inquiry"
+                                >
+                                  📦 Archive
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -4032,13 +4260,70 @@
         }
       };
 
+      const isArchived = Boolean(inquiry.isArchived || currentStage === 'archived' || inquiry.stage === 'archived');
+
+      useEffect(() => {
+        setCurrentStage(inquiry.stage);
+      }, [inquiry.stage]);
+
       const handleSaveStage = (newSt) => {
         setCurrentStage(newSt);
-        onUpdateInquiry({
-          ...inquiry,
-          stage: newSt,
-          updatedAt: new Date().toISOString()
-        });
+        const now = new Date().toISOString();
+        if (newSt === 'archived') {
+          const prevStage = (inquiry.stage && inquiry.stage !== 'archived') ? inquiry.stage : (inquiry.previousStage || 'new');
+          const archiveNote = {
+            id: 'note-' + Date.now(),
+            authorName: outreachStaffName.trim() || 'Staff Appraiser',
+            authorRole: 'Appraiser',
+            createdAt: new Date().toLocaleTimeString(),
+            category: 'general',
+            content: 'Stage set to Archived. Inquiry hidden from active pipeline.'
+          };
+          onUpdateInquiry({
+            ...inquiry,
+            stage: 'archived',
+            isArchived: true,
+            previousStage: prevStage,
+            archivedAt: now,
+            archivedBy: outreachStaffName.trim() || 'Staff Appraiser',
+            notes: Array.isArray(inquiry.notes) ? [...inquiry.notes, archiveNote] : [archiveNote],
+            updatedAt: now
+          });
+        } else if (inquiry.isArchived || inquiry.stage === 'archived') {
+          const restoreNote = {
+            id: 'note-' + Date.now(),
+            authorName: outreachStaffName.trim() || 'Staff Appraiser',
+            authorRole: 'Appraiser',
+            createdAt: new Date().toLocaleTimeString(),
+            category: 'general',
+            content: `Stage changed from Archived to ${STAGES[newSt]?.label || newSt}. Inquiry restored to active pipeline.`
+          };
+          onUpdateInquiry({
+            ...inquiry,
+            stage: newSt,
+            isArchived: false,
+            previousStage: null,
+            notes: Array.isArray(inquiry.notes) ? [...inquiry.notes, restoreNote] : [restoreNote],
+            updatedAt: now
+          });
+        } else {
+          onUpdateInquiry({
+            ...inquiry,
+            stage: newSt,
+            updatedAt: now
+          });
+        }
+      };
+
+      const handleArchiveInModal = () => {
+        const confirmMsg = `Archive inquiry #${inquiry.referenceId} (${inquiry.unit?.year || ''} ${inquiry.unit?.make || ''} ${inquiry.unit?.model || ''})?\n\nIt will be hidden from the active pipeline and moved to the Archived tab.`;
+        if (!confirm(confirmMsg)) return;
+        handleSaveStage('archived');
+      };
+
+      const handleUnarchiveInModal = () => {
+        const restoredStage = (inquiry.previousStage && inquiry.previousStage !== 'archived') ? inquiry.previousStage : 'new';
+        handleSaveStage(restoredStage);
       };
 
       const handleSendOffer = () => {
@@ -4152,6 +4437,26 @@
               </div>
 
               <div className="flex items-center space-x-2">
+                {isArchived ? (
+                  <button
+                    type="button"
+                    onClick={handleUnarchiveInModal}
+                    className="px-2.5 py-1.5 bg-amber-950/70 hover:bg-amber-900 border border-amber-800 text-amber-300 font-semibold rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Restore to active pipeline"
+                  >
+                    <span>↩️</span> Restore
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleArchiveInModal}
+                    className="px-2.5 py-1.5 bg-neutral-850 hover:bg-neutral-800 border border-neutral-750 text-neutral-300 hover:text-white font-semibold rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Archive inquiry"
+                  >
+                    <span>📦</span> Archive
+                  </button>
+                )}
+
                 <select
                   value={currentStage}
                   onChange={(e) => handleSaveStage(e.target.value)}
@@ -4172,6 +4477,33 @@
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+              {isArchived && (
+                <div className="bg-amber-950/40 border border-amber-800/80 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-amber-200">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xl">📦</span>
+                    <div>
+                      <div className="font-bold text-xs text-amber-300 flex items-center gap-2">
+                        <span>This inquiry is archived</span>
+                        <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-900/60 border border-amber-700 text-amber-200">
+                          Hidden from active pipeline
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-amber-200/80 mt-0.5">
+                        {inquiry.archivedAt ? `Archived on ${new Date(inquiry.archivedAt).toLocaleDateString()} at ${new Date(inquiry.archivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Archived'}
+                        {inquiry.archivedBy ? ` by ${inquiry.archivedBy}` : ''}.
+                        {inquiry.previousStage ? ` Previous stage was ${STAGES[inquiry.previousStage]?.label || inquiry.previousStage}.` : ''}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleUnarchiveInModal}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold rounded-lg text-xs shadow-sm transition-colors whitespace-nowrap self-start sm:self-auto cursor-pointer"
+                  >
+                    ↩️ Restore to Active Pipeline
+                  </button>
+                </div>
+              )}
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
