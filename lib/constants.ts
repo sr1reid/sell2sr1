@@ -297,6 +297,12 @@ export const STAGE_CONFIG: Record<InquiryStage, { label: string; color: string; 
     color: '#52525b',
     badgeClass: 'bg-zinc-900 text-zinc-500 border-zinc-800',
     description: 'Offer passed or seller decided not to proceed'
+  },
+  archived: {
+    label: 'Archived',
+    color: '#3f3f46',
+    badgeClass: 'bg-zinc-900 text-zinc-500 border-zinc-800',
+    description: 'Inquiry archived and hidden from active pipeline views'
   }
 };
 
