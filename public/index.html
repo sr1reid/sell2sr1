@@ -1713,41 +1713,45 @@
         });
       };
 
-      // Generate a reduced-size preview blob specifically for email attachments (keeps email fast and lightweight)
-      const createEmailPreviewBlob = (dataUrlOrUrl, isVideo = false) => {
+      // Generate a reduced-size preview base64 JPEG specifically for Resend email attachments
+      const createEmailPreviewBase64 = (dataUrlOrUrl, isVideo = false) => {
         return new Promise((resolve) => {
           if (!dataUrlOrUrl) return resolve(null);
           const img = new Image();
           img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const maxDim = 480; // Reduced size for fast email delivery
-            let w = img.width || 480;
-            let h = img.height || 360;
-            if (w > maxDim || h > maxDim) {
-              if (w > h) {
-                h = Math.round((h * maxDim) / w);
-                w = maxDim;
-              } else {
-                w = Math.round((w * maxDim) / h);
-                h = maxDim;
+            try {
+              const canvas = document.createElement('canvas');
+              const maxDim = 480; // Reduced size for fast email delivery
+              let w = img.width || 480;
+              let h = img.height || 360;
+              if (w > maxDim || h > maxDim) {
+                if (w > h) {
+                  h = Math.round((h * maxDim) / w);
+                  w = maxDim;
+                } else {
+                  w = Math.round((w * maxDim) / h);
+                  h = maxDim;
+                }
               }
-            }
-            canvas.width = Math.max(1, w);
-            canvas.height = Math.max(1, h);
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              canvas.width = Math.max(1, w);
+              canvas.height = Math.max(1, h);
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-            if (isVideo) {
-              ctx.fillStyle = 'rgba(0,0,0,0.65)';
-              ctx.fillRect(8, canvas.height - 30, 130, 22);
-              ctx.fillStyle = '#ffffff';
-              ctx.font = 'bold 10px sans-serif';
-              ctx.fillText('▶ VIDEO PREVIEW', 14, canvas.height - 15);
-            }
+              if (isVideo) {
+                ctx.fillStyle = 'rgba(0,0,0,0.65)';
+                ctx.fillRect(8, canvas.height - 30, 130, 22);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.fillText('▶ VIDEO PREVIEW', 14, canvas.height - 15);
+              }
 
-            canvas.toBlob((blob) => {
-              resolve(blob);
-            }, 'image/jpeg', 0.65);
+              const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.65);
+              const base64Content = jpegDataUrl.includes(',') ? jpegDataUrl.split(',')[1] : null;
+              resolve(base64Content);
+            } catch (err) {
+              resolve(null);
+            }
           };
           img.onerror = () => resolve(null);
           img.src = dataUrlOrUrl;
@@ -2075,86 +2079,73 @@
             _replyto: formData.email
           };
 
-          // 1. Dispatch professional branded confirmation email to customer from appraisals@sr1companies.com immediately
-          if (formData.email && formData.email.includes('@')) {
-            const confirmationPayload = {
-              referenceId: refId,
-              customer: {
-                firstName: formData.firstName,
-                lastName: formData.lastName,
-                email: formData.email.trim(),
-                phone: formData.phone
-              },
-              unit: {
-                year: formData.year,
-                make: formData.make,
-                model: formData.model,
-                subcategory: formData.subcategory,
-                category: activeCatConfig.label,
-                condition: formData.condition,
-                mileageOrHours: formData.mileageOrHours,
-                isHours: activeCatConfig.isHours
-              },
-              intent: formData.intent,
-              workingWithSalesperson: formData.workingWithSalesperson,
-              salespersonName: formData.salespersonName,
-              preferredLocation: locationName,
-              photosCount: photos.length
-            };
-
-            // Dispatch branded confirmation email to customer from appraisals@sr1companies.com via Cloudflare Pages Function
-            fetch('/api/send-confirmation', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-              },
-              body: JSON.stringify(confirmationPayload)
-            })
-            .then(res => res.json())
-            .then(resData => {
-              console.log('Confirmation email response:', resData);
-              if (!resData.success) {
-                console.error('Confirmation email error from server:', resData);
-              }
-            })
-            .catch(err => {
-              console.error('Confirmation email dispatch network error:', err);
-            });
-          }
-
-          // 2. Build email FormData and dispatch internal appraisal alert
-          const emailFormData = new FormData();
-          for (const [key, val] of Object.entries(appraisalPayload)) {
-            emailFormData.append(key, val);
-          }
-
-          if (ccEmails.length > 0) {
-            emailFormData.append('_cc', ccEmails.join(','));
-          }
-
+          // Build up to 3 lightweight JPEG preview attachments for the internal dealership alert
+          const emailAttachments = [];
           if (photos.length > 0) {
             const previewItems = photos.slice(0, 3);
             for (let i = 0; i < previewItems.length; i++) {
               const item = previewItems[i];
               try {
-                const blob = await createEmailPreviewBlob(item.thumbUrl || item.url, item.isVideo);
-                if (blob) {
-                  emailFormData.append(`attachment_${i + 1}`, blob, item.isVideo ? `preview_${i + 1}_video.jpg` : `preview_${i + 1}.jpg`);
+                const base64Content = await createEmailPreviewBase64(item.thumbUrl || item.url, item.isVideo);
+                if (base64Content) {
+                  emailAttachments.push({
+                    filename: item.isVideo ? `preview_${i + 1}_video.jpg` : `preview_${i + 1}.jpg`,
+                    content: base64Content
+                  });
                 }
               } catch (e) {
-                console.warn('Preview blob error:', e);
+                console.warn('Preview attachment error:', e);
               }
             }
           }
 
-          fetch(`https://formsubmit.co/ajax/${encodeURIComponent(primaryEmail)}`, {
+          // Dispatch both customer confirmation email AND internal dealership appraisal alert via Cloudflare Worker (Resend)
+          const confirmationPayload = {
+            referenceId: refId,
+            customer: {
+              firstName: formData.firstName,
+              lastName: formData.lastName,
+              email: (formData.email || '').trim(),
+              phone: formData.phone
+            },
+            unit: {
+              year: formData.year,
+              make: formData.make,
+              model: formData.model,
+              subcategory: formData.subcategory,
+              category: activeCatConfig.label,
+              condition: formData.condition,
+              mileageOrHours: formData.mileageOrHours,
+              isHours: activeCatConfig.isHours
+            },
+            intent: formData.intent,
+            workingWithSalesperson: formData.workingWithSalesperson,
+            salespersonName: formData.salespersonName,
+            preferredLocation: locationName,
+            photosCount: photos.length,
+            notificationEmails: locationEmails,
+            appraisalDetails: appraisalPayload,
+            attachments: emailAttachments
+          };
+
+          fetch('/api/send-confirmation', {
             method: 'POST',
-            headers: { 
+            headers: {
+              'Content-Type': 'application/json',
               'Accept': 'application/json'
             },
-            body: emailFormData
-          }).catch(err => console.error('Appraisal email dispatch error:', err));
+            body: JSON.stringify(confirmationPayload)
+          })
+          .then(res => res.json())
+          .then(resData => {
+            console.log('Email dispatch response:', resData);
+            if (!resData.success) {
+              console.error('Email dispatch error from server:', resData);
+            }
+          })
+          .catch(err => {
+            console.error('Email dispatch network error:', err);
+          });
         } catch (e) {
           console.error('Email error:', e);
         }
@@ -3052,13 +3043,14 @@
       const handleSubmit = (e) => {
         e.preventDefault();
         try {
-          fetch('https://formsubmit.co/ajax/appraisals@sr1companies.com', {
+          fetch('/api/send-confirmation', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
               'Accept': 'application/json'
             },
             body: JSON.stringify({
+              type: 'contact',
               _subject: `Direct Contact Message from ${formData.name}`,
               Name: formData.name,
               Email: formData.email,
