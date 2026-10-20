@@ -464,15 +464,15 @@
     };
 
     const STAGES = {
-      new: { label: 'New Inquiry', color: 'bg-neutral-800 text-neutral-200 border-neutral-700' },
-      appraising: { label: 'Under Review', color: 'bg-neutral-800 text-neutral-300 border-neutral-600' },
-      message_sent: { label: 'Message Sent', color: 'bg-neutral-800 text-sky-300 border-sky-800/80 font-semibold' },
-      offer_sent: { label: 'Offer Sent', color: 'bg-neutral-700 text-white border-neutral-500 font-semibold' },
-      negotiating: { label: 'Counter / Discussing', color: 'bg-neutral-800 text-neutral-300 border-neutral-600' },
-      accepted: { label: 'Offer Accepted', color: 'bg-white text-neutral-950 border-white font-bold' },
-      inspection: { label: 'Inspection / Logistics', color: 'bg-neutral-800 text-neutral-300 border-neutral-600' },
-      purchased: { label: 'Purchased & Closed', color: 'bg-white text-neutral-950 border-white font-bold' },
-      declined: { label: 'Declined / Passed', color: 'bg-neutral-900 text-neutral-500 border-neutral-800' }
+      new: { label: 'New Inquiry', color: 'bg-neutral-800 text-neutral-200 border-neutral-700', activeBadge: 'bg-amber-400 text-neutral-950' },
+      appraising: { label: 'Under Review', color: 'bg-neutral-800 text-neutral-300 border-neutral-600', activeBadge: 'bg-blue-400 text-neutral-950' },
+      message_sent: { label: 'Message Sent', color: 'bg-neutral-800 text-sky-300 border-sky-800/80 font-semibold', activeBadge: 'bg-sky-400 text-neutral-950' },
+      offer_sent: { label: 'Offer Sent', color: 'bg-neutral-700 text-white border-neutral-500 font-semibold', activeBadge: 'bg-purple-400 text-neutral-950' },
+      negotiating: { label: 'Counter / Discussing', color: 'bg-neutral-800 text-neutral-300 border-neutral-600', activeBadge: 'bg-orange-400 text-neutral-950' },
+      accepted: { label: 'Offer Accepted', color: 'bg-white text-neutral-950 border-white font-bold', activeBadge: 'bg-emerald-400 text-neutral-950' },
+      inspection: { label: 'Inspection / Logistics', color: 'bg-neutral-800 text-neutral-300 border-neutral-600', activeBadge: 'bg-teal-400 text-neutral-950' },
+      purchased: { label: 'Purchased & Closed', color: 'bg-white text-neutral-950 border-white font-bold', activeBadge: 'bg-green-400 text-neutral-950' },
+      declined: { label: 'Declined / Passed', color: 'bg-neutral-900 text-neutral-500 border-neutral-800', activeBadge: 'bg-rose-500 text-white' }
     };
 
     function normalizeInquiry(inq) {
@@ -3140,16 +3140,16 @@
         }
       };
 
-      const metrics = useMemo(() => {
+      const stageCounts = useMemo(() => {
         const list = Array.isArray(inquiries) ? inquiries : [];
-        const total = list.length;
-        const newCount = list.filter(i => i && i.stage === 'new').length;
-        const appraisingCount = list.filter(i => i && i.stage === 'appraising').length;
-        const messageSentCount = list.filter(i => i && i.stage === 'message_sent').length;
-        const offersSent = list.filter(i => i && i.stage === 'offer_sent').length;
-        const accepted = list.filter(i => i && (i.stage === 'accepted' || i.stage === 'inspection' || i.stage === 'purchased')).length;
-
-        return { total, newCount, appraisingCount, messageSentCount, offersSent, accepted };
+        const counts = { all: list.length };
+        Object.keys(STAGES).forEach(k => { counts[k] = 0; });
+        list.forEach(inq => {
+          if (inq && inq.stage && counts[inq.stage] !== undefined) {
+            counts[inq.stage] += 1;
+          }
+        });
+        return counts;
       }, [inquiries]);
 
       const filtered = useMemo(() => {
@@ -3289,105 +3289,6 @@
             </div>
           </div>
 
-          {/* INTERACTIVE KPI STATS CARDS */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3">
-            <button
-              type="button"
-              onClick={() => setFilterStage('all')}
-              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
-                filterStage === 'all'
-                  ? 'bg-neutral-850 border-white/70 shadow-lg ring-1 ring-white/30'
-                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-neutral-400">Total Inquiries</span>
-                {filterStage === 'all' && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
-              </div>
-              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.total}</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterStage('new')}
-              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
-                filterStage === 'new'
-                  ? 'bg-neutral-850 border-amber-500/80 shadow-lg ring-1 ring-amber-500/30'
-                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-amber-400">Awaiting Review</span>
-                {filterStage === 'new' && <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>}
-              </div>
-              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.newCount}</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterStage('appraising')}
-              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
-                filterStage === 'appraising'
-                  ? 'bg-neutral-850 border-blue-500/80 shadow-lg ring-1 ring-blue-500/30'
-                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-blue-400">Under Review</span>
-                {filterStage === 'appraising' && <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>}
-              </div>
-              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.appraisingCount}</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterStage('message_sent')}
-              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
-                filterStage === 'message_sent'
-                  ? 'bg-neutral-850 border-sky-500/80 shadow-lg ring-1 ring-sky-500/30'
-                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-sky-400">Message Sent</span>
-                {filterStage === 'message_sent' && <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span>}
-              </div>
-              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.messageSentCount}</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterStage('offer_sent')}
-              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
-                filterStage === 'offer_sent'
-                  ? 'bg-neutral-850 border-purple-500/80 shadow-lg ring-1 ring-purple-500/30'
-                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-purple-400">Offers Sent</span>
-                {filterStage === 'offer_sent' && <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>}
-              </div>
-              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.offersSent}</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterStage('accepted')}
-              className={`text-left p-3 sm:p-3.5 rounded-xl border transition-all ${
-                filterStage === 'accepted'
-                  ? 'bg-neutral-850 border-emerald-500/80 shadow-lg ring-1 ring-emerald-500/30'
-                  : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-850/60'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-emerald-400">Deals Accepted</span>
-                {filterStage === 'accepted' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>}
-              </div>
-              <div className="text-xl sm:text-2xl font-bold text-white mt-1">{metrics.accepted}</div>
-            </button>
-          </div>
-
           {/* SEARCH & FILTERS BAR */}
           <div className="bg-neutral-900 border border-neutral-800 p-3 sm:p-4 rounded-xl space-y-3 text-xs">
             {/* Top row: search & dropdowns */}
@@ -3467,63 +3368,27 @@
                       : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
                   }`}
                 >
-                  All ({metrics.total})
+                  All ({stageCounts.all || 0})
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStage('new')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    filterStage === 'new'
-                      ? 'bg-amber-400 text-neutral-950 shadow-sm'
-                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
-                  }`}
-                >
-                  Awaiting Review ({metrics.newCount})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStage('appraising')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    filterStage === 'appraising'
-                      ? 'bg-blue-400 text-neutral-950 shadow-sm'
-                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
-                  }`}
-                >
-                  Under Review ({metrics.appraisingCount})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStage('message_sent')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    filterStage === 'message_sent'
-                      ? 'bg-sky-400 text-neutral-950 shadow-sm'
-                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
-                  }`}
-                >
-                  Message Sent ({metrics.messageSentCount})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStage('offer_sent')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    filterStage === 'offer_sent'
-                      ? 'bg-purple-400 text-neutral-950 shadow-sm'
-                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
-                  }`}
-                >
-                  Offers Sent ({metrics.offersSent})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStage('accepted')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    filterStage === 'accepted'
-                      ? 'bg-emerald-400 text-neutral-950 shadow-sm'
-                      : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
-                  }`}
-                >
-                  Deals Accepted ({metrics.accepted})
-                </button>
+                {Object.entries(STAGES).map(([stageKey, config]) => {
+                  const count = stageCounts[stageKey] || 0;
+                  const isActive = filterStage === stageKey;
+                  const activeClass = config.activeBadge || 'bg-neutral-100 text-neutral-950';
+                  return (
+                    <button
+                      key={stageKey}
+                      type="button"
+                      onClick={() => setFilterStage(stageKey)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                        isActive
+                          ? `${activeClass} shadow-sm`
+                          : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+                      }`}
+                    >
+                      {config.label} ({count})
+                    </button>
+                  );
+                })}
               </div>
 
               <div className="flex items-center gap-2 text-neutral-400 text-xs">
