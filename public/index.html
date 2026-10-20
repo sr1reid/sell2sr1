@@ -525,7 +525,7 @@
         },
         financials: {
           titleStatus: financials.titleStatus || 'Owned outright',
-          lienHolderName: financials.lienHolderName || '',
+          lienHolderName: financials.lienHolderName || financials.lienHolder || inq.lienHolderName || inq.lienHolder || '',
           estimatedPayoff: Number(financials.estimatedPayoff) || 0,
           askingPrice: Number(financials.askingPrice) || 0
         },
@@ -1391,7 +1391,14 @@
         conditionNotes: '',
         knownIssuesOrDamage: '',
         tireOrTrackCondition: 'good',
-        titleStatus: 'owned_clean_title',
+        titleStatus: (() => {
+          try {
+            const p = new URLSearchParams(window.location.search).get('titleStatus');
+            return p || 'owned_clean_title';
+          } catch (e) {
+            return 'owned_clean_title';
+          }
+        })(),
         lienHolderName: '',
         estimatedPayoff: '',
         askingPrice: '',
@@ -1902,8 +1909,8 @@
               : formData.titleStatus === 'other'
               ? 'Other'
               : 'Owned outright - not titleable',
-            lienHolderName: formData.lienHolderName,
-            estimatedPayoff: Number(formData.estimatedPayoff) || 0,
+            lienHolderName: formData.titleStatus === 'financed_money_owed' ? (formData.lienHolderName || '').trim() : '',
+            estimatedPayoff: formData.titleStatus === 'financed_money_owed' ? (Number(formData.estimatedPayoff) || 0) : 0,
             askingPrice: Number(formData.askingPrice) || 0
           },
           photos: photos.length > 0 ? photos : [
@@ -1919,7 +1926,7 @@
               category: 'general',
               content: category === 'container'
                 ? `New shipping container inquiry submitted (Purchased: ${formData.year}, Box ID: ${formData.vinOrSerial}). Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${formData.salespersonName || 'Unassigned'})` : 'OUTRIGHT SALE'}. Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
-                : `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}. Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${formData.salespersonName || 'Unassigned'})` : 'OUTRIGHT SALE'}. Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
+                : `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}. Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${formData.salespersonName || 'Unassigned'})` : 'OUTRIGHT SALE'}.${formData.titleStatus === 'financed_money_owed' && formData.lienHolderName ? ` Financed with ${formData.lienHolderName.trim()} (Est. Payoff: $${(Number(formData.estimatedPayoff) || 0).toLocaleString()}).` : ''} Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
             }
           ]
         };
@@ -1964,9 +1971,15 @@
             Condition_Notes: formData.conditionNotes || 'None',
             Known_Issues_or_Damage: formData.knownIssuesOrDamage || 'None reported',
             Tire_or_Track_Condition: formData.tireOrTrackCondition || 'N/A',
-            Title_Status: formData.titleStatus,
-            Lien_Holder_Name: formData.lienHolderName || 'None',
-            Estimated_Loan_Payoff: formData.estimatedPayoff ? `$${formData.estimatedPayoff}` : 'N/A',
+            Title_Status: formData.titleStatus === 'owned_clean_title'
+              ? 'Owned outright - clean title in hand'
+              : formData.titleStatus === 'financed_money_owed'
+              ? 'Financed - money owed'
+              : formData.titleStatus === 'other'
+              ? 'Other'
+              : 'Owned outright - not titleable',
+            Lien_Holder_Name: (formData.titleStatus === 'financed_money_owed' && formData.lienHolderName) ? formData.lienHolderName.trim() : 'None (No active lien)',
+            Estimated_Loan_Payoff: (formData.titleStatus === 'financed_money_owed' && formData.estimatedPayoff) ? `$${Number(formData.estimatedPayoff).toLocaleString()}` : 'N/A',
             Asking_Price: formData.askingPrice ? `$${formData.askingPrice}` : 'Open to best offer',
             Unit_Specifications: [
               formData.lengthFeet ? `Length: ${formData.lengthFeet}ft` : '',
@@ -2592,18 +2605,42 @@
                     </div>
 
                     {formData.titleStatus === 'financed_money_owed' && (
-                      <div>
-                        <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                          Estimated Loan Payoff Amount ($) *
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          required
-                          value={formData.estimatedPayoff}
-                          onChange={(e) => handleInputChange('estimatedPayoff', e.target.value)}
-                          className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-base sm:text-sm"
-                        />
+                      <div className="space-y-3 pt-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                              Lien Holder / Lender Name *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. Bangor Savings Bank, Sheffield, Ally..."
+                              value={formData.lienHolderName}
+                              onChange={(e) => handleInputChange('lienHolderName', e.target.value)}
+                              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-base sm:text-sm placeholder-neutral-500 focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            />
+                            <p className="text-[11px] text-neutral-500 mt-1">Bank, credit union, or lender holding the loan.</p>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                              Estimated Loan Payoff Amount ($) *
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              required
+                              placeholder="e.g. 15000"
+                              value={formData.estimatedPayoff}
+                              onChange={(e) => handleInputChange('estimatedPayoff', e.target.value)}
+                              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-base sm:text-sm placeholder-neutral-500 focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            />
+                            <p className="text-[11px] text-neutral-500 mt-1">Approximate 10-day payoff balance.</p>
+                          </div>
+                        </div>
+                        <div className="p-3 bg-neutral-900/80 rounded-lg border border-neutral-800 text-[11px] text-neutral-400 flex items-start space-x-2">
+                          <span className="text-neutral-300 text-xs mt-0.5">ℹ️</span>
+                          <span>SR1 handles all loan payoff paperwork directly with your lender. Any positive equity is paid directly to you.</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2726,9 +2763,15 @@
                           alert('Please describe the condition of the unit and any flaws or issues');
                           return;
                         }
-                        if (formData.titleStatus === 'financed_money_owed' && !formData.estimatedPayoff) {
-                          alert('Please enter the estimated loan payoff amount');
-                          return;
+                        if (formData.titleStatus === 'financed_money_owed') {
+                          if (!formData.lienHolderName || !formData.lienHolderName.trim()) {
+                            alert('Please enter who the lien holder / lender is (e.g. Bangor Savings, Sheffield, Ally, etc.)');
+                            return;
+                          }
+                          if (!formData.estimatedPayoff) {
+                            alert('Please enter the estimated loan payoff amount');
+                            return;
+                          }
                         }
                         setStep(4);
                         scrollToFormTop();
@@ -3500,6 +3543,9 @@
                         </h3>
                         <p className="text-[11px] text-neutral-400">
                           {item.unit.subcategory || 'Standard'} • {item.unit.mileageOrHours > 0 ? `${item.unit.mileageOrHours.toLocaleString()} ${item.unit.isHours ? 'hrs' : 'mi'}` : 'N/A'}
+                          {item.financials?.lienHolderName && (
+                            <span className="text-amber-400/90 font-medium"> • Lien: {item.financials.lienHolderName}</span>
+                          )}
                         </p>
                         {item.unit.vinOrSerial && (
                           <p className="text-[10px] text-neutral-500 font-mono truncate">
@@ -3723,6 +3769,14 @@
                                     <>
                                       <span>•</span>
                                       <span>{item.unit.mileageOrHours.toLocaleString()} {item.unit.isHours ? 'hrs' : 'mi'}</span>
+                                    </>
+                                  )}
+                                  {item.financials?.lienHolderName && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-amber-400 font-medium" title={`Lien Holder: ${item.financials.lienHolderName}${item.financials.estimatedPayoff ? ` (Est. Payoff: $${item.financials.estimatedPayoff.toLocaleString()})` : ''}`}>
+                                        Lien: {item.financials.lienHolderName}
+                                      </span>
                                     </>
                                   )}
                                 </div>
@@ -4232,10 +4286,16 @@
                     )}
                   </div>
 
-                  {inquiry.financials.estimatedPayoff > 0 && (
-                    <div className="pt-2 border-t border-neutral-850">
-                      <span className="text-neutral-500 text-[10px] block">Lender Payoff:</span>
-                      <span className="text-neutral-200 font-bold">${inquiry.financials.estimatedPayoff.toLocaleString()}</span>
+                  {(inquiry.financials.estimatedPayoff > 0 || inquiry.financials.lienHolderName) && (
+                    <div className="pt-2 border-t border-neutral-850 grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-neutral-500 text-[10px] block">Lien Holder</span>
+                        <span className="font-semibold text-amber-300">{inquiry.financials.lienHolderName || 'Not specified'}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-neutral-500 text-[10px] block">Estimated Payoff</span>
+                        <span className="text-neutral-200 font-bold">${(inquiry.financials.estimatedPayoff || 0).toLocaleString()}</span>
+                      </div>
                     </div>
                   )}
 
@@ -4384,7 +4444,9 @@
                     />
                   </div>
                   <div>
-                    <label className="text-neutral-400 text-[10px] block mb-1">Loan Payoff ($)</label>
+                    <label className="text-neutral-400 text-[10px] block mb-1">
+                      Loan Payoff {inquiry.financials.lienHolderName ? `(${inquiry.financials.lienHolderName})` : ''} ($)
+                    </label>
                     <input
                       type="number"
                       readOnly
