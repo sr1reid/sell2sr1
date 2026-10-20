@@ -45,7 +45,7 @@ export async function onRequestPost({ request, env }) {
       : 'Direct Appraisal Request';
     const location = preferredLocation || 'SR1 Dealership Network';
 
-    // Professional, mobile-responsive HTML Email Template
+    // Professional, mobile-responsive HTML Email Template (Neutral Luxury Theme)
     const htmlEmail = `
 <!DOCTYPE html>
 <html lang="en">
@@ -54,32 +54,24 @@ export async function onRequestPost({ request, env }) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Valuation Request Confirmation</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #0d0f12; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #e2e8f0;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #0d0f12; min-height: 100vh;">
+<body style="margin: 0; padding: 0; background-color: #0a0a0a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #e5e5e5;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #0a0a0a; min-height: 100vh;">
     <tr>
-      <td align="center" style="padding: 24px 12px 40px 12px;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #14171d; border: 1px solid #262b35; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+      <td align="center" style="padding: 28px 12px 48px 12px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #121212; border: 1px solid #262626; border-radius: 16px; overflow: hidden; box-shadow: 0 12px 36px rgba(0,0,0,0.65);">
           
-          <!-- Top Accent Banner -->
-          <tr>
-            <td style="background: linear-gradient(90deg, #10b981 0%, #059669 50%, #047857 100%); height: 5px; line-height: 5px; font-size: 1px;">&nbsp;</td>
-          </tr>
-
           <!-- Header with Brand Logo and Employee-Owned Badge -->
           <tr>
-            <td style="padding: 30px 32px 24px 32px; border-bottom: 1px solid #1f242e;">
+            <td style="padding: 26px 32px 24px 32px; border-bottom: 1px solid #1f1f1f;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td align="left" style="vertical-align: middle;">
-                    <span style="font-size: 24px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff;">
-                      SELL<span style="color: #10b981;">2</span>SR1
-                    </span>
-                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #94a3b8; margin-top: 3px;">
-                      SR1 Companies
-                    </div>
+                    <a href="https://sell2sr1.com" target="_blank" style="text-decoration: none; display: inline-block;">
+                      <img src="https://sell2sr1.com/logo.png" alt="SR1 Companies" height="38" style="height: 38px; width: auto; max-height: 42px; display: block; border: 0;" />
+                    </a>
                   </td>
                   <td align="right" style="vertical-align: middle;">
-                    <span style="display: inline-block; padding: 5px 11px; background-color: #1e2430; border: 1px solid #333d4e; border-radius: 999px; font-size: 11px; font-weight: 700; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.8px;">
+                    <span style="display: inline-block; padding: 5px 12px; background-color: #1a1a1a; border: 1px solid #2e2e2e; border-radius: 999px; font-size: 11px; font-weight: 700; color: #d4d4d4; text-transform: uppercase; letter-spacing: 0.8px;">
                       100% Employee-Owned
                     </span>
                   </td>
@@ -93,7 +85,7 @@ export async function onRequestPost({ request, env }) {
             <td style="padding: 32px 32px 20px 32px;">
               <!-- Ref Pill -->
               <div style="margin-bottom: 16px;">
-                <span style="display: inline-block; padding: 4px 12px; background-color: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; font-family: monospace, Consolas, sans-serif; font-size: 12px; font-weight: 700; color: #34d399; letter-spacing: 0.5px;">
+                <span style="display: inline-block; padding: 4px 12px; background-color: #1c1c1c; border: 1px solid #333333; border-radius: 6px; font-family: monospace, Consolas, sans-serif; font-size: 12px; font-weight: 700; color: #e5e5e5; letter-spacing: 0.5px;">
                   REF: ${refNum}
                 </span>
               </div>
@@ -101,8 +93,8 @@ export async function onRequestPost({ request, env }) {
               <h1 style="margin: 0 0 12px 0; font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px; line-height: 1.3;">
                 Valuation Request Received
               </h1>
-              <p style="margin: 0 0 20px 0; font-size: 15px; color: #94a3b8; line-height: 1.6;">
-                Hi ${firstName}, thank you for giving SR1 the opportunity to evaluate your equipment. Our appraisal team has received your submission and is actively reviewing your unit details.
+              <p style="margin: 0 0 20px 0; font-size: 15px; color: #a3a3a3; line-height: 1.6;">
+                Hi ${firstName}, thank you for giving SR1 the opportunity to evaluate your item. Our appraisal team has received your submission and is actively reviewing your unit details.
               </p>
             </td>
           </tr>
@@ -110,48 +102,48 @@ export async function onRequestPost({ request, env }) {
           <!-- Itemized Unit Card -->
           <tr>
             <td style="padding: 0 32px 24px 32px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #1a1e27; border: 1px solid #282f3d; border-radius: 12px; padding: 20px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #171717; border: 1px solid #262626; border-radius: 12px; padding: 20px;">
                 <tr>
-                  <td colspan="2" style="padding-bottom: 14px; border-bottom: 1px solid #282f3d;">
-                    <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #10b981;">
+                  <td colspan="2" style="padding-bottom: 14px; border-bottom: 1px solid #262626;">
+                    <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #a3a3a3;">
                       Submitted Unit Details
                     </span>
                     <div style="font-size: 18px; font-weight: 800; color: #ffffff; margin-top: 4px;">
                       ${unitTitle}
                     </div>
-                    ${unit?.category ? `<div style="font-size: 13px; color: #94a3b8; margin-top: 2px;">${unit.category}${subcategory}</div>` : ''}
+                    ${unit?.category ? `<div style="font-size: 13px; color: #a3a3a3; margin-top: 2px;">${unit.category}${subcategory}</div>` : ''}
                   </td>
                 </tr>
                 <tr>
                   <td style="padding-top: 14px; padding-bottom: 8px; width: 50%;">
-                    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px;">Reported Condition</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #f1f5f9; margin-top: 2px;">${condition}</div>
+                    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #737373; letter-spacing: 0.5px;">Reported Condition</div>
+                    <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 2px;">${condition}</div>
                   </td>
                   <td style="padding-top: 14px; padding-bottom: 8px; width: 50%;">
-                    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px;">${mileageHoursLabel}</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #f1f5f9; margin-top: 2px;">${mileageHoursValue}</div>
+                    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #737373; letter-spacing: 0.5px;">${mileageHoursLabel}</div>
+                    <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 2px;">${mileageHoursValue}</div>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding-top: 8px; padding-bottom: 8px; width: 50%;">
-                    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px;">Transaction Type</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #f1f5f9; margin-top: 2px;">${transactionType}</div>
+                    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #737373; letter-spacing: 0.5px;">Transaction Type</div>
+                    <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 2px;">${transactionType}</div>
                   </td>
                   <td style="padding-top: 8px; padding-bottom: 8px; width: 50%;">
-                    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px;">Preferred Dealership</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #f1f5f9; margin-top: 2px;">${location}</div>
+                    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #737373; letter-spacing: 0.5px;">Preferred Dealership</div>
+                    <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 2px;">${location}</div>
                   </td>
                 </tr>
                 ${salesperson !== 'Direct Appraisal Request' ? `
                 <tr>
-                  <td colspan="2" style="padding-top: 8px; border-top: 1px dashed #262c38;">
-                    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px;">Assigned Salesperson</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #34d399; margin-top: 2px;">${salesperson}</div>
+                  <td colspan="2" style="padding-top: 8px; border-top: 1px dashed #262626;">
+                    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #737373; letter-spacing: 0.5px;">Assigned Salesperson</div>
+                    <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 2px;">${salesperson}</div>
                   </td>
                 </tr>` : ''}
                 ${photosCount > 0 ? `
                 <tr>
-                  <td colspan="2" style="padding-top: 8px; font-size: 12px; color: #10b981; font-weight: 600;">
+                  <td colspan="2" style="padding-top: 8px; font-size: 12px; color: #d4d4d4; font-weight: 600;">
                     ✓ ${photosCount} photo${photosCount > 1 ? 's' : ''} successfully archived for assessment
                   </td>
                 </tr>` : ''}
@@ -162,46 +154,46 @@ export async function onRequestPost({ request, env }) {
           <!-- Next Steps Timeline -->
           <tr>
             <td style="padding: 0 32px 28px 32px;">
-              <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 14px;">
+              <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #737373; margin-bottom: 14px;">
                 What Happens Next
               </div>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td style="width: 32px; vertical-align: top; padding-right: 14px; padding-bottom: 16px;">
-                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #10b981; color: #ffffff; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
+                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #262626; border: 1px solid #404040; color: #ffffff; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
                       1
                     </div>
                   </td>
                   <td style="vertical-align: top; padding-bottom: 16px;">
-                    <div style="font-size: 14px; font-weight: 700; color: #ffffff;">Intake & Market Appraisal</div>
-                    <div style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin-top: 2px;">
-                      Our appraisal team evaluates current auction comps, dealer network values, and your unit's condition details.
+                    <div style="font-size: 14px; font-weight: 700; color: #ffffff;">Market Appraisal</div>
+                    <div style="font-size: 13px; color: #a3a3a3; line-height: 1.5; margin-top: 2px;">
+                      Our appraisal team evaluates current book value, internal sales comps, auction comps, dealer network values, and your units condition details.
                     </div>
                   </td>
                 </tr>
                 <tr>
                   <td style="width: 32px; vertical-align: top; padding-right: 14px; padding-bottom: 16px;">
-                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #262c38; border: 1px solid #3c4456; color: #cbd5e1; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
+                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #1a1a1a; border: 1px solid #2e2e2e; color: #a3a3a3; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
                       2
                     </div>
                   </td>
                   <td style="vertical-align: top; padding-bottom: 16px;">
-                    <div style="font-size: 14px; font-weight: 700; color: #ffffff;">Written Cash or Trade Offer</div>
-                    <div style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin-top: 2px;">
-                      We reach out by phone or email with a competitive cash purchase valuation or credit toward your new equipment.
+                    <div style="font-size: 14px; font-weight: 700; color: #ffffff;">Written Offer</div>
+                    <div style="font-size: 13px; color: #a3a3a3; line-height: 1.5; margin-top: 2px;">
+                      We reach out by phone or email with a competitive purchase valuation or credit toward your new item.
                     </div>
                   </td>
                 </tr>
                 <tr>
                   <td style="width: 32px; vertical-align: top; padding-right: 14px;">
-                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #262c38; border: 1px solid #3c4456; color: #cbd5e1; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
+                    <div style="width: 28px; height: 28px; border-radius: 50%; background-color: #1a1a1a; border: 1px solid #2e2e2e; color: #a3a3a3; font-weight: 800; font-size: 13px; line-height: 28px; text-align: center;">
                       3
                     </div>
                   </td>
                   <td style="vertical-align: top;">
                     <div style="font-size: 14px; font-weight: 700; color: #ffffff;">Title, Payoff & Hassle-Free Transfer</div>
-                    <div style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin-top: 2px;">
-                      We manage loan payoffs, title paperwork, and pickup/dropoff at any of our Northern New England facilities.
+                    <div style="font-size: 13px; color: #a3a3a3; line-height: 1.5; margin-top: 2px;">
+                      We manage loan payoffs, title paperwork, and pickup or drop-off logistics.
                     </div>
                   </td>
                 </tr>
@@ -212,15 +204,15 @@ export async function onRequestPost({ request, env }) {
           <!-- Direct Contact Box -->
           <tr>
             <td style="padding: 0 32px 32px 32px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #171c24; border: 1px dashed #2d3646; border-radius: 12px; padding: 18px 20px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #171717; border: 1px dashed #2e2e2e; border-radius: 12px; padding: 18px 20px;">
                 <tr>
                   <td>
                     <div style="font-size: 13px; font-weight: 700; color: #ffffff;">Need to make an update or have questions?</div>
-                    <div style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin-top: 4px;">
+                    <div style="font-size: 13px; color: #a3a3a3; line-height: 1.5; margin-top: 4px;">
                       Simply reply directly to this email or reach our centralized appraisal desk at:
                     </div>
                     <div style="margin-top: 8px;">
-                      <a href="mailto:appraisals@sr1companies.com" style="color: #34d399; font-weight: 700; text-decoration: none; font-size: 14px;">
+                      <a href="mailto:appraisals@sr1companies.com" style="color: #ffffff; font-weight: 700; text-decoration: underline; font-size: 14px;">
                         appraisals@sr1companies.com
                       </a>
                     </div>
@@ -232,14 +224,11 @@ export async function onRequestPost({ request, env }) {
 
           <!-- Corporate Footer -->
           <tr>
-            <td style="padding: 24px 32px; background-color: #0f1217; border-top: 1px solid #1f242e; text-align: center;">
-              <div style="font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 6px;">
-                SR1 Companies • Northern New England's Equipment Leader
+            <td style="padding: 24px 32px; background-color: #0d0d0d; border-top: 1px solid #1f1f1f; text-align: center;">
+              <div style="font-size: 12px; font-weight: 700; color: #d4d4d4; margin-bottom: 6px;">
+                SR1 Companies
               </div>
-              <div style="font-size: 11px; color: #64748b; line-height: 1.6; margin-bottom: 12px;">
-                Turner, ME • Manchester, ME • Hermon, ME • Londonderry, NH
-              </div>
-              <div style="font-size: 11px; color: #475569;">
+              <div style="font-size: 11px; color: #737373;">
                 &copy; ${new Date().getFullYear()} SR1 Companies. 100% Employee-Owned. All rights reserved.
               </div>
             </td>
@@ -261,7 +250,7 @@ Hi ${firstName},
 
 Thank you for contacting SR1 Companies. We have received your valuation request for:
 ${unitTitle}
-- Category: ${unit?.category || 'Equipment'}${subcategory}
+- Category: ${unit?.category || 'Item'}${subcategory}
 - Condition: ${condition}
 - ${mileageHoursLabel}: ${mileageHoursValue}
 - Transaction: ${transactionType}
@@ -269,14 +258,13 @@ ${unitTitle}
 ${salesperson !== 'Direct Appraisal Request' ? `- Assigned Salesperson: ${salesperson}\n` : ''}
 
 WHAT TO EXPECT NEXT:
-1. Intake & Appraisal: Our valuation team is analyzing your unit details and current market comps.
-2. Written Valuation: We will follow up directly with your valuation or any quick questions.
+1. Market Appraisal: Our appraisal team evaluates current book value, internal sales comps, auction comps, dealer network values, and your units condition details.
+2. Written Offer: We reach out by phone or email with a competitive purchase valuation or credit toward your new item.
 3. Easy Settlement: We coordinate paperwork, title, loan payoffs, and unit transfer.
 
 Questions? Reply directly to this email or reach us at appraisals@sr1companies.com.
 
 SR1 Companies
-Turner, ME • Manchester, ME • Hermon, ME • Londonderry, NH
 100% Employee-Owned
 `;
 
