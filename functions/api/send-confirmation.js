@@ -258,7 +258,7 @@ export async function onRequestPost({ request, env }) {
                   <td style="vertical-align: top; padding-bottom: 16px;">
                     <div style="font-size: 14px; font-weight: 700; color: #111827;">Written Offer</div>
                     <div style="font-size: 13px; color: #4b5563; line-height: 1.5; margin-top: 2px;">
-                      We reach out by phone or email with a competitive purchase valuation or credit toward your new item.
+                      We will reach out to you by text, call, or email with a competitive offer to purchase your unit or take it on trade.
                     </div>
                   </td>
                 </tr>
@@ -346,7 +346,7 @@ ${salesperson !== 'Direct Appraisal Request' ? `- Assigned Salesperson: ${salesp
 
 WHAT TO EXPECT NEXT:
 1. Market Appraisal: Our appraisal team evaluates current book value, internal sales comps, auction comps, dealer network values, and your units condition details.
-2. Written Offer: We reach out by phone or email with a competitive purchase valuation or credit toward your new item.
+2. Written Offer: We will reach out to you by text, call, or email with a competitive offer to purchase your unit or take it on trade.
 3. Easy Settlement: We coordinate paperwork, title, loan payoffs, and unit transfer.
 
 WHO WE PURCHASE FROM:
