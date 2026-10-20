@@ -33,7 +33,8 @@ export type InquiryStage =
   | 'accepted'       // Customer accepted offer
   | 'inspection'     // Scheduled for drop-off / mobile inspection
   | 'purchased'      // Deal completed, payment issued, unit in inventory
-  | 'declined';      // Passed or customer declined
+  | 'declined'       // Passed or customer declined
+  | 'archived';      // Inquiry archived, hidden from active pipeline
 
 export interface PhotoItem {
   id: string;
@@ -73,6 +74,10 @@ export interface SellInquiry {
   createdAt: string;
   updatedAt: string;
   stage: InquiryStage;
+  isArchived?: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
+  previousStage?: InquiryStage;
   assignedStaffId?: string;
   assignedStaffName?: string;
   preferredLocation: DealershipLocation;
