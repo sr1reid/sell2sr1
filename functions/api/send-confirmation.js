@@ -303,15 +303,6 @@ export async function onRequestPost({ request, env }) {
           <!-- Corporate Footer -->
           <tr>
             <td class="footer-cell" style="padding: 24px 32px; background-color: #e2e8f0; border-top: 1px solid #cbd5e1; text-align: center;">
-              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
-                Who We Purchase From
-              </div>
-              <div style="font-size: 12px; color: #64748b; line-height: 1.8; margin-bottom: 18px; max-width: 480px; margin-left: auto; margin-right: auto;">
-                <div>&bull; <strong style="color: #334155;">Banks &amp; Credit Unions</strong> looking to liquidate repos</div>
-                <div>&bull; <strong style="color: #334155;">Dealers</strong> looking to bank trades</div>
-                <div>&bull; <strong style="color: #334155;">End consumers</strong> looking to turn their toys into cash</div>
-              </div>
-
               <div style="font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px;">
                 SR1 Companies
               </div>
@@ -348,11 +339,6 @@ WHAT TO EXPECT NEXT:
 1. Market Appraisal: Our appraisal team evaluates current book value, internal sales comps, auction comps, dealer network values, and your units condition details.
 2. Written Offer: We will reach out to you by text, call, or email with a competitive offer to purchase your unit or take it on trade.
 3. Easy Settlement: We coordinate paperwork, title, loan payoffs, and unit transfer.
-
-WHO WE PURCHASE FROM:
-• Banks & Credit Unions looking to liquidate repos
-• Dealers looking to bank trades
-• End consumers looking to turn their toys into cash
 
 Questions? Reply directly to this email or reach us at appraisals@sr1companies.com.
 
