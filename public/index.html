@@ -1350,7 +1350,14 @@
     // 1. CUSTOMER SELL INTAKE FLOW (NO ICONS, NEUTRAL THEME)
     // ==========================================
     function CustomerSellFlow({ onSubmit, onGoToContact }) {
-      const [step, setStep] = useState(1);
+      const [step, setStep] = useState(() => {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          return parseInt(params.get('step'), 10) || 1;
+        } catch (e) {
+          return 1;
+        }
+      });
       const [category, setCategory] = useState('rv');
       const [submittedInquiry, setSubmittedInquiry] = useState(null);
       const [formData, setFormData] = useState({
@@ -1805,8 +1812,8 @@
         }
         if (!formData.preferredLocation) {
           alert(formData.intent === 'trade'
-            ? 'Please select your closest SR1 dealership that sells this type of unit.'
-            : 'Please select your closest SR1 dealership location.');
+            ? 'Please select your closest SR1 dealership that sells this type of unit (even if the trade is with another segment).'
+            : 'Please select your closest SR1 dealership (filtered to locations that deal with this unit type).');
           return;
         }
         if (!formData.consentOptIn) {
@@ -2789,7 +2796,13 @@
                           *
                         </span>
                       ) : (
-                        'Select your closest SR1 dealership *'
+                        <span>
+                          Select your closest SR1 dealership{' '}
+                          <span className="normal-case text-neutral-400 font-normal">
+                            (filtered to locations that deal with this unit type)
+                          </span>{' '}
+                          *
+                        </span>
                       )}
                     </label>
                     <select
