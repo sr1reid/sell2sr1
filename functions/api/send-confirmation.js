@@ -94,7 +94,7 @@ export async function onRequestPost({ request, env }) {
                 Valuation Request Received
               </h1>
               <p style="margin: 0 0 20px 0; font-size: 15px; color: #a3a3a3; line-height: 1.6;">
-                Hi ${firstName}, thank you for giving SR1 the opportunity to evaluate your item. Our appraisal team has received your submission and is actively reviewing your unit details.
+                Hi ${firstName}, thank you for giving SR1 the opportunity to make you an offer on your item. Our appraisal team has received your submission and is actively reviewing your unit details.
               </p>
             </td>
           </tr>
@@ -248,7 +248,7 @@ Ref: ${refNum}
 
 Hi ${firstName},
 
-Thank you for contacting SR1 Companies. We have received your valuation request for:
+Thank you for giving SR1 the opportunity to make you an offer on your item. We have received your valuation request for:
 ${unitTitle}
 - Category: ${unit?.category || 'Item'}${subcategory}
 - Condition: ${condition}
