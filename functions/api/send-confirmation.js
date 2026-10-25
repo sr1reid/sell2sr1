@@ -41,8 +41,13 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const data = await request.json();
-    const fromAddress = env.CONFIRMATION_FROM_EMAIL || 'selltosr1@sr1companies.com';
-    const fromName = 'SR1 Companies Appraisals';
+    const isTradeIn = data.intent === 'trade';
+    const fromAddress = isTradeIn
+      ? 'appraisals@sr1companies.com'
+      : 'selltosr1@sr1companies.com';
+    const fromName = isTradeIn
+      ? 'SR1 Appraisals'
+      : 'Sell To SR1';
 
     const resendKey = env.RESEND_API_KEY ||
       Object.entries(env || {}).find(([k]) => k.toUpperCase().includes('RESEND'))?.[1] ||
@@ -403,8 +408,8 @@ export async function onRequestPost({ request, env }) {
                       Simply reply directly to this email or reach our centralized appraisal desk at:
                     </div>
                     <div style="margin-top: 8px;">
-                      <a href="mailto:selltosr1@sr1companies.com" style="color: #111827; font-weight: 700; text-decoration: underline; font-size: 14px;">
-                        selltosr1@sr1companies.com
+                      <a href="mailto:${fromAddress}" style="color: #111827; font-weight: 700; text-decoration: underline; font-size: 14px;">
+                        ${fromAddress}
                       </a>
                     </div>
                   </td>
@@ -453,7 +458,7 @@ WHAT TO EXPECT NEXT:
 2. Written Offer: We will reach out to you by text, call, or email with a competitive offer to purchase your unit or take it on trade.
 3. Easy Settlement: We coordinate paperwork, title, loan payoffs, and unit transfer.
 
-Questions? Reply directly to this email or reach us at selltosr1@sr1companies.com.
+Questions? Reply directly to this email or reach us at ${fromAddress}.
 
 SR1 Companies
 100% Employee-Owned
@@ -464,10 +469,22 @@ SR1 Companies
     // -------------------------------------------------------------------------
     const ad = appraisalDetails || {};
     const staffSubject = ad._subject || `[${intent === 'trade' ? 'TRADE-IN' : 'SELL'}] Unit Valuation Request [${refNum}]: ${unitTitle} (${location})`;
-    const staffRecipients = Array.isArray(notificationEmails) && notificationEmails.length > 0
+    const centralRecipient = isTradeIn ? 'appraisals@sr1companies.com' : 'selltosr1@sr1companies.com';
+    const rawRecipients = Array.isArray(notificationEmails) && notificationEmails.length > 0
       ? notificationEmails.filter(Boolean)
-      : ['appraisals@sr1companies.com'];
-    const primaryStaffRecipient = staffRecipients[0] || 'appraisals@sr1companies.com';
+      : [centralRecipient];
+    const mappedRecipients = rawRecipients.map((r) => {
+      const lower = String(r).toLowerCase().trim();
+      if (lower === 'appraisals@sr1companies.com' || lower === 'selltosr1@sr1companies.com') {
+        return centralRecipient;
+      }
+      return lower;
+    });
+    if (!mappedRecipients.includes(centralRecipient)) {
+      mappedRecipients.unshift(centralRecipient);
+    }
+    const staffRecipients = Array.from(new Set(mappedRecipients));
+    const primaryStaffRecipient = staffRecipients[0] || centralRecipient;
     const ccStaffRecipients = staffRecipients.slice(1);
 
     const customerPhone = customer?.phone || ad.Customer_Phone || 'Not provided';
@@ -631,7 +648,7 @@ FINANCIALS & TITLE:
 Open Staff Portal: https://selltosr1.com/?view=portal
 `;
 
-    const emailSubject = `We Received Your Valuation Request [${refNum}] - SR1 Companies`;
+    const emailSubject = `We Received Your Valuation Request [${refNum}] - ${fromName}`;
 
     let customerResult = null;
     let staffResult = null;
@@ -646,7 +663,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         const custRes = await sendResendEmail(resendKey, {
           from: `${fromName} <${fromAddress}>`,
           to: [customer.email.trim()],
-          reply_to: 'selltosr1@sr1companies.com',
+          reply_to: fromAddress,
           subject: emailSubject,
           html: htmlEmail,
           text: plainText,
@@ -671,7 +688,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         ...(ccStaffRecipients.length > 0 ? { cc: ccStaffRecipients } : {}),
         reply_to: customer?.email && customer.email.includes('@')
           ? customer.email.trim()
-          : 'selltosr1@sr1companies.com',
+          : fromAddress,
         subject: staffSubject,
         html: staffHtmlEmail,
         text: staffPlainText,
@@ -715,7 +732,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         body: JSON.stringify({
           sender: { name: fromName, email: fromAddress },
           to: [{ email: customer.email.trim(), name: fullName }],
-          replyTo: { email: 'selltosr1@sr1companies.com', name: fromName },
+          replyTo: { email: fromAddress, name: fromName },
           subject: emailSubject,
           htmlContent: htmlEmail,
           textContent: plainText,
@@ -736,7 +753,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         body: JSON.stringify({
           From: `${fromName} <${fromAddress}>`,
           To: customer.email.trim(),
-          ReplyTo: 'selltosr1@sr1companies.com',
+          ReplyTo: fromAddress,
           Subject: emailSubject,
           HtmlBody: htmlEmail,
           TextBody: plainText,
@@ -756,7 +773,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         body: JSON.stringify({
           personalizations: [{ to: [{ email: customer.email.trim(), name: fullName }] }],
           from: { email: fromAddress, name: fromName },
-          reply_to: { email: 'selltosr1@sr1companies.com', name: fromName },
+          reply_to: { email: fromAddress, name: fromName },
           subject: emailSubject,
           content: [
             { type: 'text/plain', value: plainText },
