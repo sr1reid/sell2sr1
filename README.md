@@ -1,6 +1,6 @@
-# sell2sr1.com — SR1 Companies Vehicle & Equipment Acquisition Platform
+# selltosr1.com — SR1 Companies Vehicle & Equipment Acquisition Platform
 
-**sell2sr1.com** is a purpose-built vehicle, RV, trailer, and equipment purchasing platform built for **SR1 Companies** (formerly Scott's Recreation).
+**selltosr1.com** is a purpose-built vehicle, RV, trailer, and equipment purchasing platform built for **SR1 Companies** (formerly Scott's Recreation).
 
 It provides:
 1. **Public Intake & Customer Valuation Portal**: Mobile-first intake wizard for sellers to submit unit details (RVs, trailers, tractors, heavy equipment, powersports), photo uploads, and loan/title details, receiving an instant tracking ID.
@@ -26,16 +26,16 @@ No installation or build steps required.
 
 ---
 
-## Deploying to Cloudflare Pages (`sell2sr1.com`)
+## Deploying to Cloudflare Pages (`selltosr1.com`)
 
-Since you own `sell2sr1.com` in Cloudflare, deploying takes only a few minutes:
+Since you own `selltosr1.com` in Cloudflare, deploying takes only a few minutes:
 
 ### 1. Initialize Git & Push to GitHub
 ```bash
 cd /Users/reidlanpher/.gemini/antigravity/scratch/sell2sr1
 git init
 git add .
-git commit -m "Initial commit for sell2sr1.com"
+git commit -m "Initial commit for selltosr1.com"
 # Push to your private GitHub repo
 git remote add origin https://github.com/<your-account>/sell2sr1.git
 git push -u origin main
@@ -51,9 +51,9 @@ git push -u origin main
    - **Build output directory**: `.vercel/output/static` (or `public` for static).
 5. Click **Save and Deploy**.
 
-### 3. Bind Your Custom Domain `sell2sr1.com`
+### 3. Bind Your Custom Domain `selltosr1.com`
 1. Once deployed, go to the project's **Custom domains** tab in Cloudflare Pages.
-2. Click **Set up a custom domain** and enter `sell2sr1.com` (and `www.sell2sr1.com`).
+2. Click **Set up a custom domain** and enter `selltosr1.com` (and `www.selltosr1.com`).
 3. Since your domain is already in Cloudflare DNS, Cloudflare will automatically provision SSL certificates and route traffic with zero DNS propagation delay!
 
 ---
