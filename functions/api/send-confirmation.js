@@ -1,8 +1,8 @@
 // Cloudflare Pages Function: /functions/api/send-confirmation.js
 // Handles dispatch of:
-// 1. Branded customer confirmation emails from appraisals@sr1companies.com
+// 1. Branded customer confirmation emails from selltosr1@sr1companies.com
 // 2. Internal dealership & appraisal desk notification emails (with routing + photo attachments)
-// 3. Direct Contact Us messages to appraisals@sr1companies.com
+// 3. Direct Contact Us messages to selltosr1@sr1companies.com
 // Supports: Resend (default/recommended), Brevo, Postmark, SendGrid via environment variables.
 
 async function sendResendEmail(resendKey, payload) {
@@ -41,7 +41,7 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const data = await request.json();
-    const fromAddress = env.CONFIRMATION_FROM_EMAIL || 'appraisals@sr1companies.com';
+    const fromAddress = env.CONFIRMATION_FROM_EMAIL || 'selltosr1@sr1companies.com';
     const fromName = 'SR1 Companies Appraisals';
 
     const resendKey = env.RESEND_API_KEY ||
@@ -105,8 +105,8 @@ export async function onRequestPost({ request, env }) {
       if (resendKey) {
         const contactRes = await sendResendEmail(resendKey, {
           from: `${fromName} <${fromAddress}>`,
-          to: ['appraisals@sr1companies.com'],
-          reply_to: senderEmail && senderEmail.includes('@') ? senderEmail : 'appraisals@sr1companies.com',
+          to: ['selltosr1@sr1companies.com'],
+          reply_to: senderEmail && senderEmail.includes('@') ? senderEmail : 'selltosr1@sr1companies.com',
           subject,
           html: contactHtml,
           text: contactText,
@@ -403,8 +403,8 @@ export async function onRequestPost({ request, env }) {
                       Simply reply directly to this email or reach our centralized appraisal desk at:
                     </div>
                     <div style="margin-top: 8px;">
-                      <a href="mailto:appraisals@sr1companies.com" style="color: #111827; font-weight: 700; text-decoration: underline; font-size: 14px;">
-                        appraisals@sr1companies.com
+                      <a href="mailto:selltosr1@sr1companies.com" style="color: #111827; font-weight: 700; text-decoration: underline; font-size: 14px;">
+                        selltosr1@sr1companies.com
                       </a>
                     </div>
                   </td>
@@ -453,7 +453,7 @@ WHAT TO EXPECT NEXT:
 2. Written Offer: We will reach out to you by text, call, or email with a competitive offer to purchase your unit or take it on trade.
 3. Easy Settlement: We coordinate paperwork, title, loan payoffs, and unit transfer.
 
-Questions? Reply directly to this email or reach us at appraisals@sr1companies.com.
+Questions? Reply directly to this email or reach us at selltosr1@sr1companies.com.
 
 SR1 Companies
 100% Employee-Owned
@@ -646,7 +646,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         const custRes = await sendResendEmail(resendKey, {
           from: `${fromName} <${fromAddress}>`,
           to: [customer.email.trim()],
-          reply_to: 'appraisals@sr1companies.com',
+          reply_to: 'selltosr1@sr1companies.com',
           subject: emailSubject,
           html: htmlEmail,
           text: plainText,
@@ -671,7 +671,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         ...(ccStaffRecipients.length > 0 ? { cc: ccStaffRecipients } : {}),
         reply_to: customer?.email && customer.email.includes('@')
           ? customer.email.trim()
-          : 'appraisals@sr1companies.com',
+          : 'selltosr1@sr1companies.com',
         subject: staffSubject,
         html: staffHtmlEmail,
         text: staffPlainText,
@@ -715,7 +715,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         body: JSON.stringify({
           sender: { name: fromName, email: fromAddress },
           to: [{ email: customer.email.trim(), name: fullName }],
-          replyTo: { email: 'appraisals@sr1companies.com', name: fromName },
+          replyTo: { email: 'selltosr1@sr1companies.com', name: fromName },
           subject: emailSubject,
           htmlContent: htmlEmail,
           textContent: plainText,
@@ -736,7 +736,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         body: JSON.stringify({
           From: `${fromName} <${fromAddress}>`,
           To: customer.email.trim(),
-          ReplyTo: 'appraisals@sr1companies.com',
+          ReplyTo: 'selltosr1@sr1companies.com',
           Subject: emailSubject,
           HtmlBody: htmlEmail,
           TextBody: plainText,
@@ -756,7 +756,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         body: JSON.stringify({
           personalizations: [{ to: [{ email: customer.email.trim(), name: fullName }] }],
           from: { email: fromAddress, name: fromName },
-          reply_to: { email: 'appraisals@sr1companies.com', name: fromName },
+          reply_to: { email: 'selltosr1@sr1companies.com', name: fromName },
           subject: emailSubject,
           content: [
             { type: 'text/plain', value: plainText },
