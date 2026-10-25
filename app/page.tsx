@@ -32,8 +32,8 @@ export default function HomePage() {
           <Link href="/" className="flex items-center space-x-3 group">
             <div className="flex items-center">
               <img 
-                src="/logo.png" 
-                alt="SR1 Companies" 
+                src="/logo.png?v=3" 
+                alt="Sell to SR1" 
                 className="h-10 sm:h-12 w-auto object-contain transition-opacity hover:opacity-90" 
               />
             </div>
