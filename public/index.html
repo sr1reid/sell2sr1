@@ -1587,9 +1587,9 @@
         titleStatus: (() => {
           try {
             const p = new URLSearchParams(window.location.search).get('titleStatus');
-            return p || 'owned_clean_title';
+            return p || '';
           } catch (e) {
-            return 'owned_clean_title';
+            return '';
           }
         })(),
         lienHolderName: '',
@@ -2029,6 +2029,11 @@
 
       const handleSubmit = async (e) => {
         e.preventDefault();
+        if (!formData.titleStatus) {
+          alert('Please select your title / loan status to proceed.');
+          setStep(3);
+          return;
+        }
         if (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes' && !formData.salespersonName?.trim()) {
           alert("Please enter your SR1 salesperson's name.");
           return;
@@ -2103,9 +2108,11 @@
               ? 'Owned outright - clean title in hand' 
               : formData.titleStatus === 'financed_money_owed' 
               ? 'Financed - money owed' 
+              : formData.titleStatus === 'owned_not_titleable'
+              ? 'Owned outright - not titleable'
               : formData.titleStatus === 'other'
               ? 'Other'
-              : 'Owned outright - not titleable',
+              : 'Not specified',
             lienHolderName: formData.titleStatus === 'financed_money_owed' ? (formData.lienHolderName || '').trim() : '',
             estimatedPayoff: formData.titleStatus === 'financed_money_owed' ? (Number(formData.estimatedPayoff) || 0) : 0,
             askingPrice: Number(formData.askingPrice) || 0
@@ -2172,9 +2179,11 @@
               ? 'Owned outright - clean title in hand'
               : formData.titleStatus === 'financed_money_owed'
               ? 'Financed - money owed'
+              : formData.titleStatus === 'owned_not_titleable'
+              ? 'Owned outright - not titleable'
               : formData.titleStatus === 'other'
               ? 'Other'
-              : 'Owned outright - not titleable',
+              : 'Not specified',
             Lien_Holder_Name: (formData.titleStatus === 'financed_money_owed' && formData.lienHolderName) ? formData.lienHolderName.trim() : 'None (No active lien)',
             Estimated_Loan_Payoff: (formData.titleStatus === 'financed_money_owed' && formData.estimatedPayoff) ? `$${Number(formData.estimatedPayoff).toLocaleString()}` : 'N/A',
             Asking_Price: formData.askingPrice ? `$${formData.askingPrice}` : 'Open to best offer',
@@ -2321,7 +2330,7 @@
                       conditionNotes: '',
                       knownIssuesOrDamage: '',
                       tireOrTrackCondition: 'good',
-                      titleStatus: 'owned_clean_title',
+                      titleStatus: '',
                       lienHolderName: '',
                       estimatedPayoff: '',
                       askingPrice: '',
@@ -2777,14 +2786,18 @@
                     <div>
                       <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Title / Loan Status *</label>
                       <select
+                        required
                         value={formData.titleStatus}
                         onChange={(e) => handleInputChange('titleStatus', e.target.value)}
-                        className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-base sm:text-sm font-medium"
+                        className={`w-full bg-neutral-900 border rounded-lg px-3 py-2 text-base sm:text-sm font-medium focus:ring-1 focus:ring-neutral-400 focus:outline-none ${
+                          !formData.titleStatus ? 'text-neutral-400 border-neutral-700' : 'text-white border-neutral-800'
+                        }`}
                       >
-                        <option value="owned_not_titleable">Owned outright - not titleable</option>
-                        <option value="owned_clean_title">Owned outright - clean title in hand</option>
-                        <option value="financed_money_owed">Financed - money owed</option>
-                        <option value="other">Other</option>
+                        <option value="" disabled>Select title / loan status...</option>
+                        <option value="owned_not_titleable" className="text-white">Owned outright - not titleable</option>
+                        <option value="owned_clean_title" className="text-white">Owned outright - clean title in hand</option>
+                        <option value="financed_money_owed" className="text-white">Financed - money owed</option>
+                        <option value="other" className="text-white">Other</option>
                       </select>
                     </div>
 
@@ -2943,6 +2956,10 @@
                         }
                         if (!formData.conditionNotes.trim()) {
                           alert('Please describe the condition of the unit and any flaws or issues');
+                          return;
+                        }
+                        if (!formData.titleStatus) {
+                          alert('Please select your title / loan status to continue.');
                           return;
                         }
                         if (formData.titleStatus === 'financed_money_owed') {
