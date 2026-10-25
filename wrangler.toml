@@ -8,5 +8,5 @@ directory = "./public"
 binding = "ASSETS"
 
 [vars]
-CONFIRMATION_FROM_EMAIL = "appraisals@sr1companies.com"
+CONFIRMATION_FROM_EMAIL = "selltosr1@sr1companies.com"
 CONFIRMATION_FROM_NAME = "SR1 Companies Appraisals"
