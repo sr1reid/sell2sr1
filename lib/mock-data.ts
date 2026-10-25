@@ -65,7 +65,7 @@ export const INITIAL_INQUIRIES: SellInquiry[] = [
       }
     ],
     auditLog: [
-      { id: 'a1', timestamp: '2026-09-16T17:30:00Z', actor: 'System', action: 'Inquiry Created', details: 'Web submission from sell2sr1.com' },
+      { id: 'a1', timestamp: '2026-09-16T17:30:00Z', actor: 'System', action: 'Inquiry Created', details: 'Web submission from selltosr1.com' },
       { id: 'a2', timestamp: '2026-09-16T18:00:00Z', actor: 'Reid Lanpher', action: 'Assigned Lead', details: 'Assigned to Manchester Appraisal Desk' }
     ]
   },
