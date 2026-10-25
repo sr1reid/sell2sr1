@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'sell2sr1.com | Sell Your RV, Trailer, Tractor & Equipment to SR1',
+  title: 'selltosr1.com | Sell Your RV, Trailer, Tractor & Equipment to SR1',
   description: 'Fast, fair cash offers on RVs, trailers, tractors, heavy equipment, and powersports from SR1 Companies. 6 Maine & NH locations with free on-site pickup.',
 };
 
