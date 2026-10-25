@@ -67,8 +67,19 @@ export async function onRequestPost({ request, env }) {
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;margin:0 auto;background-color:#ffffff;border:1px solid #d1d5db;border-radius:12px;overflow:hidden;">
     <tr>
       <td style="padding:20px 24px;background-color:#111827;color:#ffffff;">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;">selltosr1.com Direct Contact</div>
-        <div style="font-size:20px;font-weight:800;margin-top:4px;">New Message from ${senderName}</div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+          <tr>
+            <td style="vertical-align:middle;">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;">selltosr1.com Direct Contact</div>
+              <div style="font-size:20px;font-weight:800;margin-top:4px;">New Message from ${senderName}</div>
+            </td>
+            <td align="right" style="vertical-align:middle;">
+              <a href="https://selltosr1.com" target="_blank" style="text-decoration:none;display:inline-block;">
+                <img src="https://selltosr1.com/logo.png?v=3" alt="Sell to SR1" height="34" style="height:34px;width:auto;max-height:36px;display:block;border:0;" />
+              </a>
+            </td>
+          </tr>
+        </table>
       </td>
     </tr>
     <tr>
@@ -202,8 +213,8 @@ export async function onRequestPost({ request, env }) {
         letter-spacing: 0.3px !important;
       }
       .header-cell img {
-        height: 28px !important;
-        max-height: 28px !important;
+        height: 32px !important;
+        max-height: 32px !important;
       }
       .ref-pill {
         font-size: 11px !important;
@@ -224,7 +235,7 @@ export async function onRequestPost({ request, env }) {
                 <tr>
                   <td align="left" style="vertical-align: middle;">
                     <a href="https://selltosr1.com" target="_blank" style="text-decoration: none; display: inline-block;">
-                      <img src="https://selltosr1.com/logo.png" alt="SR1 Companies" height="34" style="height: 34px; width: auto; max-height: 38px; display: block; border: 0;" />
+                      <img src="https://selltosr1.com/logo.png?v=3" alt="Sell to SR1" height="38" style="height: 38px; width: auto; max-height: 42px; display: block; border: 0;" />
                     </a>
                   </td>
                   <td align="right" style="vertical-align: middle;">
@@ -490,7 +501,7 @@ SR1 Companies
       <td style="padding:20px 28px;background-color:#0f172a;color:#ffffff;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
           <tr>
-            <td>
+            <td style="vertical-align:top;">
               <span style="display:inline-block;padding:3px 10px;background-color:${intent === 'trade' ? '#d97706' : '#059669'};color:#ffffff;border-radius:6px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.6px;">
                 ${intent === 'trade' ? 'TRADE-IN INQUIRY' : 'OUTRIGHT SALE INQUIRY'}
               </span>
@@ -503,6 +514,11 @@ SR1 Companies
               <div style="font-size:13px;color:#94a3b8;">
                 Routed to: <strong style="color:#f8fafc;">${location}</strong> (${staffRecipients.join(', ')})
               </div>
+            </td>
+            <td align="right" style="vertical-align:top;padding-left:12px;">
+              <a href="https://selltosr1.com" target="_blank" style="text-decoration:none;display:inline-block;">
+                <img src="https://selltosr1.com/logo.png?v=3" alt="Sell to SR1" height="36" style="height:36px;width:auto;max-height:38px;display:block;border:0;" />
+              </a>
             </td>
           </tr>
         </table>
