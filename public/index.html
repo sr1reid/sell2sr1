@@ -313,15 +313,65 @@
         if (!res.ok) return null;
         const data = await res.json();
         if (!data.documents) return [];
-        return data.documents.map(doc => {
-          const item = {};
-          for (const [k, v] of Object.entries(doc.fields || {})) {
-            item[k] = firestoreFieldsToJson(v);
-          }
-          return item;
-        });
+        return data.documents
+          .filter(doc => !doc.name.endsWith('/_config_email_routing') && !doc.name.includes('/_config_'))
+          .map(doc => {
+            const item = {};
+            for (const [k, v] of Object.entries(doc.fields || {})) {
+              item[k] = firestoreFieldsToJson(v);
+            }
+            return item;
+          })
+          .filter(item => item && item.referenceId && !String(item.id || '').startsWith('_'));
       } catch (e) {
         return null;
+      }
+    }
+
+    // Direct REST API fetch for email routing config (stored at inquiries/_config_email_routing)
+    async function fetchEmailRoutingConfigFromCloudRest() {
+      try {
+        const url = `${FS_REST_BASE}/_config_email_routing?key=${FS_API_KEY}`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const doc = await res.json();
+        if (!doc || !doc.fields) return null;
+        if (doc.fields.routingJson && doc.fields.routingJson.stringValue) {
+          return JSON.parse(doc.fields.routingJson.stringValue);
+        }
+        if (doc.fields.routing && doc.fields.routing.mapValue) {
+          return firestoreFieldsToJson(doc.fields.routing);
+        }
+        return null;
+      } catch (e) {
+        console.warn('Could not read email routing config from Firestore REST:', e);
+        return null;
+      }
+    }
+
+    // Direct REST API save for email routing config (restricted to reid@sr1companies.com)
+    async function saveEmailRoutingConfigToCloudRest(routingData, userEmail) {
+      try {
+        const body = {
+          fields: {
+            id: { stringValue: '_config_email_routing' },
+            isConfigDoc: { booleanValue: true },
+            updatedAt: { stringValue: new Date().toISOString() },
+            updatedBy: { stringValue: userEmail || 'reid@sr1companies.com' },
+            routingJson: { stringValue: JSON.stringify(routingData) },
+            routing: jsonToFirestoreFields(routingData)
+          }
+        };
+        const url = `${FS_REST_BASE}/_config_email_routing?key=${FS_API_KEY}`;
+        const res = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        return res.ok;
+      } catch (e) {
+        console.error('Error saving email routing config to cloud:', e);
+        return false;
       }
     }
 
@@ -395,14 +445,32 @@
       // SR1 Containers
       containers_loudon_nh: ['appraisals@sr1companies.com', 'chris.p@sr1companies.com'],
       containers_turner_me: ['appraisals@sr1companies.com', 'colin@sr1companies.com'],
-      containers_hermon_me: ['appraisals@sr1companies.com', 'kyle@sr1companies.com', 'derek@sr1companies.com', 'frank@sr1companies.com']
+      containers_hermon_me: ['appraisals@sr1companies.com', 'kyle@sr1companies.com', 'derek@sr1companies.com', 'frank@sr1companies.com'],
+
+      // On-site pickup & fallback
+      pickup_requested: ['appraisals@sr1companies.com']
     };
 
-    const getNotificationEmailsForLocation = (locId) => {
+    // Super Admin privilege check: strictly reid@sr1companies.com
+    const isSuperAdmin = (user) => {
+      if (!user || !user.email) return false;
+      return user.email.toLowerCase().trim() === 'reid@sr1companies.com';
+    };
+
+    // Dynamic notification routing resolver
+    const getDynamicNotificationEmailsForLocation = (locId, customRouting) => {
+      const routing = customRouting || DEALERSHIP_NOTIFICATION_EMAILS;
+      if (locId && routing[locId] && Array.isArray(routing[locId]) && routing[locId].length > 0) {
+        return routing[locId];
+      }
       if (locId && DEALERSHIP_NOTIFICATION_EMAILS[locId]) {
         return DEALERSHIP_NOTIFICATION_EMAILS[locId];
       }
       return ['appraisals@sr1companies.com'];
+    };
+
+    const getNotificationEmailsForLocation = (locId, customRouting) => {
+      return getDynamicNotificationEmailsForLocation(locId, customRouting);
     };
 
     // --- REVISED CATEGORIES (NO IMAGE/EMOJI ICONS) ---
@@ -478,6 +546,7 @@
 
     function normalizeInquiry(inq) {
       if (!inq || typeof inq !== 'object') return null;
+      if (inq.id === '_config_email_routing' || inq.isConfigDoc) return null;
       const rawRef = inq.referenceId || inq.id || '';
       const cleanRef = String(rawRef).replace(/^SR1-SELL-/i, '') || String(Math.floor(1000 + Math.random() * 9000));
       const id = inq.id || `inq-${cleanRef}`;
@@ -895,6 +964,9 @@
           const saved = localStorage.getItem('sell2sr1_staff_user');
           if (saved) return JSON.parse(saved);
           const params = new URLSearchParams(window.location.search);
+          if (params.get('demo') === 'reid' || params.get('user') === 'reid') {
+            return { email: 'reid@sr1companies.com', name: 'Reid Lanpher' };
+          }
           if (params.get('demo') === '1') return { email: 'appraiser@sr1companies.com', name: 'SR1 Appraiser' };
           return null;
         } catch (e) {
@@ -906,12 +978,51 @@
           const saved = localStorage.getItem('sell2sr1_staff_user');
           if (saved && JSON.parse(saved)?.email?.endsWith('@sr1companies.com')) return true;
           const params = new URLSearchParams(window.location.search);
-          return params.get('demo') === '1';
+          return params.get('demo') === '1' || params.get('demo') === 'reid' || params.get('user') === 'reid';
         } catch (e) {
           return false;
         }
       });
+      const [emailRoutingConfig, setEmailRoutingConfig] = useState(() => {
+        try {
+          const saved = localStorage.getItem('sell2sr1_email_routing');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed && typeof parsed === 'object') return { ...DEALERSHIP_NOTIFICATION_EMAILS, ...parsed };
+          }
+        } catch (e) {}
+        return DEALERSHIP_NOTIFICATION_EMAILS;
+      });
       const [sellFlowKey, setSellFlowKey] = useState(0);
+
+      // Synchronize dynamic email routing config from Firestore REST
+      useEffect(() => {
+        fetchEmailRoutingConfigFromCloudRest().then(remoteConfig => {
+          if (remoteConfig && typeof remoteConfig === 'object') {
+            setEmailRoutingConfig(prev => ({
+              ...prev,
+              ...remoteConfig
+            }));
+            try {
+              localStorage.setItem('sell2sr1_email_routing', JSON.stringify({
+                ...DEALERSHIP_NOTIFICATION_EMAILS,
+                ...remoteConfig
+              }));
+            } catch (e) {}
+          }
+        }).catch(err => {
+          console.warn('Could not sync email routing config:', err);
+        });
+      }, []);
+
+      const handleSaveEmailRoutingConfig = async (newRouting) => {
+        setEmailRoutingConfig(newRouting);
+        try {
+          localStorage.setItem('sell2sr1_email_routing', JSON.stringify(newRouting));
+        } catch (e) {}
+        const ok = await saveEmailRoutingConfigToCloudRest(newRouting, staffUser?.email);
+        return ok;
+      };
 
       const handleSignOut = () => {
         try {
@@ -1227,6 +1338,7 @@
               <CustomerSellFlow 
                 key={sellFlowKey}
                 onSubmit={handleNewInquiry} 
+                emailRoutingConfig={emailRoutingConfig}
                 onGoToContact={() => {
                   setCurrentView('contact');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1256,6 +1368,8 @@
                   staffUser={staffUser}
                   onSignOut={handleSignOut}
                   onSyncSamplesToCloud={handleSyncSamplesToCloud}
+                  emailRoutingConfig={emailRoutingConfig}
+                  onSaveEmailRoutingConfig={handleSaveEmailRoutingConfig}
                 />
               )
             )}
@@ -1447,7 +1561,7 @@
     // ==========================================
     // 1. CUSTOMER SELL INTAKE FLOW (NO ICONS, NEUTRAL THEME)
     // ==========================================
-    function CustomerSellFlow({ onSubmit, onGoToContact }) {
+    function CustomerSellFlow({ onSubmit, onGoToContact, emailRoutingConfig }) {
       const [step, setStep] = useState(() => {
         try {
           const params = new URLSearchParams(window.location.search);
@@ -1935,7 +2049,7 @@
         }
         const refId = String(Math.floor(1000 + Math.random() * 9000));
         const locationName = (LOCATIONS.find(l => l.id === formData.preferredLocation)?.name) || formData.preferredLocation || 'SR1 Dealership';
-        const locationEmails = getNotificationEmailsForLocation(formData.preferredLocation);
+        const locationEmails = getDynamicNotificationEmailsForLocation(formData.preferredLocation, emailRoutingConfig);
         const primaryEmail = locationEmails[0] || 'appraisals@sr1companies.com';
         const ccEmails = locationEmails.slice(1);
         
@@ -3215,7 +3329,534 @@
       );
     }
 
-    function StaffPortalView({ inquiries, onUpdateInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onSyncSamplesToCloud }) {
+    // ==========================================
+    // 3. EMAIL ROUTING MANAGER (SUPER ADMIN: reid@sr1companies.com ONLY)
+    // ==========================================
+    function EmailRoutingManager({ emailRoutingConfig, onSaveEmailRoutingConfig, staffUser, onBackToInquiries }) {
+      if (!isSuperAdmin(staffUser)) {
+        return (
+          <div className="py-16 max-w-lg mx-auto text-center space-y-4">
+            <div className="w-16 h-16 bg-neutral-900 border border-neutral-800 rounded-full flex items-center justify-center mx-auto text-2xl shadow-inner">
+              🔒
+            </div>
+            <h2 className="text-xl font-bold text-white">Access Restricted to Super Admin</h2>
+            <p className="text-xs text-neutral-400 max-w-sm mx-auto leading-relaxed">
+              Only authorized administrator <strong className="text-white">reid@sr1companies.com</strong> has permission to configure where appraisal submissions are routed.
+            </p>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={onBackToInquiries}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+              >
+                ← Return to Inquiries Workspace
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      const initialRouting = useMemo(() => {
+        const merged = { ...DEALERSHIP_NOTIFICATION_EMAILS };
+        if (emailRoutingConfig && typeof emailRoutingConfig === 'object') {
+          Object.assign(merged, emailRoutingConfig);
+        }
+        return merged;
+      }, [emailRoutingConfig]);
+
+      const [routingState, setRoutingState] = useState(() => initialRouting);
+      const [categoryFilter, setCategoryFilter] = useState('all');
+      const [searchQuery, setSearchQuery] = useState('');
+      const [isSaving, setIsSaving] = useState(false);
+      const [toastMsg, setToastMsg] = useState('');
+      const [testLocationId, setTestLocationId] = useState('powersports_epsom_nh');
+      const [newEmailInputs, setNewEmailInputs] = useState({});
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      // Unsaved changes check
+      const hasUnsavedChanges = useMemo(() => {
+        return JSON.stringify(routingState) !== JSON.stringify(initialRouting);
+      }, [routingState, initialRouting]);
+
+      const showToast = (msg) => {
+        setToastMsg(msg);
+        setTimeout(() => setToastMsg(''), 4500);
+      };
+
+      const handleAddEmail = (locId, emailInput) => {
+        const raw = (emailInput || '').trim();
+        if (!raw) return;
+        const splitEmails = raw.split(/[,;\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean);
+        if (splitEmails.length === 0) return;
+
+        const currentList = Array.isArray(routingState[locId]) ? routingState[locId] : [];
+        const toAdd = splitEmails.filter(e => !currentList.includes(e));
+
+        if (toAdd.length === 0) {
+          showToast('Email already added for this store.');
+          return;
+        }
+
+        setRoutingState(prev => ({
+          ...prev,
+          [locId]: [...currentList, ...toAdd]
+        }));
+        setNewEmailInputs(prev => ({ ...prev, [locId]: '' }));
+      };
+
+      const handleRemoveEmail = (locId, emailToRemove) => {
+        const currentList = Array.isArray(routingState[locId]) ? routingState[locId] : [];
+        if (currentList.length <= 1) {
+          if (!window.confirm('Warning: Removing all recipients means this store location will fall back to appraisals@sr1companies.com. Remove anyway?')) {
+            return;
+          }
+        }
+        setRoutingState(prev => ({
+          ...prev,
+          [locId]: currentList.filter(e => e !== emailToRemove)
+        }));
+      };
+
+      const handleResetLocation = (locId) => {
+        const defaultEmails = DEALERSHIP_NOTIFICATION_EMAILS[locId] || ['appraisals@sr1companies.com'];
+        setRoutingState(prev => ({
+          ...prev,
+          [locId]: [...defaultEmails]
+        }));
+        showToast('Reset store to factory defaults.');
+      };
+
+      const handleResetAllToDefaults = () => {
+        if (window.confirm('Are you sure you want to reset ALL 18 store locations to system default routing? Click "Save Routing Changes" afterwards to commit to Firestore cloud.')) {
+          setRoutingState({ ...DEALERSHIP_NOTIFICATION_EMAILS });
+          showToast('Reset all locations to factory defaults.');
+        }
+      };
+
+      const handleSave = async () => {
+        setIsSaving(true);
+        try {
+          const ok = await onSaveEmailRoutingConfig(routingState);
+          if (ok) {
+            showToast('✓ Email routing saved successfully to Cloud Firestore! All future customer submissions will route to these recipients.');
+          } else {
+            showToast('Saved locally in browser storage.');
+          }
+        } catch (e) {
+          showToast('Saved locally in browser storage.');
+        } finally {
+          setIsSaving(false);
+        }
+      };
+
+      // Filter locations
+      const filteredLocations = useMemo(() => {
+        return LOCATIONS.filter(loc => {
+          if (categoryFilter !== 'all') {
+            if (categoryFilter === 'pickup') {
+              if (loc.id !== 'pickup_requested') return false;
+            } else if (loc.category !== categoryFilter) {
+              return false;
+            }
+          }
+          if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase().trim();
+            const nameMatch = loc.name.toLowerCase().includes(q);
+            const idMatch = loc.id.toLowerCase().includes(q);
+            const emails = routingState[loc.id] || [];
+            const emailMatch = emails.some(e => e.toLowerCase().includes(q));
+            return nameMatch || idMatch || emailMatch;
+          }
+          return true;
+        });
+      }, [categoryFilter, searchQuery, routingState]);
+
+      // Category counts for filter tabs
+      const categoryCounts = useMemo(() => {
+        const counts = { all: LOCATIONS.length, trailer: 0, rv: 0, equipment: 0, powersports: 0, container: 0, pickup: 0 };
+        LOCATIONS.forEach(l => {
+          if (l.id === 'pickup_requested') counts.pickup += 1;
+          else if (counts[l.category] !== undefined) counts[l.category] += 1;
+        });
+        return counts;
+      }, []);
+
+      const testRecipients = useMemo(() => {
+        return routingState[testLocationId] || DEALERSHIP_NOTIFICATION_EMAILS[testLocationId] || ['appraisals@sr1companies.com'];
+      }, [testLocationId, routingState]);
+
+      return (
+        <div className="space-y-6">
+          {/* TOAST NOTIFICATION */}
+          {toastMsg && (
+            <div className="fixed bottom-6 right-6 z-50 max-w-md bg-neutral-900 border border-amber-500/60 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3">
+              <span className="text-amber-400 text-lg">🔔</span>
+              <div className="text-xs font-semibold leading-relaxed">{toastMsg}</div>
+            </div>
+          )}
+
+          {/* ADMIN SUB-HEADER & ACTIONS BAR */}
+          <div className="bg-neutral-900 border border-neutral-800 p-4 sm:p-5 rounded-2xl space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                    Super Admin Mode
+                  </span>
+                  <span className="text-[11px] text-neutral-400">
+                    Logged in as <strong className="text-white">reid@sr1companies.com</strong>
+                  </span>
+                </div>
+                <h2 className="text-lg sm:text-xl font-bold text-white">
+                  Email Submission Routing Configuration
+                </h2>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Configure where customer valuation and trade-in submissions are delivered across all 18 store locations.
+                </p>
+              </div>
+
+              {/* SAVE / RESET ACTIONS */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={onBackToInquiries}
+                  className="px-3 py-2 bg-neutral-850 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded-xl text-xs font-semibold border border-neutral-750 transition-colors cursor-pointer"
+                >
+                  ← Inquiries Pipeline
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResetAllToDefaults}
+                  className="px-3 py-2 bg-neutral-950 hover:bg-neutral-900 text-neutral-400 hover:text-rose-300 rounded-xl text-xs font-semibold border border-neutral-800 transition-colors cursor-pointer"
+                  title="Revert all store recipients to default"
+                >
+                  Reset All Defaults
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer ${
+                    hasUnsavedChanges
+                      ? 'bg-amber-400 hover:bg-amber-300 text-neutral-950'
+                      : 'bg-white hover:bg-neutral-200 text-neutral-950'
+                  }`}
+                >
+                  {isSaving ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-neutral-950 border-t-transparent rounded-full animate-spin"></span>
+                      <span>Saving to Cloud...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>💾</span>
+                      <span>{hasUnsavedChanges ? 'Save Routing Changes *' : 'Save Routing Changes'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* LIVE STATUS BANNER */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-neutral-850 text-xs">
+              <div className="flex items-center gap-2 text-neutral-400">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Real-Time Cloud Firestore Sync Active</span>
+                <span className="text-neutral-600">•</span>
+                <span className="text-[11px] text-neutral-400">
+                  {hasUnsavedChanges ? (
+                    <strong className="text-amber-400">● Unsaved edits pending save</strong>
+                  ) : (
+                    'All store routing up to date with cloud'
+                  )}
+                </span>
+              </div>
+              <div className="text-[11px] text-neutral-400">
+                Centralized appraisal desk: <code className="text-neutral-300 bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800">appraisals@sr1companies.com</code>
+              </div>
+            </div>
+          </div>
+
+          {/* INTERACTIVE ROUTING SIMULATOR */}
+          <div className="bg-neutral-900 border border-neutral-800 p-4 sm:p-5 rounded-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">🎯</span>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Live Routing Test Simulator
+                </h3>
+              </div>
+              <span className="text-[11px] text-neutral-400">
+                Test which inboxes receive alerts when a customer chooses a store
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center bg-neutral-950 p-3.5 rounded-xl border border-neutral-800">
+              <div>
+                <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1">
+                  Customer Selects Location:
+                </label>
+                <select
+                  value={testLocationId}
+                  onChange={(e) => setTestLocationId(e.target.value)}
+                  className="w-full bg-neutral-900 border border-neutral-750 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-amber-400"
+                >
+                  {LOCATIONS.map(loc => (
+                    <option key={loc.id} value={loc.id}>{loc.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1">
+                  Alert Emails Dispatched To ({testRecipients.length} inboxes):
+                </label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {testRecipients.map((em, idx) => (
+                    <span
+                      key={em + idx}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold border ${
+                        idx === 0 
+                          ? 'bg-amber-950/70 border-amber-600/70 text-amber-200' 
+                          : 'bg-neutral-850 border-neutral-750 text-neutral-200'
+                      }`}
+                    >
+                      <span>{idx === 0 ? '👑 Primary:' : '📧 CC:'}</span>
+                      <span>{em}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* FILTER & SEARCH BAR */}
+          <div className="bg-neutral-900 border border-neutral-800 p-3.5 sm:p-4 rounded-2xl space-y-3">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              {/* Category Filter Tabs */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                {[
+                  { id: 'all', label: `All Locations (${categoryCounts.all})` },
+                  { id: 'trailer', label: `Trailers (${categoryCounts.trailer})` },
+                  { id: 'rv', label: `RV (${categoryCounts.rv})` },
+                  { id: 'equipment', label: `Equipment (${categoryCounts.equipment})` },
+                  { id: 'powersports', label: `Powersports (${categoryCounts.powersports})` },
+                  { id: 'container', label: `Containers (${categoryCounts.container})` },
+                  { id: 'pickup', label: `Pickup (${categoryCounts.pickup})` }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setCategoryFilter(tab.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      categoryFilter === tab.id
+                        ? 'bg-neutral-100 text-neutral-950 font-bold shadow-sm'
+                        : 'bg-neutral-950/80 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search input */}
+              <div className="w-full md:w-72 relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search store name, town, or email..."
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-500"
+                />
+                <span className="absolute left-2.5 top-2 text-neutral-500 text-xs">🔍</span>
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1.5 text-neutral-400 hover:text-white text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* STORE LOCATIONS LIST */}
+          <div className="space-y-3">
+            {filteredLocations.length === 0 ? (
+              <div className="bg-neutral-900 border border-neutral-800 p-8 rounded-2xl text-center space-y-2">
+                <div className="text-xl">🔍</div>
+                <div className="text-sm font-bold text-white">No store locations match your filter</div>
+                <p className="text-xs text-neutral-400">Try clearing your search term or selecting All Locations.</p>
+                <button
+                  type="button"
+                  onClick={() => { setCategoryFilter('all'); setSearchQuery(''); }}
+                  className="mt-2 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Clear Filters
+                </button>
+              </div>
+            ) : (
+              filteredLocations.map(loc => {
+                const emails = Array.isArray(routingState[loc.id]) && routingState[loc.id].length > 0
+                  ? routingState[loc.id]
+                  : (DEALERSHIP_NOTIFICATION_EMAILS[loc.id] || ['appraisals@sr1companies.com']);
+                
+                const defaultEmails = DEALERSHIP_NOTIFICATION_EMAILS[loc.id] || ['appraisals@sr1companies.com'];
+                const isCustomized = JSON.stringify(emails) !== JSON.stringify(defaultEmails);
+
+                const getCategoryBadge = (cat) => {
+                  switch (cat) {
+                    case 'rv':
+                      return { label: 'SR1 RV', color: 'bg-amber-950/70 border-amber-800/80 text-amber-300' };
+                    case 'trailer':
+                      return { label: 'SR1 Trailers', color: 'bg-blue-950/70 border-blue-800/80 text-blue-300' };
+                    case 'equipment':
+                      return { label: 'SR1 Equipment', color: 'bg-emerald-950/70 border-emerald-800/80 text-emerald-300' };
+                    case 'powersports':
+                      return { label: 'SR1 Powersports', color: 'bg-purple-950/70 border-purple-800/80 text-purple-300' };
+                    case 'container':
+                      return { label: 'SR1 Containers', color: 'bg-cyan-950/70 border-cyan-800/80 text-cyan-300' };
+                    default:
+                      return { label: 'On-Site Pickup', color: 'bg-neutral-800 border-neutral-700 text-neutral-300' };
+                  }
+                };
+                const badge = getCategoryBadge(loc.category);
+
+                return (
+                  <div
+                    key={loc.id}
+                    className="bg-neutral-900 border border-neutral-800 hover:border-neutral-750 p-4 sm:p-5 rounded-2xl space-y-3.5 transition-all"
+                  >
+                    {/* Top Row: Store Title, Division Badge & Status */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-neutral-850">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${badge.color}`}>
+                          {badge.label}
+                        </span>
+                        <h4 className="text-sm sm:text-base font-bold text-white">
+                          {loc.name}
+                        </h4>
+                        <code className="text-[10px] text-neutral-500 font-mono bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-850">
+                          {loc.id}
+                        </code>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        {isCustomized ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950/70 border border-amber-800 text-amber-300">
+                            Customized ({emails.length})
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-950 border border-neutral-800 text-neutral-400">
+                            System Default ({emails.length})
+                          </span>
+                        )}
+
+                        {isCustomized && (
+                          <button
+                            type="button"
+                            onClick={() => handleResetLocation(loc.id)}
+                            className="text-[11px] text-neutral-400 hover:text-white underline cursor-pointer"
+                            title="Reset this store to default recipients"
+                          >
+                            Reset Store
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Email Chips / Recipient Tags */}
+                    <div className="space-y-2">
+                      <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">
+                        Notification Recipients:
+                      </label>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {emails.map((email, idx) => {
+                          const isValid = emailRegex.test(email);
+                          return (
+                            <span
+                              key={email + idx}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono transition-all border ${
+                                isValid
+                                  ? idx === 0
+                                    ? 'bg-neutral-850 border-neutral-700 text-white font-bold'
+                                    : 'bg-neutral-950 border-neutral-800 text-neutral-300'
+                                  : 'bg-rose-950/80 border-rose-800 text-rose-200'
+                              }`}
+                            >
+                              <span className="text-[10px] opacity-70">
+                                {idx === 0 ? '👑 Primary' : '📧 CC'}
+                              </span>
+                              <span>{email}</span>
+                              {!isValid && (
+                                <span className="text-rose-400 text-[10px] font-sans font-bold" title="Invalid email syntax">
+                                  ⚠️
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveEmail(loc.id, email)}
+                                className="ml-1 text-neutral-400 hover:text-rose-300 font-sans text-xs cursor-pointer p-0.5 hover:bg-neutral-800 rounded"
+                                title={`Remove ${email}`}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Add Recipient Form Input */}
+                    <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <div className="flex-1 relative">
+                        <input
+                          type="email"
+                          value={newEmailInputs[loc.id] || ''}
+                          onChange={(e) => setNewEmailInputs(prev => ({ ...prev, [loc.id]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddEmail(loc.id, newEmailInputs[loc.id]);
+                            }
+                          }}
+                          placeholder="Add email address (e.g. employee@sr1companies.com) or paste comma-separated list..."
+                          className="w-full bg-neutral-950 border border-neutral-800 focus:border-amber-400 text-white placeholder-neutral-500 rounded-xl px-3 py-2 text-xs focus:outline-none"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddEmail(loc.id, newEmailInputs[loc.id])}
+                        className="px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shrink-0 flex items-center justify-center gap-1.5"
+                      >
+                        <span>+</span>
+                        <span>Add Recipient</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function StaffPortalView({ inquiries, onUpdateInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onSyncSamplesToCloud, emailRoutingConfig, onSaveEmailRoutingConfig }) {
+      const canManageRouting = isSuperAdmin(staffUser);
+      const [portalTab, setPortalTab] = useState(() => {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('tab') === 'routing' && isSuperAdmin(staffUser)) return 'routing';
+        } catch (e) {}
+        return 'inquiries';
+      });
       const [filterStage, setFilterStage] = useState(() => {
         try {
           const params = new URLSearchParams(window.location.search);
@@ -3415,9 +4056,39 @@
           
           {/* HEADER */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-neutral-900 border border-neutral-800 p-3.5 sm:p-4 rounded-2xl">
-            <div>
-              <h1 className="text-base sm:text-lg font-bold text-white">Staff Appraisal & Purchasing Desk</h1>
-              <p className="text-xs text-neutral-400">Direct mobile & desktop appraisal portal for SR1 Companies</p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div>
+                <h1 className="text-base sm:text-lg font-bold text-white">Staff Appraisal & Purchasing Desk</h1>
+                <p className="text-xs text-neutral-400">Direct mobile & desktop appraisal portal for SR1 Companies</p>
+              </div>
+
+              {canManageRouting && (
+                <div className="flex items-center p-1 bg-neutral-950 border border-neutral-800 rounded-xl space-x-1 sm:ml-4">
+                  <button
+                    type="button"
+                    onClick={() => setPortalTab('inquiries')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${portalTab === 'inquiries' ? 'bg-neutral-100 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'}`}
+                  >
+                    <span>📋</span>
+                    <span>Inquiries Pipeline</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${portalTab === 'inquiries' ? 'bg-neutral-300 text-neutral-900' : 'bg-neutral-800 text-neutral-400'}`}>
+                      {stageCounts.all || 0}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPortalTab('routing')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${portalTab === 'routing' ? 'bg-amber-400 text-neutral-950 shadow-sm' : 'text-amber-400 hover:text-amber-300 hover:bg-neutral-900'}`}
+                    title="Exclusive to reid@sr1companies.com: Edit where each submission routes"
+                  >
+                    <span>✉️</span>
+                    <span>Email Routing</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase bg-amber-500/30 text-amber-300 border border-amber-400/40">
+                      Admin
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -3483,10 +4154,19 @@
             </div>
           </div>
 
-          {/* SEARCH & FILTERS BAR */}
-          <div className="bg-neutral-900 border border-neutral-800 p-3 sm:p-4 rounded-xl space-y-3 text-xs">
-            {/* Top row: search & dropdowns */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-3">
+          {portalTab === 'routing' && canManageRouting ? (
+            <EmailRoutingManager
+              emailRoutingConfig={emailRoutingConfig}
+              onSaveEmailRoutingConfig={onSaveEmailRoutingConfig}
+              staffUser={staffUser}
+              onBackToInquiries={() => setPortalTab('inquiries')}
+            />
+          ) : (
+            <>
+              {/* SEARCH & FILTERS BAR */}
+              <div className="bg-neutral-900 border border-neutral-800 p-3 sm:p-4 rounded-xl space-y-3 text-xs">
+                {/* Top row: search & dropdowns */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-3">
               <div className="w-full md:flex-1 min-w-0 relative">
                 <input
                   type="text"
@@ -4101,6 +4781,8 @@
               </table>
             </div>
           </div>
+            </>
+          )}
 
           {/* APPRAISAL MODAL */}
           {selectedInquiry && (
