@@ -40,7 +40,7 @@ export default function HomePage() {
 
             <div className="hidden sm:flex flex-col justify-center border-l border-neutral-800 pl-3">
               <span className="text-[12px] font-bold tracking-wide text-neutral-300 uppercase">
-                sell2sr1<span className="text-neutral-500">.com</span>
+                selltosr1<span className="text-neutral-500">.com</span>
               </span>
               <span className="text-[10px] font-medium tracking-wider text-neutral-400">
                 100% Employee-Owned
