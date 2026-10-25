@@ -3386,7 +3386,6 @@
       const [searchQuery, setSearchQuery] = useState('');
       const [isSaving, setIsSaving] = useState(false);
       const [toastMsg, setToastMsg] = useState('');
-      const [testLocationId, setTestLocationId] = useState('powersports_epsom_nh');
       const [newEmailInputs, setNewEmailInputs] = useState({});
 
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -3499,10 +3498,6 @@
         return counts;
       }, []);
 
-      const testRecipients = useMemo(() => {
-        return routingState[testLocationId] || DEALERSHIP_NOTIFICATION_EMAILS[testLocationId] || ['appraisals@sr1companies.com'];
-      }, [testLocationId, routingState]);
-
       return (
         <div className="space-y-6">
           {/* TOAST NOTIFICATION */}
@@ -3593,59 +3588,6 @@
               </div>
               <div className="text-[11px] text-neutral-400">
                 Centralized appraisal desk: <code className="text-neutral-300 bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800">appraisals@sr1companies.com</code>
-              </div>
-            </div>
-          </div>
-
-          {/* INTERACTIVE ROUTING SIMULATOR */}
-          <div className="bg-neutral-900 border border-neutral-800 p-4 sm:p-5 rounded-2xl space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">🎯</span>
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                  Live Routing Test Simulator
-                </h3>
-              </div>
-              <span className="text-[11px] text-neutral-400">
-                Test which inboxes receive alerts when a customer chooses a store
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center bg-neutral-950 p-3.5 rounded-xl border border-neutral-800">
-              <div>
-                <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1">
-                  Customer Selects Location:
-                </label>
-                <select
-                  value={testLocationId}
-                  onChange={(e) => setTestLocationId(e.target.value)}
-                  className="w-full bg-neutral-900 border border-neutral-750 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-amber-400"
-                >
-                  {LOCATIONS.map(loc => (
-                    <option key={loc.id} value={loc.id}>{loc.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1">
-                  Alert Emails Dispatched To ({testRecipients.length} inboxes):
-                </label>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {testRecipients.map((em, idx) => (
-                    <span
-                      key={em + idx}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold border ${
-                        idx === 0 
-                          ? 'bg-amber-950/70 border-amber-600/70 text-amber-200' 
-                          : 'bg-neutral-850 border-neutral-750 text-neutral-200'
-                      }`}
-                    >
-                      <span>{idx === 0 ? '👑 Primary:' : '📧 CC:'}</span>
-                      <span>{em}</span>
-                    </span>
-                  ))}
-                </div>
               </div>
             </div>
           </div>
