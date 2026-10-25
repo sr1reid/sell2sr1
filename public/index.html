@@ -490,19 +490,33 @@
     };
 
     // Dynamic notification routing resolver
-    const getDynamicNotificationEmailsForLocation = (locId, customRouting) => {
+    const getDynamicNotificationEmailsForLocation = (locId, customRouting, intent) => {
       const routing = customRouting || DEALERSHIP_NOTIFICATION_EMAILS;
+      let baseList = ['appraisals@sr1companies.com'];
       if (locId && routing[locId] && Array.isArray(routing[locId]) && routing[locId].length > 0) {
-        return routing[locId];
+        baseList = routing[locId];
+      } else if (locId && DEALERSHIP_NOTIFICATION_EMAILS[locId]) {
+        baseList = DEALERSHIP_NOTIFICATION_EMAILS[locId];
       }
-      if (locId && DEALERSHIP_NOTIFICATION_EMAILS[locId]) {
-        return DEALERSHIP_NOTIFICATION_EMAILS[locId];
+      if (!intent) {
+        return baseList;
       }
-      return ['appraisals@sr1companies.com'];
+      const targetCentral = intent === 'trade' ? 'appraisals@sr1companies.com' : 'selltosr1@sr1companies.com';
+      const mapped = baseList.map(email => {
+        const lower = (email || '').toLowerCase().trim();
+        if (lower === 'appraisals@sr1companies.com' || lower === 'selltosr1@sr1companies.com') {
+          return targetCentral;
+        }
+        return lower;
+      }).filter(Boolean);
+      if (!mapped.includes(targetCentral)) {
+        mapped.unshift(targetCentral);
+      }
+      return Array.from(new Set(mapped));
     };
 
-    const getNotificationEmailsForLocation = (locId, customRouting) => {
-      return getDynamicNotificationEmailsForLocation(locId, customRouting);
+    const getNotificationEmailsForLocation = (locId, customRouting, intent) => {
+      return getDynamicNotificationEmailsForLocation(locId, customRouting, intent);
     };
 
     // --- REVISED CATEGORIES (NO IMAGE/EMOJI ICONS) ---
@@ -2086,8 +2100,8 @@
         }
         const refId = String(Math.floor(1000 + Math.random() * 9000));
         const locationName = (LOCATIONS.find(l => l.id === formData.preferredLocation)?.name) || formData.preferredLocation || 'SR1 Dealership';
-        const locationEmails = getDynamicNotificationEmailsForLocation(formData.preferredLocation, emailRoutingConfig);
-        const primaryEmail = locationEmails[0] || 'appraisals@sr1companies.com';
+        const locationEmails = getDynamicNotificationEmailsForLocation(formData.preferredLocation, emailRoutingConfig, formData.intent || 'sell');
+        const primaryEmail = locationEmails[0] || (formData.intent === 'trade' ? 'appraisals@sr1companies.com' : 'selltosr1@sr1companies.com');
         const ccEmails = locationEmails.slice(1);
         
         const newInquiry = {
@@ -3619,7 +3633,7 @@
                 </span>
               </div>
               <div className="text-[11px] text-neutral-400">
-                Centralized appraisal desk: <code className="text-neutral-300 bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800">appraisals@sr1companies.com</code>
+                Central routing: <span className="text-neutral-300">Sell Outright →</span> <code className="text-neutral-200 bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800">selltosr1@sr1companies.com</code> <span className="mx-1 text-neutral-600">•</span> <span className="text-neutral-300">Trade-In →</span> <code className="text-neutral-200 bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800">appraisals@sr1companies.com</code>
               </div>
             </div>
           </div>
