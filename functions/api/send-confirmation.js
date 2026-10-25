@@ -57,7 +57,7 @@ export async function onRequestPost({ request, env }) {
       const senderPhone = (data.Phone || data.phone || 'Not provided').trim();
       const topic = (data.Topic || data.unitType || 'General Question').trim();
       const message = (data.Message || data.message || '').trim();
-      const subject = data._subject || `Direct Contact Message from ${senderName} - sell2sr1.com`;
+      const subject = data._subject || `Direct Contact Message from ${senderName} - selltosr1.com`;
 
       const contactHtml = `
 <!DOCTYPE html>
@@ -67,7 +67,7 @@ export async function onRequestPost({ request, env }) {
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;margin:0 auto;background-color:#ffffff;border:1px solid #d1d5db;border-radius:12px;overflow:hidden;">
     <tr>
       <td style="padding:20px 24px;background-color:#111827;color:#ffffff;">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;">sell2sr1.com Direct Contact</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;">selltosr1.com Direct Contact</div>
         <div style="font-size:20px;font-weight:800;margin-top:4px;">New Message from ${senderName}</div>
       </td>
     </tr>
@@ -89,7 +89,7 @@ export async function onRequestPost({ request, env }) {
 </body>
 </html>`;
 
-      const contactText = `DIRECT CONTACT MESSAGE - SELL2SR1.COM\n\nName: ${senderName}\nEmail: ${senderEmail}\nPhone: ${senderPhone}\nTopic: ${topic}\n\nMessage:\n${message}`;
+      const contactText = `DIRECT CONTACT MESSAGE - SELLTOSR1.COM\n\nName: ${senderName}\nEmail: ${senderEmail}\nPhone: ${senderPhone}\nTopic: ${topic}\n\nMessage:\n${message}`;
 
       if (resendKey) {
         const contactRes = await sendResendEmail(resendKey, {
@@ -223,8 +223,8 @@ export async function onRequestPost({ request, env }) {
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td align="left" style="vertical-align: middle;">
-                    <a href="https://sell2sr1.com" target="_blank" style="text-decoration: none; display: inline-block;">
-                      <img src="https://sell2sr1.com/logo.png" alt="SR1 Companies" height="34" style="height: 34px; width: auto; max-height: 38px; display: block; border: 0;" />
+                    <a href="https://selltosr1.com" target="_blank" style="text-decoration: none; display: inline-block;">
+                      <img src="https://selltosr1.com/logo.png" alt="SR1 Companies" height="34" style="height: 34px; width: auto; max-height: 38px; display: block; border: 0;" />
                     </a>
                   </td>
                   <td align="right" style="vertical-align: middle;">
@@ -518,7 +518,7 @@ SR1 Companies
               <strong>Customer:</strong> ${fullName} &bull; <a href="tel:${customerPhone}" style="color:#0f172a;font-weight:700;">${customerPhone}</a>
             </td>
             <td align="right">
-              <a href="https://sell2sr1.com/?view=portal" style="display:inline-block;padding:8px 14px;background-color:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-size:12px;font-weight:700;">
+              <a href="https://selltosr1.com/?view=portal" style="display:inline-block;padding:8px 14px;background-color:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-size:12px;font-weight:700;">
                 Open Staff Portal &rarr;
               </a>
             </td>
@@ -578,7 +578,7 @@ SR1 Companies
     <!-- Footer -->
     <tr>
       <td style="padding:16px 28px;background-color:#f1f5f9;border-top:1px solid #e2e8f0;text-align:center;font-size:12px;color:#64748b;">
-        Reply directly to this email to message <strong>${fullName}</strong> (${customerEmailAddr}) or manage this inquiry in the <a href="https://sell2sr1.com/?view=portal" style="color:#0f172a;font-weight:700;">SR1 Staff Portal</a>.
+        Reply directly to this email to message <strong>${fullName}</strong> (${customerEmailAddr}) or manage this inquiry in the <a href="https://selltosr1.com/?view=portal" style="color:#0f172a;font-weight:700;">SR1 Staff Portal</a>.
       </td>
     </tr>
   </table>
@@ -612,7 +612,7 @@ FINANCIALS & TITLE:
 - Estimated Loan Payoff: ${estimatedPayoff}
 - Uploaded Media: ${uploadedMediaTotal}
 
-Open Staff Portal: https://sell2sr1.com/?view=portal
+Open Staff Portal: https://selltosr1.com/?view=portal
 `;
 
     const emailSubject = `We Received Your Valuation Request [${refNum}] - SR1 Companies`;
