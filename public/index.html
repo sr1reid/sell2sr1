@@ -360,6 +360,19 @@
       }
     }
 
+    // Direct REST API delete for inquiries (restricted in UI to reid@sr1companies.com)
+    async function deleteInquiryFromCloudRest(inquiryId) {
+      if (!inquiryId) return false;
+      try {
+        const url = `${FS_REST_BASE}/${encodeURIComponent(inquiryId)}?key=${FS_API_KEY}`;
+        const res = await fetch(url, { method: 'DELETE' });
+        return res.ok;
+      } catch (e) {
+        console.error('Cloud REST delete notice:', e);
+        return false;
+      }
+    }
+
     // Direct REST API fetch for email routing config (stored at inquiries/_config_email_routing)
     async function fetchEmailRoutingConfigFromCloudRest() {
       try {
@@ -994,16 +1007,33 @@
         } catch (e) {}
         return 'sell';
       });
+      const deletedIdsRef = useRef((() => {
+        try {
+          const raw = localStorage.getItem('sell2sr1_deleted_inquiry_ids');
+          const parsed = raw ? JSON.parse(raw) : [];
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          return [];
+        }
+      })());
+
       const [inquiries, setInquiries] = useState(() => {
         try {
           const params = new URLSearchParams(window.location.search);
           if (params.get('reset') === '1') {
-            try { localStorage.removeItem('sell2sr1_inquiries_v2'); } catch (e) {}
+            try {
+              localStorage.removeItem('sell2sr1_inquiries_v2');
+              localStorage.removeItem('sell2sr1_deleted_inquiry_ids');
+              deletedIdsRef.current = [];
+            } catch (e) {}
             return INITIAL_INQUIRIES_DATA.map(normalizeInquiry).filter(Boolean);
           }
+          const deletedSet = new Set(deletedIdsRef.current || []);
           const saved = localStorage.getItem('sell2sr1_inquiries_v2');
           const list = saved ? JSON.parse(saved) : INITIAL_INQUIRIES_DATA;
-          return (Array.isArray(list) ? list : INITIAL_INQUIRIES_DATA).map(normalizeInquiry).filter(Boolean);
+          return (Array.isArray(list) ? list : INITIAL_INQUIRIES_DATA)
+            .map(normalizeInquiry)
+            .filter(item => item && !deletedSet.has(item.id));
         } catch (e) {
           console.warn('LocalStorage read error:', e);
           return INITIAL_INQUIRIES_DATA.map(normalizeInquiry).filter(Boolean);
@@ -1130,8 +1160,12 @@
         let isMounted = true;
 
         const mergeInquiries = (cloudList) => {
-          if (!cloudList || cloudList.length === 0) return;
-          const normalized = cloudList.map(normalizeInquiry).filter(Boolean);
+          if (!Array.isArray(cloudList)) return;
+          if (cloudList.length === 0 && (!deletedIdsRef.current || deletedIdsRef.current.length === 0)) return;
+          const deletedSet = new Set(deletedIdsRef.current || []);
+          const normalized = cloudList
+            .map(normalizeInquiry)
+            .filter(item => item && !deletedSet.has(item.id));
           normalized.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
           setInquiries(normalized);
         };
@@ -1258,6 +1292,39 @@
             console.warn('Firestore update call error:', e);
           }
         }
+      };
+
+      const handleDeleteInquiry = async (inquiryOrId) => {
+        if (!isSuperAdmin(staffUser)) {
+          alert('Only reid@sr1companies.com is authorized to delete inquiries.');
+          return false;
+        }
+        const targetId = typeof inquiryOrId === 'string' ? inquiryOrId : inquiryOrId?.id;
+        if (!targetId) return false;
+
+        if (!deletedIdsRef.current.includes(targetId)) {
+          deletedIdsRef.current = [...deletedIdsRef.current, targetId];
+          try {
+            localStorage.setItem('sell2sr1_deleted_inquiry_ids', JSON.stringify(deletedIdsRef.current));
+          } catch (e) {}
+        }
+
+        setInquiries(prev => (prev || []).filter(item => item && item.id !== targetId));
+        if (selectedInquiryId === targetId) {
+          setSelectedInquiryId(null);
+        }
+
+        await deleteInquiryFromCloudRest(targetId);
+
+        if (db) {
+          try {
+            db.collection('inquiries').doc(targetId).delete()
+              .catch(err => console.warn('Firestore SDK delete notice:', err));
+          } catch (e) {
+            console.warn('Firestore delete call error:', e);
+          }
+        }
+        return true;
       };
 
       const handleSyncSamplesToCloud = async () => {
@@ -1422,6 +1489,7 @@
                 <StaffPortalView 
                   inquiries={inquiries}
                   onUpdateInquiry={handleUpdateInquiry}
+                  onDeleteInquiry={handleDeleteInquiry}
                   selectedInquiryId={selectedInquiryId}
                   setSelectedInquiryId={setSelectedInquiryId}
                   staffUser={staffUser}
@@ -3866,8 +3934,9 @@
       );
     }
 
-    function StaffPortalView({ inquiries, onUpdateInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onSyncSamplesToCloud, emailRoutingConfig, onSaveEmailRoutingConfig }) {
+    function StaffPortalView({ inquiries, onUpdateInquiry, onDeleteInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onSyncSamplesToCloud, emailRoutingConfig, onSaveEmailRoutingConfig }) {
       const canManageRouting = isSuperAdmin(staffUser);
+      const canDeleteInquiries = isSuperAdmin(staffUser);
       const [portalTab, setPortalTab] = useState(() => {
         try {
           const params = new URLSearchParams(window.location.search);
@@ -4065,6 +4134,15 @@
         };
 
         onUpdateInquiry(updated);
+      };
+
+      const handleConfirmDeleteInquiry = (inq) => {
+        if (!inq || !canDeleteInquiries || !onDeleteInquiry) return;
+        const unitTitle = [inq.unit?.year, inq.unit?.make, inq.unit?.model].filter(Boolean).join(' ') || 'Unit';
+        const customerName = [inq.customer?.firstName, inq.customer?.lastName].filter(Boolean).join(' ') || 'Unknown Customer';
+        const confirmMsg = `Permanently delete inquiry #${inq.referenceId} (${unitTitle} — ${customerName})?\n\nThis action cannot be undone and will permanently remove the inquiry from the portal and database.`;
+        if (!confirm(confirmMsg)) return;
+        onDeleteInquiry(inq);
       };
 
       const selectedInquiry = (inquiries || []).find(i => i && i.id === selectedInquiryId);
@@ -4602,6 +4680,16 @@
                           📦 Archive
                         </button>
                       )}
+                      {canDeleteInquiries && (
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmDeleteInquiry(item)}
+                          className="px-3 py-2 bg-red-950/60 hover:bg-red-900/80 text-red-300 hover:text-white border border-red-800/70 hover:border-red-600 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0"
+                          title="Permanently delete inquiry (Admin: reid@sr1companies.com)"
+                        >
+                          🗑️ Delete
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -4902,6 +4990,16 @@
                                   📦 Archive
                                 </button>
                               )}
+                              {canDeleteInquiries && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmDeleteInquiry(item)}
+                                  className="px-2.5 py-1.5 bg-red-950/60 hover:bg-red-900/80 text-red-300 hover:text-white border border-red-800/70 hover:border-red-600 font-semibold rounded-lg text-xs transition-all"
+                                  title="Permanently delete inquiry (Admin: reid@sr1companies.com)"
+                                >
+                                  🗑️ Delete
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -4922,6 +5020,7 @@
               staffUser={staffUser}
               onClose={() => setSelectedInquiryId(null)}
               onUpdateInquiry={onUpdateInquiry}
+              onDeleteInquiry={canDeleteInquiries ? handleConfirmDeleteInquiry : null}
             />
           )}
 
@@ -5000,7 +5099,8 @@
     // ==========================================
     // 4. APPRAISAL WORKSPACE MODAL
     // ==========================================
-    function AppraisalWorkspaceModal({ inquiry, staffUser, onClose, onUpdateInquiry }) {
+    function AppraisalWorkspaceModal({ inquiry, staffUser, onClose, onUpdateInquiry, onDeleteInquiry }) {
+      const canDeleteInquiries = isSuperAdmin(staffUser) && typeof onDeleteInquiry === 'function';
       const [currentStage, setCurrentStage] = useState(inquiry.stage);
       const [offerAmount, setOfferAmount] = useState(inquiry.offers?.[0]?.amount || 25000);
       const [offerNotes, setOfferNotes] = useState(inquiry.offers?.[0]?.notes || 'Subject to physical inspection and title verification.');
@@ -5322,6 +5422,17 @@
               </div>
 
               <div className="flex items-center space-x-2">
+                {canDeleteInquiries && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteInquiry(inquiry)}
+                    className="px-2.5 py-1.5 bg-red-950/70 hover:bg-red-900 border border-red-800 text-red-300 hover:text-white font-semibold rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Permanently delete inquiry (Admin: reid@sr1companies.com)"
+                  >
+                    <span>🗑️</span> Delete
+                  </button>
+                )}
+
                 {isArchived ? (
                   <button
                     type="button"
