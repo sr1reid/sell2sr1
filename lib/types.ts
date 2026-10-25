@@ -11,7 +11,7 @@ export type VehicleCategory =
 
 export type ConditionRating = 'excellent' | 'very_good' | 'good' | 'fair' | 'poor';
 
-export type TitleStatus = 'owned_not_titleable' | 'owned_clean_title' | 'financed_money_owed' | 'other';
+export type TitleStatus = 'owned_not_titleable' | 'owned_clean_title' | 'financed_money_owed' | 'other' | '';
 
 export type DealershipLocation = 
   | 'turner_me' 
