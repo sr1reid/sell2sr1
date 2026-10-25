@@ -405,12 +405,7 @@ export async function onRequestPost({ request, env }) {
                   <td>
                     <div style="font-size: 13px; font-weight: 700; color: #111827;">Need to make an update or have questions?</div>
                     <div style="font-size: 13px; color: #4b5563; line-height: 1.5; margin-top: 4px;">
-                      Simply reply directly to this email or reach our centralized appraisal desk at:
-                    </div>
-                    <div style="margin-top: 8px;">
-                      <a href="mailto:${fromAddress}" style="color: #111827; font-weight: 700; text-decoration: underline; font-size: 14px;">
-                        ${fromAddress}
-                      </a>
+                      Simply reply directly to this email or contact us at <a href="mailto:${fromAddress}" style="color: #111827; font-weight: 700; text-decoration: underline;">${fromAddress}</a>
                     </div>
                   </td>
                 </tr>
@@ -458,7 +453,7 @@ WHAT TO EXPECT NEXT:
 2. Written Offer: We will reach out to you by text, call, or email with a competitive offer to purchase your unit or take it on trade.
 3. Easy Settlement: We coordinate paperwork, title, loan payoffs, and unit transfer.
 
-Questions? Reply directly to this email or reach us at ${fromAddress}.
+Questions? Simply reply directly to this email or contact us at ${fromAddress}.
 
 SR1 Companies
 100% Employee-Owned
