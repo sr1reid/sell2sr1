@@ -1,8 +1,8 @@
 // Cloudflare Pages Function: /functions/api/send-confirmation.js
 // Handles dispatch of:
-// 1. Branded customer confirmation emails from selltosr1@sr1companies.com
+// 1. Branded customer confirmation emails from appraisals@sr1companies.com
 // 2. Internal dealership & appraisal desk notification emails (with routing + photo attachments)
-// 3. Direct Contact Us messages to selltosr1@sr1companies.com
+// 3. Direct Contact Us messages to appraisals@sr1companies.com
 // Supports: Resend (default/recommended), Brevo, Postmark, SendGrid via environment variables.
 
 async function sendResendEmail(resendKey, payload) {
@@ -41,13 +41,8 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const data = await request.json();
-    const isTradeIn = data.intent === 'trade';
-    const fromAddress = isTradeIn
-      ? 'appraisals@sr1companies.com'
-      : 'selltosr1@sr1companies.com';
-    const fromName = isTradeIn
-      ? 'SR1 Appraisals'
-      : 'Sell To SR1';
+    const fromAddress = 'appraisals@sr1companies.com';
+    const fromName = env.CONFIRMATION_FROM_NAME || 'SR1 Companies Appraisals';
 
     const resendKey = env.RESEND_API_KEY ||
       Object.entries(env || {}).find(([k]) => k.toUpperCase().includes('RESEND'))?.[1] ||
@@ -110,8 +105,8 @@ export async function onRequestPost({ request, env }) {
       if (resendKey) {
         const contactRes = await sendResendEmail(resendKey, {
           from: `${fromName} <${fromAddress}>`,
-          to: ['selltosr1@sr1companies.com'],
-          reply_to: senderEmail && senderEmail.includes('@') ? senderEmail : 'selltosr1@sr1companies.com',
+          to: ['appraisals@sr1companies.com'],
+          reply_to: senderEmail && senderEmail.includes('@') ? senderEmail : 'appraisals@sr1companies.com',
           subject,
           html: contactHtml,
           text: contactText,
@@ -464,7 +459,7 @@ SR1 Companies
     // -------------------------------------------------------------------------
     const ad = appraisalDetails || {};
     const staffSubject = ad._subject || `[${intent === 'trade' ? 'TRADE-IN' : 'SELL'}] Unit Valuation Request [${refNum}]: ${unitTitle} (${location})`;
-    const centralRecipient = isTradeIn ? 'appraisals@sr1companies.com' : 'selltosr1@sr1companies.com';
+    const centralRecipient = 'appraisals@sr1companies.com';
     const rawRecipients = Array.isArray(notificationEmails) && notificationEmails.length > 0
       ? notificationEmails.filter(Boolean)
       : [centralRecipient];
@@ -643,7 +638,7 @@ FINANCIALS & TITLE:
 Open Staff Portal: https://selltosr1.com/?view=portal
 `;
 
-    const emailSubject = `We Received Your Valuation Request [${refNum}] - ${fromName}`;
+    const emailSubject = `We Received Your Valuation Request [${refNum}] - SR1 Companies`;
 
     let customerResult = null;
     let staffResult = null;
