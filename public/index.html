@@ -1697,7 +1697,7 @@
       const [category, setCategory] = useState('rv');
       const [submittedInquiry, setSubmittedInquiry] = useState(null);
       const [formData, setFormData] = useState({
-        subcategory: 'Travel Trailer',
+        subcategory: '',
         year: 2022,
         make: '',
         model: '',
@@ -1751,7 +1751,7 @@
         const validLocations = getLocationsForCategory(catKey);
         setFormData(prev => ({
           ...prev,
-          subcategory: CATEGORIES[catKey].subtypes[0],
+          subcategory: '',
           preferredLocation: validLocations.some(l => l.id === prev.preferredLocation)
             ? prev.preferredLocation
             : ''
@@ -2208,10 +2208,10 @@
           },
           unit: {
             category,
-            subcategory: formData.subcategory,
+            subcategory: activeCatConfig.label,
             year: Number(formData.year) || 2022,
             make: category === 'container' ? 'Shipping Container' : (formData.make || 'Unit Make'),
-            model: category === 'container' ? (formData.subcategory || 'Container') : (formData.model || 'Unit Model'),
+            model: category === 'container' ? 'Container' : (formData.model || 'Unit Model'),
             trimOrFloorplan: formData.trimOrFloorplan,
             vinOrSerial: formData.vinOrSerial || 'VIN-PENDING',
             mileageOrHours: Number(formData.mileageOrHours) || 0,
@@ -2268,7 +2268,7 @@
         // Send email notification to dealership team and confirmation copy to submitter
         try {
           const unitSummary = category === 'container'
-            ? `Shipping Container (${formData.subcategory}) - Purchased: ${formData.year} - Box ID: ${formData.vinOrSerial}`
+            ? `Shipping Container - Purchased: ${formData.year} - Box ID: ${formData.vinOrSerial}`
             : `${formData.year} ${formData.make} ${formData.model} ${formData.trimOrFloorplan || ''}`;
 
           const appraisalPayload = {
@@ -2288,10 +2288,10 @@
             Customer_Location: `${formData.city || ''}, ${formData.state || ''} ${formData.zipCode || ''}`.trim() || 'Not provided',
             Unit_Description: unitSummary,
             Product_Category: activeCatConfig.label,
-            Subcategory: formData.subcategory,
+            Subcategory: activeCatConfig.label,
             Model_Year: formData.year,
             Make: category === 'container' ? 'Shipping Container' : (formData.make || 'N/A'),
-            Model: category === 'container' ? (formData.subcategory || 'Container') : (formData.model || 'N/A'),
+            Model: category === 'container' ? 'Container' : (formData.model || 'N/A'),
             Trim_or_Floorplan: formData.trimOrFloorplan || 'N/A',
             VIN_or_Serial_or_Box_ID: formData.vinOrSerial || 'N/A',
             Mileage_or_Hours: category === 'container' ? 'N/A' : `${formData.mileageOrHours || 0} ${activeCatConfig.isHours ? 'Hours' : 'Miles'}`,
@@ -2359,9 +2359,8 @@
               year: formData.year,
               make: formData.make,
               model: formData.model,
-              subcategory: formData.subcategory,
+              subcategory: '',
               category: activeCatConfig.label,
-              condition: formData.condition,
               mileageOrHours: formData.mileageOrHours,
               isHours: activeCatConfig.isHours
             },
@@ -2443,7 +2442,7 @@
                     setSubmittedInquiry(null);
                     setStep(1);
                     setFormData({
-                      subcategory: 'Travel Trailer',
+                      subcategory: '',
                       year: 2022,
                       make: '',
                       model: '',
@@ -3251,8 +3250,8 @@
                   <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 text-xs space-y-1 text-neutral-400">
                     <p className="font-semibold text-neutral-200">Submission Summary:</p>
                     <p>• Request Type: {formData.intent === 'trade' ? `Trade-In ${formData.workingWithSalesperson === 'yes' && formData.salespersonName ? `(Salesperson: ${formData.salespersonName})` : ''}` : 'Outright Sale to SR1'}</p>
-                    <p>• {category === 'container' ? `Purchased: ${formData.year} | Box ID: ${formData.vinOrSerial || 'Pending'} (${formData.subcategory})` : `${formData.year} ${formData.make} ${formData.model} (${formData.subcategory})`}</p>
-                    <p>• Category: {activeCatConfig.label} | Condition: {formData.condition}</p>
+                    <p>• {category === 'container' ? `Purchased: ${formData.year} | Box ID: ${formData.vinOrSerial || 'Pending'}` : `${formData.year} ${formData.make} ${formData.model}`}</p>
+                    <p>• Category: {activeCatConfig.label}</p>
                     <p>• Photos: {photos.length} attached</p>
                   </div>
 

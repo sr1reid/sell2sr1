@@ -146,10 +146,8 @@ export async function onRequestPost({ request, env }) {
     const refNum = referenceId || String(Math.floor(1000 + Math.random() * 9000));
 
     const unitTitle = `${unit?.year || ''} ${unit?.make || ''} ${unit?.model || ''}`.trim() || 'Your Submitted Unit';
-    const subcategory = unit?.subcategory ? ` • ${unit.subcategory}` : '';
     const mileageHoursLabel = unit?.isHours ? 'Hours' : 'Mileage';
     const mileageHoursValue = unit?.mileageOrHours ? `${unit.mileageOrHours} ${unit.isHours ? 'hrs' : 'mi'}` : 'Not Specified';
-    const condition = unit?.condition ? unit.condition.charAt(0).toUpperCase() + unit.condition.slice(1) : 'Standard';
     const transactionType = intent === 'trade' ? 'Trade-In on Purchase' : 'Outright Sale to SR1';
     const salesperson = (intent === 'trade' && workingWithSalesperson === 'yes')
       ? (salespersonName || 'Pending Assignment')
@@ -279,7 +277,7 @@ export async function onRequestPost({ request, env }) {
                     <div style="font-size: 18px; font-weight: 800; color: #111827; margin-top: 4px;">
                       ${unitTitle}
                     </div>
-                    ${unit?.category ? `<div style="font-size: 13px; color: #4b5563; margin-top: 2px;">${unit.category}${subcategory}</div>` : ''}
+                    ${unit?.category ? `<div style="font-size: 13px; color: #4b5563; margin-top: 2px;">${unit.category}</div>` : ''}
                   </td>
                 </tr>
 
@@ -287,22 +285,6 @@ export async function onRequestPost({ request, env }) {
                 <tr>
                   <td style="padding-top: 16px;">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                      <tr>
-                        <!-- Reported Condition -->
-                        <td class="stat-tile-wrap" width="50%" style="width: 50%; vertical-align: top; padding: 0 8px 12px 0;">
-                          <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;">
-                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">Reported Condition</div>
-                            <div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px;">${condition}</div>
-                          </div>
-                        </td>
-                        <!-- Estimated Hours / Mileage -->
-                        <td class="stat-tile-wrap" width="50%" style="width: 50%; vertical-align: top; padding: 0 0 12px 8px;">
-                          <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;">
-                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">${mileageHoursLabel}</div>
-                            <div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px;">${mileageHoursValue}</div>
-                          </div>
-                        </td>
-                      </tr>
                       <tr>
                         <!-- Transaction Type -->
                         <td class="stat-tile-wrap" width="50%" style="width: 50%; vertical-align: top; padding: 0 8px 12px 0;">
@@ -319,6 +301,15 @@ export async function onRequestPost({ request, env }) {
                           </div>
                         </td>
                       </tr>
+                      ${unit?.mileageOrHours ? `
+                      <tr>
+                        <td colspan="2" class="stat-tile-wrap" style="vertical-align: top; padding: 0 0 12px 0;">
+                          <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">${mileageHoursLabel}</div>
+                            <div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px;">${mileageHoursValue}</div>
+                          </div>
+                        </td>
+                      </tr>` : ''}
                       ${salesperson !== 'Direct Appraisal Request' ? `
                       <tr>
                         <td colspan="2" class="stat-tile-wrap" style="vertical-align: top; padding: 0 0 12px 0;">
@@ -436,10 +427,8 @@ Hi ${firstName},
 
 Thank you for giving SR1 the opportunity to make you an offer on your item. We have received your valuation request for:
 ${unitTitle}
-- Category: ${unit?.category || 'Item'}${subcategory}
-- Condition: ${condition}
-- ${mileageHoursLabel}: ${mileageHoursValue}
-- Transaction: ${transactionType}
+- Category: ${unit?.category || 'Item'}
+${unit?.mileageOrHours ? `- ${mileageHoursLabel}: ${mileageHoursValue}\n` : ''}- Transaction: ${transactionType}
 - Preferred Dealership: ${location}
 ${salesperson !== 'Direct Appraisal Request' ? `- Assigned Salesperson: ${salesperson}\n` : ''}
 
@@ -572,15 +561,14 @@ SR1 Companies
           2. Unit Specifications &amp; Condition
         </div>
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px;font-size:13px;">
-          <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;width:38%;border-bottom:1px solid #e2e8f0;">Category / Subcategory</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${unit?.category || ad.Product_Category || 'Unit'}${subcategory}</td></tr>
+          <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;width:38%;border-bottom:1px solid #e2e8f0;">Category</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${unit?.category || ad.Product_Category || 'Unit'}</td></tr>
           <tr><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Year / Make / Model</td><td style="padding:8px 12px;color:#0f172a;font-weight:700;border-bottom:1px solid #e2e8f0;">${unitTitle}</td></tr>
           <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Trim / Floorplan</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${trimOrFloorplan}</td></tr>
           <tr><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">VIN / Serial / Box ID</td><td style="padding:8px 12px;font-family:monospace;color:#0f172a;font-weight:700;border-bottom:1px solid #e2e8f0;">${vinOrSerial}</td></tr>
           <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">${mileageHoursLabel}</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${ad.Mileage_or_Hours || mileageHoursValue}</td></tr>
           <tr><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Specifications</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${unitSpecs}</td></tr>
-          <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Overall Condition</td><td style="padding:8px 12px;color:#0f172a;font-weight:700;border-bottom:1px solid #e2e8f0;">${condition} (Tires/Tracks: ${tireCondition})</td></tr>
-          <tr><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Condition Notes</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${conditionNotes}</td></tr>
-          <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;">Known Issues / Damage</td><td style="padding:8px 12px;color:#b91c1c;font-weight:600;">${knownIssues}</td></tr>
+          <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Condition Notes</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${conditionNotes}</td></tr>
+          <tr><td style="padding:8px 12px;font-weight:700;color:#475569;">Known Issues / Damage</td><td style="padding:8px 12px;color:#b91c1c;font-weight:600;">${knownIssues}</td></tr>
         </table>
 
         <!-- 3. Financials & Title -->
@@ -620,11 +608,10 @@ CUSTOMER DETAILS:
 
 UNIT DETAILS:
 - Unit: ${ad.Unit_Description || unitTitle}
-- Category: ${unit?.category || ad.Product_Category || 'Unit'}${subcategory}
+- Category: ${unit?.category || ad.Product_Category || 'Unit'}
 - VIN / Serial / Box ID: ${vinOrSerial}
 - ${mileageHoursLabel}: ${ad.Mileage_or_Hours || mileageHoursValue}
 - Specs: ${unitSpecs}
-- Condition: ${condition} (Tires/Tracks: ${tireCondition})
 - Condition Notes: ${conditionNotes}
 - Known Issues / Damage: ${knownIssues}
 
