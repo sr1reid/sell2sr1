@@ -5106,8 +5106,13 @@
     function AppraisalWorkspaceModal({ inquiry, staffUser, onClose, onUpdateInquiry, onDeleteInquiry }) {
       const canDeleteInquiries = isSuperAdmin(staffUser) && typeof onDeleteInquiry === 'function';
       const [currentStage, setCurrentStage] = useState(inquiry.stage);
-      const [offerAmount, setOfferAmount] = useState(inquiry.offers?.[0]?.amount || 25000);
-      const [offerNotes, setOfferNotes] = useState(inquiry.offers?.[0]?.notes || 'Subject to physical inspection and title verification.');
+      const latestOffer = (Array.isArray(inquiry.offers) && inquiry.offers.length > 0)
+        ? inquiry.offers[inquiry.offers.length - 1]
+        : null;
+      const [offerAmount, setOfferAmount] = useState(
+        latestOffer?.amount !== undefined && latestOffer?.amount !== null ? String(latestOffer.amount) : ''
+      );
+      const [offerNotes, setOfferNotes] = useState(latestOffer?.notes || 'Subject to physical inspection and title verification.');
       const [newNoteText, setNewNoteText] = useState('');
       const mediaItems = Array.isArray(inquiry.photos) ? inquiry.photos : [];
       const [activeMediaIndex, setActiveMediaIndex] = useState(0);
@@ -5198,7 +5203,8 @@
       const defaultCompsQuery = [inquiry.unit.year, inquiry.unit.make, inquiry.unit.model].filter(Boolean).join(' ');
       const [fbCompsQuery, setFbCompsQuery] = useState(defaultCompsQuery);
 
-      const netEquity = Math.max(0, offerAmount - (inquiry.financials.estimatedPayoff || 0));
+      const parsedOfferAmount = Number(offerAmount) || 0;
+      const netEquity = Math.max(0, parsedOfferAmount - (inquiry.financials.estimatedPayoff || 0));
 
       const handleToggleOutreach = (checked) => {
         if (checked && !outreachStaffName.trim()) {
@@ -5316,16 +5322,21 @@
       };
 
       const handleSendOffer = () => {
+        const numericOffer = Number(String(offerAmount).replace(/[^0-9.]/g, ''));
+        if (offerAmount === '' || isNaN(numericOffer) || numericOffer <= 0) {
+          alert('Please enter an offer amount before saving.');
+          return;
+        }
         const newOffer = {
           id: 'off-' + Date.now(),
-          amount: Number(offerAmount),
+          amount: numericOffer,
           expirationDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
           status: 'sent',
           createdAt: new Date().toLocaleTimeString(),
-          createdBy: 'SR1 Appraisal Desk',
+          createdBy: staffUser?.name || 'SR1 Appraisal Desk',
           notes: offerNotes,
           customerPayoffEstimate: inquiry.financials.estimatedPayoff || 0,
-          calculatedNetEquity: netEquity
+          calculatedNetEquity: Math.max(0, numericOffer - (inquiry.financials.estimatedPayoff || 0))
         };
 
         const updated = {
@@ -5337,18 +5348,18 @@
             ...inquiry.notes,
             {
               id: 'n-off-' + Date.now(),
-              authorName: 'Appraisal Desk',
+              authorName: staffUser?.name || 'Appraisal Desk',
               authorRole: 'Buyer',
               createdAt: new Date().toLocaleTimeString(),
               category: 'offer_reason',
-              content: `Cash offer of $${Number(offerAmount).toLocaleString()} recorded.`
+              content: `Initial offer of $${numericOffer.toLocaleString()} recorded.`
             }
           ]
         };
 
         setCurrentStage('offer_sent');
         onUpdateInquiry(updated);
-        alert(`Cash offer of $${Number(offerAmount).toLocaleString()} logged for ${inquiry.customer.firstName}.`);
+        alert(`Initial offer of $${numericOffer.toLocaleString()} logged for ${inquiry.customer.firstName}.`);
       };
 
       const handleAddNote = (e) => {
@@ -5900,34 +5911,18 @@
               {/* OFFER BUILDER */}
               <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 space-y-3">
                 <span className="text-[11px] font-bold uppercase text-neutral-400 block">Offer Desk</span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-neutral-400 text-[10px] block mb-1">SR1 Buy Offer ($)</label>
-                    <input
-                      type="number"
-                      value={offerAmount}
-                      onChange={(e) => setOfferAmount(Number(e.target.value))}
-                      className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-3 py-1.5 text-white font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-neutral-400 text-[10px] block mb-1">
-                      Loan Payoff {inquiry.financials.lienHolderName ? `(${inquiry.financials.lienHolderName})` : ''} ($)
-                    </label>
-                    <input
-                      type="number"
-                      readOnly
-                      value={inquiry.financials.estimatedPayoff || 0}
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-1.5 text-neutral-500 font-bold"
-                    />
-                  </div>
-                  <div className="bg-neutral-900 p-2 rounded-lg border border-neutral-800">
-                    <span className="text-neutral-400 text-[10px] block">Customer Net Check:</span>
-                    <span className="text-lg font-bold text-white mt-0.5 block">${netEquity.toLocaleString()}</span>
-                  </div>
+                <div>
+                  <label className="text-neutral-400 text-[10px] block mb-1">SR1 Initial Offer Sent ($)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={offerAmount}
+                    onChange={(e) => setOfferAmount(e.target.value)}
+                    className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-3 py-2 text-white font-bold text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                  />
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-1">
                   <button
                     onClick={handleSendOffer}
                     className="px-4 py-2 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-lg text-xs"
