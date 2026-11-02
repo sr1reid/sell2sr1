@@ -5,6 +5,159 @@
 // 3. Direct Contact Us messages to appraisals@sr1companies.com
 // Supports: Resend (default/recommended), Brevo, Postmark, SendGrid via environment variables.
 
+const SR1_SALESPERSON_DIRECTORY = [
+  { first: 'Aaron', last: 'Libby', email: 'aaron@sr1companies.com' },
+  { first: 'Adam', last: 'Jardine', email: 'adam.j@sr1companies.com' },
+  { first: 'Adam', last: 'Brannan', email: 'adam.b@sr1companies.com' },
+  { first: 'Alan', last: 'Wood', email: 'alan@sr1companies.com' },
+  { first: 'Andrew', last: 'Neville', email: 'andrew@sr1companies.com' },
+  { first: 'Austin', last: 'Ralls', email: 'austin.r@sr1companies.com' },
+  { first: 'Ben', last: 'Cass', email: 'ben@sr1companies.com' },
+  { first: 'Bert', last: 'Callnan', email: 'bert@sr1companies.com' },
+  { first: 'Billy', last: 'Bedard', email: 'billy@sr1companies.com' },
+  { first: 'Brady', last: 'Therrien', email: 'brady@sr1companies.com' },
+  { first: 'Brandon', last: 'Webber', email: 'brandon@sr1companies.com' },
+  { first: 'Bret', last: 'Crockett', email: 'bret@sr1companies.com' },
+  { first: 'Bruce', last: 'Coulter', email: 'bruce@sr1companies.com' },
+  { first: 'Charles', last: 'Houghton', email: 'charles@sr1companies.com' },
+  { first: 'Chase', last: 'Bosse', email: 'chase@sr1companies.com' },
+  { first: 'Chris', last: 'Palmer', email: 'chris.p@sr1companies.com' },
+  { first: 'Chris', last: 'Winslow', email: 'chris@sr1companies.com' },
+  { first: 'Cody', last: 'Houghton', email: 'cody@sr1companies.com' },
+  { first: 'Coleman', last: 'Watson', email: 'coleman@sr1companies.com' },
+  { first: 'Colin', last: 'Girouard', email: 'colin@sr1companies.com' },
+  { first: 'Colten', last: 'Woods', email: 'colten.w@sr1companies.com' },
+  { first: 'Connor', last: 'Hills', email: 'connor@sr1companies.com' },
+  { first: 'Conor', last: 'Fitts', email: 'conor@sr1companies.com' },
+  { first: 'Cory', last: 'Hebert', email: 'cory.h@sr1companies.com' },
+  { first: 'Craig', last: 'Goddard', email: 'craig@sr1companies.com' },
+  { first: 'Curtis', last: 'Beaulieu', email: 'curtis@sr1companies.com' },
+  { first: 'Curtis', last: 'Albert', email: 'curtis.a@sr1companies.com' },
+  { first: 'Daniel', last: 'Ondre', email: 'daniel.o@sr1companies.com' },
+  { first: 'Darrell', last: 'Grenier', email: 'darrell@sr1companies.com' },
+  { first: 'David', last: 'Bunker', email: 'david.b@sr1companies.com' },
+  { first: 'Delaney', last: 'Clough', email: 'delaney.c@sr1companies.com' },
+  { first: 'Delaney', last: 'Woods', email: 'delaney@sr1companies.com' },
+  { first: 'Derek', last: 'Phair', email: 'derek@sr1companies.com' },
+  { first: 'Derrick', last: 'Trites', email: 'derrick@sr1companies.com' },
+  { first: 'Douglas', last: 'Jancarik', email: 'doug@sr1companies.com' },
+  { first: 'Dustin', last: 'Sherwood', email: 'dustin.s@sr1companies.com' },
+  { first: 'Dustin', last: 'Ouellette', email: 'dustin@sr1companies.com' },
+  { first: 'Emily', last: 'Griffith', email: 'emily@sr1companies.com' },
+  { first: 'Emma', last: 'Dares', email: 'emma@sr1companies.com' },
+  { first: 'Eric', last: 'Marsh', email: 'eric@sr1companies.com' },
+  { first: 'Eric', last: 'Powlesland', email: 'eric.p@sr1companies.com' },
+  { first: 'Frank', last: 'Arbour', email: 'frank@sr1companies.com' },
+  { first: 'Gabe', last: 'Lambert', email: 'gabe@sr1companies.com' },
+  { first: 'Gregory', last: 'Hamlin', email: 'greg@sr1companies.com' },
+  { first: 'Hunter', last: 'Mohammed', email: 'hunter@sr1companies.com' },
+  { first: 'Jack', last: 'Pollner', email: 'jack.p@sr1companies.com' },
+  { first: 'Jacob', last: 'Gross', email: 'jacob.g@sr1companies.com' },
+  { first: 'Jacob', last: 'Dingus', email: 'jacob.d@sr1companies.com' },
+  { first: 'Jeff', last: 'Blanco', email: 'jeff@sr1companies.com' },
+  { first: 'Jeff', last: 'Swett', email: 'jeff.s@sr1companies.com' },
+  { first: 'Jennifer', last: 'Christianson', email: 'jen@sr1companies.com' },
+  { first: 'Jeremy', last: 'Beers', email: 'jeremy@sr1companies.com' },
+  { first: 'Jerry', last: 'Dobson', email: 'jerry.d@sr1companies.com' },
+  { first: 'Jim', last: 'Gravel', email: 'jim.g@sr1companies.com' },
+  { first: 'Jim', last: 'Witherell', email: 'jim@sr1companies.com' },
+  { first: 'Joe', last: 'Brissette', email: 'joe.b@sr1companies.com' },
+  { first: 'John', last: 'Bernard', email: 'john@sr1companies.com' },
+  { first: 'Jon', last: 'Cameron', email: 'jon@sr1companies.com' },
+  { first: 'Josh', last: 'Faulkner', email: 'josh.f@sr1companies.com' },
+  { first: 'Joshua', last: 'Andrew', email: 'josh@sr1companies.com' },
+  { first: 'Joshua', last: 'Landry', email: 'joshua.l@sr1companies.com' },
+  { first: 'Julian', last: 'Margitza', email: 'julian@sr1companies.com' },
+  { first: 'Justin', last: 'Rollins', email: 'justin@sr1companies.com' },
+  { first: 'Keith', last: 'Rowell', email: 'keith@sr1companies.com' },
+  { first: 'Kenny', last: 'Hamilton', email: 'kenny@sr1companies.com' },
+  { first: 'Kyle', last: 'Townsend', email: 'kyle@sr1companies.com' },
+  { first: 'Marc', last: 'Forgione', email: 'marc@sr1companies.com' },
+  { first: 'Mathew', last: 'Powers', email: 'mat@sr1companies.com' },
+  { first: 'Melissa', last: 'Buck', email: 'melissa@sr1companies.com' },
+  { first: 'Michael', last: 'Baker', email: 'mikebaker@sr1companies.com' },
+  { first: 'Michael', last: 'Anderson', email: 'mike.a@sr1companies.com' },
+  { first: 'Mike', last: 'Sullivan', email: 'sully@sr1companies.com' },
+  { first: 'Mike', last: 'Page', email: 'mike.p@sr1companies.com' },
+  { first: 'Mike', last: 'Billodeau', email: 'mike.b@sr1companies.com' },
+  { first: 'Mike', last: 'Mahoney', email: 'mike.m@sr1companies.com' },
+  { first: 'Mike', last: 'Shore', email: 'mike.s@sr1companies.com' },
+  { first: 'Mike', last: 'Fraser', email: 'mike.f@sr1companies.com' },
+  { first: 'Natasha', last: 'Pedrick', email: 'natasha@sr1companies.com' },
+  { first: 'Nate', last: 'Mudie', email: 'nate@sr1companies.com' },
+  { first: 'Nicholaus', last: 'Ripley', email: 'nick@sr1companies.com' },
+  { first: 'Nick', last: 'Thornton', email: 'nick.t@sr1companies.com' },
+  { first: 'Noah', last: 'Bellemore', email: 'noah@sr1companies.com' },
+  { first: 'Randy', last: 'Donovan', email: 'randy@sr1companies.com' },
+  { first: 'Reid', last: 'Lanpher', email: 'reid@sr1companies.com' },
+  { first: 'Robert', last: 'Dyason', email: 'robert@sr1companies.com' },
+  { first: 'Robert', last: 'Ellis', email: 'robert.e@sr1companies.com' },
+  { first: 'Ryan', last: 'Clark', email: 'ryan.c@sr1companies.com' },
+  { first: 'Ryan', last: 'Dahl', email: 'ryan.d@sr1companies.com' },
+  { first: 'Sarah', last: 'Turner', email: 'sarah@sr1companies.com' },
+  { first: 'Scott', last: 'Cass', email: 'scott.c@sr1companies.com' },
+  { first: 'Scott', last: 'Lanpher', email: 'scott@sr1companies.com' },
+  { first: 'Scott', last: 'Chavanelle', email: 'scott.chavanelle@sr1companies.com' },
+  { first: 'Shawn', last: 'Martin', email: 'shawn@sr1companies.com' },
+  { first: 'Shelley', last: 'Shanahan', email: 'shelley@sr1companies.com' },
+  { first: 'Stephen', last: 'Desjarlais', email: 'stephen@sr1companies.com' },
+  { first: 'Taylor', last: 'Turpin', email: 'taylor.t@sr1companies.com' },
+  { first: 'Toby', last: 'Rose', email: 'toby@sr1companies.com' },
+  { first: 'Tony', last: 'DiBenedetto', email: 'tony.d@sr1companies.com' },
+  { first: 'Tony', last: 'Howard', email: 'tony@sr1companies.com' },
+  { first: 'Tory', last: 'Hemphill', email: 'tory@sr1companies.com' },
+  { first: 'Troy', last: 'Allen', email: 'troy@sr1companies.com' },
+  { first: 'Tyler', last: 'Pake', email: 'tyler@sr1companies.com' },
+  { first: 'Wayne', last: 'Berry', email: 'wayne@sr1companies.com' },
+  { first: 'Whit', last: 'Lucas', email: 'whit@sr1companies.com' },
+  { first: 'Zach', last: 'Bailey', email: 'zach.b@sr1companies.com' },
+  { first: 'Zach', last: 'Edwards', email: 'zach@sr1companies.com' }
+];
+
+function matchSalespersonEmails(firstNameInput, lastInitialInput) {
+  const f = (firstNameInput || '').trim().toLowerCase();
+  const l = (lastInitialInput || '').trim().charAt(0).toLowerCase();
+  if (!f || !l) return [];
+
+  let matches = SR1_SALESPERSON_DIRECTORY.filter(
+    emp => emp.first.toLowerCase() === f && emp.last.charAt(0).toLowerCase() === l
+  );
+
+  if (matches.length === 0) {
+    const nicknameGroups = [
+      ['doug', 'douglas'],
+      ['greg', 'gregory'],
+      ['jen', 'jennifer', 'jenny'],
+      ['mat', 'matt', 'mathew', 'matthew'],
+      ['mike', 'michael'],
+      ['nick', 'nicholas', 'nicholaus'],
+      ['josh', 'joshua'],
+      ['dan', 'danny', 'daniel'],
+      ['dave', 'david'],
+      ['rob', 'bob', 'bobby', 'robert'],
+      ['steve', 'steven', 'stephen'],
+      ['chris', 'christopher'],
+      ['jim', 'jimmy', 'james'],
+      ['joe', 'joseph'],
+      ['jon', 'john', 'jonathan'],
+      ['tony', 'anthony'],
+      ['zach', 'zack', 'zachary'],
+      ['ben', 'benjamin'],
+      ['andy', 'andrew'],
+      ['bill', 'billy', 'william'],
+      ['charlie', 'chuck', 'charles']
+    ];
+    const group = nicknameGroups.find(g => g.includes(f));
+    if (group) {
+      matches = SR1_SALESPERSON_DIRECTORY.filter(
+        emp => group.includes(emp.first.toLowerCase()) && emp.last.charAt(0).toLowerCase() === l
+      );
+    }
+  }
+
+  return matches.map(m => m.email.toLowerCase().trim());
+}
+
 async function sendResendEmail(resendKey, payload) {
   let res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -132,7 +285,10 @@ export async function onRequestPost({ request, env }) {
       unit,
       intent,
       workingWithSalesperson,
+      salespersonFirstName,
+      salespersonLastInitial,
       salespersonName,
+      salespersonMatchedEmails = [],
       preferredLocation,
       photosCount = 0,
       notificationEmails = [],
@@ -450,8 +606,28 @@ SR1 Companies
     const staffSubject = ad._subject || `[${intent === 'trade' ? 'TRADE-IN' : 'SELL'}] Unit Valuation Request [${refNum}]: ${unitTitle} (${location})`;
     const centralRecipient = 'appraisals@sr1companies.com';
     const rawRecipients = Array.isArray(notificationEmails) && notificationEmails.length > 0
-      ? notificationEmails.filter(Boolean)
+      ? [...notificationEmails.filter(Boolean)]
       : [centralRecipient];
+
+    if (intent === 'trade' && workingWithSalesperson === 'yes') {
+      let spFirst = (salespersonFirstName || '').trim();
+      let spLastInit = (salespersonLastInitial || '').trim();
+      if ((!spFirst || !spLastInit) && salespersonName) {
+        const parts = String(salespersonName).trim().split(/\s+/);
+        if (parts.length >= 2) {
+          spFirst = parts[0];
+          spLastInit = parts[parts.length - 1].replace(/[^a-zA-Z]/g, '').charAt(0);
+        }
+      }
+      const matched = [
+        ...(Array.isArray(salespersonMatchedEmails) ? salespersonMatchedEmails : []),
+        ...matchSalespersonEmails(spFirst, spLastInit)
+      ];
+      matched.forEach((em) => {
+        if (em) rawRecipients.push(em);
+      });
+    }
+
     const mappedRecipients = rawRecipients.map((r) => {
       const lower = String(r).toLowerCase().trim();
       if (lower === 'appraisals@sr1companies.com' || lower === 'selltosr1@sr1companies.com') {

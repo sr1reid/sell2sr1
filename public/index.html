@@ -548,6 +548,165 @@
       return getDynamicNotificationEmailsForLocation(locId, customRouting);
     };
 
+    // SR1 Salesperson Directory (106 entries from official roster)
+    const SR1_SALESPERSON_DIRECTORY = [
+      { first: 'Aaron', last: 'Libby', email: 'aaron@sr1companies.com' },
+      { first: 'Adam', last: 'Jardine', email: 'adam.j@sr1companies.com' },
+      { first: 'Adam', last: 'Brannan', email: 'adam.b@sr1companies.com' },
+      { first: 'Alan', last: 'Wood', email: 'alan@sr1companies.com' },
+      { first: 'Andrew', last: 'Neville', email: 'andrew@sr1companies.com' },
+      { first: 'Austin', last: 'Ralls', email: 'austin.r@sr1companies.com' },
+      { first: 'Ben', last: 'Cass', email: 'ben@sr1companies.com' },
+      { first: 'Bert', last: 'Callnan', email: 'bert@sr1companies.com' },
+      { first: 'Billy', last: 'Bedard', email: 'billy@sr1companies.com' },
+      { first: 'Brady', last: 'Therrien', email: 'brady@sr1companies.com' },
+      { first: 'Brandon', last: 'Webber', email: 'brandon@sr1companies.com' },
+      { first: 'Bret', last: 'Crockett', email: 'bret@sr1companies.com' },
+      { first: 'Bruce', last: 'Coulter', email: 'bruce@sr1companies.com' },
+      { first: 'Charles', last: 'Houghton', email: 'charles@sr1companies.com' },
+      { first: 'Chase', last: 'Bosse', email: 'chase@sr1companies.com' },
+      { first: 'Chris', last: 'Palmer', email: 'chris.p@sr1companies.com' },
+      { first: 'Chris', last: 'Winslow', email: 'chris@sr1companies.com' },
+      { first: 'Cody', last: 'Houghton', email: 'cody@sr1companies.com' },
+      { first: 'Coleman', last: 'Watson', email: 'coleman@sr1companies.com' },
+      { first: 'Colin', last: 'Girouard', email: 'colin@sr1companies.com' },
+      { first: 'Colten', last: 'Woods', email: 'colten.w@sr1companies.com' },
+      { first: 'Connor', last: 'Hills', email: 'connor@sr1companies.com' },
+      { first: 'Conor', last: 'Fitts', email: 'conor@sr1companies.com' },
+      { first: 'Cory', last: 'Hebert', email: 'cory.h@sr1companies.com' },
+      { first: 'Craig', last: 'Goddard', email: 'craig@sr1companies.com' },
+      { first: 'Curtis', last: 'Beaulieu', email: 'curtis@sr1companies.com' },
+      { first: 'Curtis', last: 'Albert', email: 'curtis.a@sr1companies.com' },
+      { first: 'Daniel', last: 'Ondre', email: 'daniel.o@sr1companies.com' },
+      { first: 'Darrell', last: 'Grenier', email: 'darrell@sr1companies.com' },
+      { first: 'David', last: 'Bunker', email: 'david.b@sr1companies.com' },
+      { first: 'Delaney', last: 'Clough', email: 'delaney.c@sr1companies.com' },
+      { first: 'Delaney', last: 'Woods', email: 'delaney@sr1companies.com' },
+      { first: 'Derek', last: 'Phair', email: 'derek@sr1companies.com' },
+      { first: 'Derrick', last: 'Trites', email: 'derrick@sr1companies.com' },
+      { first: 'Douglas', last: 'Jancarik', email: 'doug@sr1companies.com' },
+      { first: 'Dustin', last: 'Sherwood', email: 'dustin.s@sr1companies.com' },
+      { first: 'Dustin', last: 'Ouellette', email: 'dustin@sr1companies.com' },
+      { first: 'Emily', last: 'Griffith', email: 'emily@sr1companies.com' },
+      { first: 'Emma', last: 'Dares', email: 'emma@sr1companies.com' },
+      { first: 'Eric', last: 'Marsh', email: 'eric@sr1companies.com' },
+      { first: 'Eric', last: 'Powlesland', email: 'eric.p@sr1companies.com' },
+      { first: 'Frank', last: 'Arbour', email: 'frank@sr1companies.com' },
+      { first: 'Gabe', last: 'Lambert', email: 'gabe@sr1companies.com' },
+      { first: 'Gregory', last: 'Hamlin', email: 'greg@sr1companies.com' },
+      { first: 'Hunter', last: 'Mohammed', email: 'hunter@sr1companies.com' },
+      { first: 'Jack', last: 'Pollner', email: 'jack.p@sr1companies.com' },
+      { first: 'Jacob', last: 'Gross', email: 'jacob.g@sr1companies.com' },
+      { first: 'Jacob', last: 'Dingus', email: 'jacob.d@sr1companies.com' },
+      { first: 'Jeff', last: 'Blanco', email: 'jeff@sr1companies.com' },
+      { first: 'Jeff', last: 'Swett', email: 'jeff.s@sr1companies.com' },
+      { first: 'Jennifer', last: 'Christianson', email: 'jen@sr1companies.com' },
+      { first: 'Jeremy', last: 'Beers', email: 'jeremy@sr1companies.com' },
+      { first: 'Jerry', last: 'Dobson', email: 'jerry.d@sr1companies.com' },
+      { first: 'Jim', last: 'Gravel', email: 'jim.g@sr1companies.com' },
+      { first: 'Jim', last: 'Witherell', email: 'jim@sr1companies.com' },
+      { first: 'Joe', last: 'Brissette', email: 'joe.b@sr1companies.com' },
+      { first: 'John', last: 'Bernard', email: 'john@sr1companies.com' },
+      { first: 'Jon', last: 'Cameron', email: 'jon@sr1companies.com' },
+      { first: 'Josh', last: 'Faulkner', email: 'josh.f@sr1companies.com' },
+      { first: 'Joshua', last: 'Andrew', email: 'josh@sr1companies.com' },
+      { first: 'Joshua', last: 'Landry', email: 'joshua.l@sr1companies.com' },
+      { first: 'Julian', last: 'Margitza', email: 'julian@sr1companies.com' },
+      { first: 'Justin', last: 'Rollins', email: 'justin@sr1companies.com' },
+      { first: 'Keith', last: 'Rowell', email: 'keith@sr1companies.com' },
+      { first: 'Kenny', last: 'Hamilton', email: 'kenny@sr1companies.com' },
+      { first: 'Kyle', last: 'Townsend', email: 'kyle@sr1companies.com' },
+      { first: 'Marc', last: 'Forgione', email: 'marc@sr1companies.com' },
+      { first: 'Mathew', last: 'Powers', email: 'mat@sr1companies.com' },
+      { first: 'Melissa', last: 'Buck', email: 'melissa@sr1companies.com' },
+      { first: 'Michael', last: 'Baker', email: 'mikebaker@sr1companies.com' },
+      { first: 'Michael', last: 'Anderson', email: 'mike.a@sr1companies.com' },
+      { first: 'Mike', last: 'Sullivan', email: 'sully@sr1companies.com' },
+      { first: 'Mike', last: 'Page', email: 'mike.p@sr1companies.com' },
+      { first: 'Mike', last: 'Billodeau', email: 'mike.b@sr1companies.com' },
+      { first: 'Mike', last: 'Mahoney', email: 'mike.m@sr1companies.com' },
+      { first: 'Mike', last: 'Shore', email: 'mike.s@sr1companies.com' },
+      { first: 'Mike', last: 'Fraser', email: 'mike.f@sr1companies.com' },
+      { first: 'Natasha', last: 'Pedrick', email: 'natasha@sr1companies.com' },
+      { first: 'Nate', last: 'Mudie', email: 'nate@sr1companies.com' },
+      { first: 'Nicholaus', last: 'Ripley', email: 'nick@sr1companies.com' },
+      { first: 'Nick', last: 'Thornton', email: 'nick.t@sr1companies.com' },
+      { first: 'Noah', last: 'Bellemore', email: 'noah@sr1companies.com' },
+      { first: 'Randy', last: 'Donovan', email: 'randy@sr1companies.com' },
+      { first: 'Reid', last: 'Lanpher', email: 'reid@sr1companies.com' },
+      { first: 'Robert', last: 'Dyason', email: 'robert@sr1companies.com' },
+      { first: 'Robert', last: 'Ellis', email: 'robert.e@sr1companies.com' },
+      { first: 'Ryan', last: 'Clark', email: 'ryan.c@sr1companies.com' },
+      { first: 'Ryan', last: 'Dahl', email: 'ryan.d@sr1companies.com' },
+      { first: 'Sarah', last: 'Turner', email: 'sarah@sr1companies.com' },
+      { first: 'Scott', last: 'Cass', email: 'scott.c@sr1companies.com' },
+      { first: 'Scott', last: 'Lanpher', email: 'scott@sr1companies.com' },
+      { first: 'Scott', last: 'Chavanelle', email: 'scott.chavanelle@sr1companies.com' },
+      { first: 'Shawn', last: 'Martin', email: 'shawn@sr1companies.com' },
+      { first: 'Shelley', last: 'Shanahan', email: 'shelley@sr1companies.com' },
+      { first: 'Stephen', last: 'Desjarlais', email: 'stephen@sr1companies.com' },
+      { first: 'Taylor', last: 'Turpin', email: 'taylor.t@sr1companies.com' },
+      { first: 'Toby', last: 'Rose', email: 'toby@sr1companies.com' },
+      { first: 'Tony', last: 'DiBenedetto', email: 'tony.d@sr1companies.com' },
+      { first: 'Tony', last: 'Howard', email: 'tony@sr1companies.com' },
+      { first: 'Tory', last: 'Hemphill', email: 'tory@sr1companies.com' },
+      { first: 'Troy', last: 'Allen', email: 'troy@sr1companies.com' },
+      { first: 'Tyler', last: 'Pake', email: 'tyler@sr1companies.com' },
+      { first: 'Wayne', last: 'Berry', email: 'wayne@sr1companies.com' },
+      { first: 'Whit', last: 'Lucas', email: 'whit@sr1companies.com' },
+      { first: 'Zach', last: 'Bailey', email: 'zach.b@sr1companies.com' },
+      { first: 'Zach', last: 'Edwards', email: 'zach@sr1companies.com' }
+    ];
+
+    const matchSalespersonDirectory = (firstNameInput, lastInitialInput) => {
+      const f = (firstNameInput || '').trim().toLowerCase();
+      const l = (lastInitialInput || '').trim().charAt(0).toLowerCase();
+      if (!f || !l) return { emails: [], matchedEntries: [] };
+
+      // Pass 1: Exact first name + last name initial match
+      let matches = SR1_SALESPERSON_DIRECTORY.filter(
+        emp => emp.first.toLowerCase() === f && emp.last.charAt(0).toLowerCase() === l
+      );
+
+      // Pass 2: Common nickname equivalents if no exact first name match was found
+      if (matches.length === 0) {
+        const nicknameGroups = [
+          ['doug', 'douglas'],
+          ['greg', 'gregory'],
+          ['jen', 'jennifer', 'jenny'],
+          ['mat', 'matt', 'mathew', 'matthew'],
+          ['mike', 'michael'],
+          ['nick', 'nicholas', 'nicholaus'],
+          ['josh', 'joshua'],
+          ['dan', 'danny', 'daniel'],
+          ['dave', 'david'],
+          ['rob', 'bob', 'bobby', 'robert'],
+          ['steve', 'steven', 'stephen'],
+          ['chris', 'christopher'],
+          ['jim', 'jimmy', 'james'],
+          ['joe', 'joseph'],
+          ['jon', 'john', 'jonathan'],
+          ['tony', 'anthony'],
+          ['zach', 'zack', 'zachary'],
+          ['ben', 'benjamin'],
+          ['andy', 'andrew'],
+          ['bill', 'billy', 'william'],
+          ['charlie', 'chuck', 'charles']
+        ];
+        const group = nicknameGroups.find(g => g.includes(f));
+        if (group) {
+          matches = SR1_SALESPERSON_DIRECTORY.filter(
+            emp => group.includes(emp.first.toLowerCase()) && emp.last.charAt(0).toLowerCase() === l
+          );
+        }
+      }
+
+      return {
+        emails: Array.from(new Set(matches.map(m => m.email.toLowerCase().trim()))),
+        matchedEntries: matches
+      };
+    };
+
     // --- REVISED CATEGORIES (NO IMAGE/EMOJI ICONS) ---
     const CATEGORIES = {
       rv: {
@@ -1745,6 +1904,8 @@
         preferredLocation: '',
         intent: 'sell', // 'sell' or 'trade'
         workingWithSalesperson: 'no', // 'yes' or 'no'
+        salespersonFirstName: '',
+        salespersonLastInitial: '',
         salespersonName: '',
         firstName: '',
         lastName: '',
@@ -2182,9 +2343,12 @@
           setStep(3);
           return;
         }
-        if (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes' && !formData.salespersonName?.trim()) {
-          alert("Please enter your SR1 salesperson's name.");
-          return;
+        if (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') {
+          if (!formData.salespersonFirstName?.trim() || !formData.salespersonLastInitial?.trim()) {
+            alert("Please enter your SR1 salesperson's first name and last name initial.");
+            setStep(1);
+            return;
+          }
         }
         if (!formData.preferredLocation) {
           alert(formData.intent === 'trade'
@@ -2202,7 +2366,21 @@
         }
         const refId = String(Math.floor(1000 + Math.random() * 9000));
         const locationName = (LOCATIONS.find(l => l.id === formData.preferredLocation)?.name) || formData.preferredLocation || 'SR1 Dealership';
-        const locationEmails = getDynamicNotificationEmailsForLocation(formData.preferredLocation, emailRoutingConfig);
+        const baseLocationEmails = getDynamicNotificationEmailsForLocation(formData.preferredLocation, emailRoutingConfig);
+
+        const spFirst = (formData.salespersonFirstName || '').trim();
+        const spLastInit = (formData.salespersonLastInitial || '').trim().charAt(0).toUpperCase();
+        const spMatch = (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes')
+          ? matchSalespersonDirectory(spFirst, spLastInit)
+          : { emails: [], matchedEntries: [] };
+        const matchedSalespersonEmails = spMatch.emails || [];
+        const resolvedSalespersonName = (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes')
+          ? (spMatch.matchedEntries.length === 1
+              ? `${spMatch.matchedEntries[0].first} ${spMatch.matchedEntries[0].last}`
+              : `${spFirst} ${spLastInit}.`.trim())
+          : '';
+
+        const locationEmails = Array.from(new Set([...baseLocationEmails, ...matchedSalespersonEmails]));
         const primaryEmail = locationEmails[0] || 'appraisals@sr1companies.com';
         const ccEmails = locationEmails.slice(1);
         
@@ -2216,10 +2394,11 @@
           intent: formData.intent || 'sell',
           resaleAcknowledgement: !!formData.resaleAcknowledgement,
           workingWithSalesperson: formData.intent === 'trade' ? formData.workingWithSalesperson : 'no',
-          salespersonName: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? formData.salespersonName : '',
-          assignedStaffName: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes' && formData.salespersonName) 
-            ? formData.salespersonName 
-            : 'Appraisal Desk Queue',
+          salespersonFirstName: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? spFirst : '',
+          salespersonLastInitial: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? spLastInit : '',
+          salespersonName: resolvedSalespersonName,
+          salespersonMatchedEmails: matchedSalespersonEmails,
+          assignedStaffName: resolvedSalespersonName || 'Appraisal Desk Queue',
           customer: {
             firstName: formData.firstName || 'Client',
             lastName: formData.lastName || 'Seller',
@@ -2277,8 +2456,8 @@
               createdAt: new Date().toLocaleTimeString(),
               category: 'general',
               content: category === 'container'
-                ? `New shipping container inquiry submitted (Purchased: ${formData.year}, Box ID: ${formData.vinOrSerial}). Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${formData.salespersonName || 'Unassigned'})` : 'OUTRIGHT SALE'}. Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
-                : `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}. Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${formData.salespersonName || 'Unassigned'})` : 'OUTRIGHT SALE'}.${formData.titleStatus === 'financed_money_owed' && formData.lienHolderName ? ` Financed with ${formData.lienHolderName.trim()} (Est. Payoff: $${(Number(formData.estimatedPayoff) || 0).toLocaleString()}).` : ''} Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
+                ? `New shipping container inquiry submitted (Purchased: ${formData.year}, Box ID: ${formData.vinOrSerial}). Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : 'OUTRIGHT SALE'}. Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
+                : `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}. Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : 'OUTRIGHT SALE'}.${formData.titleStatus === 'financed_money_owed' && formData.lienHolderName ? ` Financed with ${formData.lienHolderName.trim()} (Est. Payoff: $${(Number(formData.estimatedPayoff) || 0).toLocaleString()}).` : ''} Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
             }
           ]
         };
@@ -2304,7 +2483,10 @@
             Dealership_Recipients: locationEmails.join(', '),
             Transaction_Type: formData.intent === 'trade' ? 'Trade-In on Purchase' : 'Outright Sale to SR1',
             Working_With_Salesperson: formData.intent === 'trade' ? formData.workingWithSalesperson.toUpperCase() : 'N/A',
-            Salesperson_Name: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? (formData.salespersonName || 'None Listed') : 'N/A',
+            Salesperson_Name: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? (resolvedSalespersonName || 'None Listed') : 'N/A',
+            Salesperson_First_Name: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? spFirst : 'N/A',
+            Salesperson_Last_Initial: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? spLastInit : 'N/A',
+            Salesperson_Matched_Email: matchedSalespersonEmails.length > 0 ? matchedSalespersonEmails.join(', ') : 'None matched',
             Customer_Name: `${formData.firstName} ${formData.lastName}`,
             Customer_Email: formData.email,
             Customer_Phone: formData.phone,
@@ -2332,6 +2514,7 @@
               : formData.titleStatus === 'other'
               ? 'Other'
               : 'Not specified',
+            lienHolderName: undefined,
             Lien_Holder_Name: (formData.titleStatus === 'financed_money_owed' && formData.lienHolderName) ? formData.lienHolderName.trim() : 'None (No active lien)',
             Estimated_Loan_Payoff: (formData.titleStatus === 'financed_money_owed' && formData.estimatedPayoff) ? `$${Number(formData.estimatedPayoff).toLocaleString()}` : 'N/A',
             Asking_Price: formData.askingPrice ? `$${formData.askingPrice}` : 'Open to best offer',
@@ -2389,7 +2572,10 @@
             },
             intent: formData.intent,
             workingWithSalesperson: formData.workingWithSalesperson,
-            salespersonName: formData.salespersonName,
+            salespersonFirstName: spFirst,
+            salespersonLastInitial: spLastInit,
+            salespersonName: resolvedSalespersonName,
+            salespersonMatchedEmails: matchedSalespersonEmails,
             preferredLocation: locationName,
             photosCount: photos.length,
             notificationEmails: locationEmails,
@@ -2487,6 +2673,8 @@
                       preferredLocation: '',
                       intent: 'sell',
                       workingWithSalesperson: 'no',
+                      salespersonFirstName: '',
+                      salespersonLastInitial: '',
                       salespersonName: '',
                       firstName: '',
                       lastName: '',
@@ -2654,18 +2842,53 @@
                         </div>
 
                         {formData.workingWithSalesperson === 'yes' && (
-                          <div className="pt-1">
-                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                              Salesperson's Name *
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={formData.salespersonName}
-                              onChange={(e) => handleInputChange('salespersonName', e.target.value)}
-                              className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                            />
-                            <p className="text-[11px] text-neutral-500 mt-1">
+                          <div className="pt-1 space-y-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                                  SALESPERSONS FIRST NAME *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={formData.salespersonFirstName}
+                                  onChange={(e) => {
+                                    const first = e.target.value;
+                                    const lastInit = (formData.salespersonLastInitial || '').trim().charAt(0).toUpperCase();
+                                    const combined = first.trim() ? `${first.trim()}${lastInit ? ` ${lastInit}.` : ''}` : '';
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      salespersonFirstName: first,
+                                      salespersonName: combined
+                                    }));
+                                  }}
+                                  className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                                  SALESPERSONS LAST NAME INITIAL *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  maxLength={1}
+                                  value={formData.salespersonLastInitial}
+                                  onChange={(e) => {
+                                    const raw = e.target.value.replace(/[^a-zA-Z]/g, '').slice(0, 1).toUpperCase();
+                                    const first = (formData.salespersonFirstName || '').trim();
+                                    const combined = first ? `${first}${raw ? ` ${raw}.` : ''}` : raw;
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      salespersonLastInitial: raw,
+                                      salespersonName: combined
+                                    }));
+                                  }}
+                                  className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm uppercase focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                                />
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-neutral-500">
                               We will connect this appraisal directly to your salesperson's deal file.
                             </p>
                           </div>
@@ -2678,8 +2901,12 @@
                     <button
                       type="button"
                       onClick={() => {
-                        if (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes' && !formData.salespersonName.trim()) {
-                          alert("Please enter your salesperson's name.");
+                        if (
+                          formData.intent === 'trade' &&
+                          formData.workingWithSalesperson === 'yes' &&
+                          (!formData.salespersonFirstName?.trim() || !formData.salespersonLastInitial?.trim())
+                        ) {
+                          alert("Please enter your salesperson's first name and last name initial.");
                           return;
                         }
                         setStep(2);
