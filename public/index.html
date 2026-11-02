@@ -2,6 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <script>
+    (function() {
+      var h = (window.location.hostname || '').toLowerCase();
+      if (
+        h === 'sell2sr1.com' ||
+        h === 'www.sell2sr1.com' ||
+        h === 'selltoosr1.com' ||
+        h === 'www.selltoosr1.com' ||
+        h === 'www.selltosr1.com'
+      ) {
+        window.location.replace(
+          'https://selltosr1.com' +
+          window.location.pathname +
+          window.location.search +
+          window.location.hash
+        );
+      }
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
   <title>selltosr1.com | SR1 Companies Vehicle & Equipment Acquisition</title>
   <meta name="description" content="Sell your RVs, trailers, tractors, heavy equipment, powersports, motorcycles, boats, and shipping containers directly to SR1 Companies. Locations throughout Maine and New Hampshire.">
