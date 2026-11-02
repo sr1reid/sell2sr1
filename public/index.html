@@ -2158,6 +2158,11 @@
           setStep(3);
           return;
         }
+        if (photos.length < 3) {
+          alert('Please upload at least 3 photos of your unit before submitting.');
+          setStep(3);
+          return;
+        }
         if (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes' && !formData.salespersonName?.trim()) {
           alert("Please enter your SR1 salesperson's name.");
           return;
@@ -2322,8 +2327,7 @@
               ? `Attached: ${Math.min(photos.length, 3)} reduced-size preview thumbnail(s) for fast email loading. Full original resolution photos and videos are stored in the SR1 Staff Portal.`
               : 'No photos or videos attached',
             Marketing_Consent_OptIn: formData.consentOptIn ? 'YES (Consented to Calls, SMS & Email)' : 'NO',
-            Resale_Acknowledgement: formData.resaleAcknowledgement ? 'AGREED (Understands Dealership Purchase Pricing)' : 'NO',
-            _replyto: formData.email
+            Resale_Acknowledgement: formData.resaleAcknowledgement ? 'AGREED (Understands Dealership Purchase Pricing)' : 'NO'
           };
 
           // Build up to 3 lightweight JPEG preview attachments for the internal dealership alert
@@ -2967,7 +2971,7 @@
                   <div className="space-y-3">
                     <div>
                       <label className="block text-xs font-semibold uppercase text-neutral-300">
-                        Upload Photos & Videos ({photos.length} uploaded)
+                        Upload Photos & Videos * ({photos.length} uploaded — minimum 3 required)
                       </label>
                     </div>
 
@@ -3094,6 +3098,10 @@
                             alert('Please enter the estimated loan payoff amount');
                             return;
                           }
+                        }
+                        if (photos.length < 3) {
+                          alert('Please upload at least 3 photos of your unit before continuing.');
+                          return;
                         }
                         setStep(4);
                         scrollToFormTop();

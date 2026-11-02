@@ -106,7 +106,7 @@ export async function onRequestPost({ request, env }) {
         const contactRes = await sendResendEmail(resendKey, {
           from: `${fromName} <${fromAddress}>`,
           to: ['appraisals@sr1companies.com'],
-          reply_to: senderEmail && senderEmail.includes('@') ? senderEmail : 'appraisals@sr1companies.com',
+          reply_to: fromAddress,
           subject,
           html: contactHtml,
           text: contactText,
@@ -589,7 +589,7 @@ SR1 Companies
     <!-- Footer -->
     <tr>
       <td style="padding:16px 28px;background-color:#f1f5f9;border-top:1px solid #e2e8f0;text-align:center;font-size:12px;color:#64748b;">
-        Reply directly to this email to message <strong>${fullName}</strong> (${customerEmailAddr}) or manage this inquiry in the <a href="https://selltosr1.com/?view=portal" style="color:#0f172a;font-weight:700;">SR1 Staff Portal</a>.
+        Manage this inquiry in the <a href="https://selltosr1.com/?view=portal" style="color:#0f172a;font-weight:700;">SR1 Staff Portal</a> or contact <strong>${fullName}</strong> directly at <a href="mailto:${customerEmailAddr}" style="color:#2563eb;font-weight:600;">${customerEmailAddr}</a>.
       </td>
     </tr>
   </table>
@@ -663,9 +663,7 @@ Open Staff Portal: https://selltosr1.com/?view=portal
         from: `${fromName} <${fromAddress}>`,
         to: [primaryStaffRecipient],
         ...(ccStaffRecipients.length > 0 ? { cc: ccStaffRecipients } : {}),
-        reply_to: customer?.email && customer.email.includes('@')
-          ? customer.email.trim()
-          : fromAddress,
+        reply_to: fromAddress,
         subject: staffSubject,
         html: staffHtmlEmail,
         text: staffPlainText,
