@@ -79,6 +79,9 @@
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
+  <!-- Tesseract.js OCR Engine for Automatic VIN / Serial Tag Scanning -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
     html {
@@ -705,6 +708,358 @@
         emails: Array.from(new Set(matches.map(m => m.email.toLowerCase().trim()))),
         matchedEntries: matches
       };
+    };
+
+    // --- AUTOMATIC VIN / SERIAL NUMBER BARCODE & OCR SCANNER ---
+    const VIN_TRANSLITERATION_MAP = {
+      A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7, H: 8,
+      J: 1, K: 2, L: 3, M: 4, N: 5, P: 7, R: 9,
+      S: 2, T: 3, U: 4, V: 5, W: 6, X: 7, Y: 8, Z: 9,
+      0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9
+    };
+    const VIN_POSITION_WEIGHTS = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
+
+    const isValidNorthAmericanVin = (vin) => {
+      if (!vin || vin.length !== 17) return false;
+      if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return false;
+      const digitCount = (vin.match(/\d/g) || []).length;
+      const letterCount = (vin.match(/[A-Z]/g) || []).length;
+      if (digitCount < 4 || letterCount < 2) return false;
+      if (/^(.)\1{9,}/.test(vin)) return false;
+      let sum = 0;
+      for (let i = 0; i < 17; i++) {
+        const val = VIN_TRANSLITERATION_MAP[vin[i]];
+        if (val === undefined) return false;
+        sum += val * VIN_POSITION_WEIGHTS[i];
+      }
+      const rem = sum % 11;
+      const expectedCheck = rem === 10 ? 'X' : String(rem);
+      return vin[8] === expectedCheck;
+    };
+
+    const normalizeVinOcrChars = (str) => {
+      return String(str || '')
+        .toUpperCase()
+        .replace(/O/g, '0')
+        .replace(/Q/g, '0')
+        .replace(/I/g, '1');
+    };
+
+    const tryRepairSingleOcrSlipVin = (raw17) => {
+      const norm = normalizeVinOcrChars(raw17);
+      if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(norm)) return null;
+      if (isValidNorthAmericanVin(norm)) return norm;
+      const swaps = {
+        '5': ['S'], 'S': ['5'],
+        '8': ['B'], 'B': ['8'],
+        '2': ['Z'], 'Z': ['2'],
+        '6': ['G'], 'G': ['6'],
+        '0': ['D'], 'D': ['0']
+      };
+      for (let i = 0; i < 17; i++) {
+        if (i === 8) continue;
+        const alts = swaps[norm[i]];
+        if (!alts) continue;
+        for (let k = 0; k < alts.length; k++) {
+          const candidate = norm.slice(0, i) + alts[k] + norm.slice(i + 1);
+          if (isValidNorthAmericanVin(candidate)) return candidate;
+        }
+      }
+      return null;
+    };
+
+    const extractVinFromBarcodeValue = (rawVal, categoryKey) => {
+      if (!rawVal) return '';
+      const upperRaw = String(rawVal).toUpperCase().trim();
+
+      // Strip common explicit prefixes like "VIN:", "VIN ", or Code-39 import prefix "I" on 18-char payloads
+      const strippedPrefix = upperRaw.replace(/^(?:V\.?I\.?N\.?(?:\s*(?:NO|NUMBER|#))?[:\s\-]+)+/, '');
+      const tokens = strippedPrefix.split(/[^A-Z0-9]+/).filter(Boolean);
+
+      for (let t = 0; t < tokens.length; t++) {
+        let tok = tokens[t];
+        if (tok.length === 18 && tok.startsWith('I')) {
+          tok = tok.slice(1);
+        }
+        if (tok.length === 17) {
+          const norm = normalizeVinOcrChars(tok);
+          if (isValidNorthAmericanVin(norm)) return norm;
+          const digits = (norm.match(/\d/g) || []).length;
+          const letters = (norm.match(/[A-Z]/g) || []).length;
+          if (/^[A-HJ-NPR-Z0-9]{17}$/.test(norm) && digits >= 4 && letters >= 2) return norm;
+        }
+      }
+
+      const cleaned = strippedPrefix.replace(/[^A-Z0-9]/g, '');
+      if (cleaned.length === 18 && cleaned.startsWith('I')) {
+        const sub17 = normalizeVinOcrChars(cleaned.slice(1));
+        if (/^[A-HJ-NPR-Z0-9]{17}$/.test(sub17)) return sub17;
+      }
+      // Sliding 17-char check for valid NHTSA check-digit VIN inside longer DataMatrix/QR payloads
+      for (let i = 0; i <= cleaned.length - 17; i++) {
+        const slice17 = normalizeVinOcrChars(cleaned.slice(i, i + 17));
+        if (isValidNorthAmericanVin(slice17)) return slice17;
+      }
+      const match17 = cleaned.match(/[A-HJ-NPR-Z0-9]{17}/);
+      if (match17) {
+        const v = match17[0];
+        const digits = (v.match(/\d/g) || []).length;
+        const letters = (v.match(/[A-Z]/g) || []).length;
+        if (digits >= 4 && letters >= 2) return v;
+      }
+      if (categoryKey === 'container') {
+        const isoMatch = cleaned.match(/[A-Z]{3}[UJZ]\d{6,7}/);
+        if (isoMatch) return isoMatch[0];
+      }
+      if (categoryKey === 'boat_pwc') {
+        const hinMatch = cleaned.match(/[A-Z]{3}[A-HJ-NPR-Z0-9]{5}[A-L]\d{3}/);
+        if (hinMatch) return hinMatch[0];
+      }
+      return '';
+    };
+
+    const extractVinOrSerialFromOcrText = (rawText, categoryKey) => {
+      if (!rawText) return '';
+      const upper = String(rawText).toUpperCase();
+      const hasTagContext = /\b(V\.?\s*I\.?\s*N\.?|VEHICLE\s+IDENTIFICATION|IDENTIFICATION\s+NUMBER|GVWR|GAWR|MFD\s+BY|MANUFACTURED|CONFORMS\s+TO|TRAILER|SERIAL\s*(?:NO|NUMBER|#)|P\.?I\.?N\.?|PRODUCT\s+IDENTIFICATION|HULL\s+ID)/i.test(upper);
+
+      // 1. Check explicitly labeled VIN / PIN lines (handles spaced/hyphenated 17-char VINs on trailer/RV tags)
+      const labeledVinRegex = /(?:V\.?\s*I\.?\s*N\.?(?:\s*(?:NO\.?|NUMBER|#))?|VEHICLE\s+IDENTIFICATION(?:\s+(?:NO\.?|NUMBER|#))?|P\.?\s*I\.?\s*N\.?(?:\s*(?:NO\.?|NUMBER|#))?)\s*[:#.\-]?\s*([A-Z0-9][A-Z0-9 \-]{14,24})/g;
+      let m;
+      while ((m = labeledVinRegex.exec(upper)) !== null) {
+        const compact = m[1].replace(/[^A-Z0-9]/g, '').slice(0, 17);
+        if (compact.length === 17) {
+          const repaired = tryRepairSingleOcrSlipVin(compact);
+          if (repaired) return repaired;
+          const norm = normalizeVinOcrChars(compact);
+          const digits = (norm.match(/\d/g) || []).length;
+          const letters = (norm.match(/[A-Z]/g) || []).length;
+          if (/^[A-HJ-NPR-Z0-9]{17}$/.test(norm) && digits >= 4 && letters >= 2) {
+            return norm;
+          }
+        }
+      }
+
+      // 2. Scan all 17-character alphanumeric tokens across the OCR text
+      const tokens17 = upper.match(/[A-Z0-9]{17}/g) || [];
+      for (let i = 0; i < tokens17.length; i++) {
+        const norm = normalizeVinOcrChars(tokens17[i]);
+        if (isValidNorthAmericanVin(norm)) return norm;
+      }
+
+      // 2b. Check lines where OCR inserted spaces/hyphens inside a valid 17-char check-digit VIN
+      const lines = upper.split(/\r?\n/);
+      for (let l = 0; l < lines.length; l++) {
+        const compactLine = lines[l].replace(/[\s\-]+/g, '');
+        if (compactLine.length >= 17 && compactLine.length <= 34) {
+          for (let i = 0; i <= compactLine.length - 17; i++) {
+            const sub = normalizeVinOcrChars(compactLine.slice(i, i + 17));
+            if (isValidNorthAmericanVin(sub)) return sub;
+          }
+        }
+      }
+
+      // 3. Try 1-char OCR slip repair on 17-char tokens if tag context is present or serial tail is numeric
+      for (let i = 0; i < tokens17.length; i++) {
+        const norm = normalizeVinOcrChars(tokens17[i]);
+        if (hasTagContext || /\d{5,6}$/.test(norm)) {
+          const repaired = tryRepairSingleOcrSlipVin(tokens17[i]);
+          if (repaired) return repaired;
+        }
+      }
+
+      // 4. Accept structurally valid 17-char VIN/PIN (e.g. Kubota/equipment PINs without NHTSA Mod-11 check digit)
+      for (let i = 0; i < tokens17.length; i++) {
+        const norm = normalizeVinOcrChars(tokens17[i]);
+        const digits = (norm.match(/\d/g) || []).length;
+        const letters = (norm.match(/[A-Z]/g) || []).length;
+        if (
+          /^[A-HJ-NPR-Z0-9]{17}$/.test(norm) &&
+          digits >= 5 &&
+          letters >= 3 &&
+          (hasTagContext || /^[1-57A-HJ-NPR-Z][A-HJ-NPR-Z0-9]{10}\d{6}$/.test(norm))
+        ) {
+          return norm;
+        }
+      }
+
+      // 5. Shipping Container ISO 6346 Box ID (e.g. MSCU 123456 7)
+      const containerMatch = upper.match(/\b([A-Z]{3}[UJZ])\s*[- ]?\s*(\d{6})\s*[- ]?\s*(\d)\b/);
+      if (containerMatch) {
+        return `${containerMatch[1]}${containerMatch[2]}${containerMatch[3]}`;
+      }
+
+      // 6. Boat / PWC 12-char USCG Hull Identification Number (HIN)
+      if (categoryKey === 'boat_pwc' || /\b(H\.?I\.?N\.?|HULL)\b/.test(upper)) {
+        const hinMatch = upper.match(/\b(?:US\s*[- ]?\s*)?([A-Z]{3}[A-HJ-NPR-Z0-9]{5}[A-L]\d{3})\b/);
+        if (hinMatch) return hinMatch[1];
+      }
+
+      // 7. Explicitly labeled Serial Number on Tractor / Equipment / Trailer plates
+      const serialRegex = /(?:SERIAL\s*(?:NO\.?|NUMBER|#)|S\/N)\s*[:#.\-]?\s*([A-Z0-9][A-Z0-9\-]{5,17})/g;
+      while ((m = serialRegex.exec(upper)) !== null) {
+        const candidate = m[1].replace(/^-+|-+$/g, '');
+        const cleanAlnum = candidate.replace(/[^A-Z0-9]/g, '');
+        const digits = (cleanAlnum.match(/\d/g) || []).length;
+        if (
+          cleanAlnum.length >= 6 &&
+          cleanAlnum.length <= 17 &&
+          digits >= 3 &&
+          !/^(207|603|800|888)\d{7}$/.test(cleanAlnum)
+        ) {
+          return candidate;
+        }
+      }
+
+      return '';
+    };
+
+    // Shared queued Tesseract.js worker so multiple photos reuse one WASM instance cleanly
+    let sharedTesseractWorkerPromise = null;
+    let tesseractJobChain = Promise.resolve();
+
+    const getSharedTesseractWorker = () => {
+      if (sharedTesseractWorkerPromise) return sharedTesseractWorkerPromise;
+      if (typeof window === 'undefined' || !window.Tesseract) {
+        return Promise.resolve(null);
+      }
+      sharedTesseractWorkerPromise = window.Tesseract.createWorker('eng')
+        .catch((err) => {
+          console.warn('Tesseract worker init error:', err);
+          sharedTesseractWorkerPromise = null;
+          return null;
+        });
+      return sharedTesseractWorkerPromise;
+    };
+
+    const loadImageCanvasesForScan = (file, maxDim = 1800) => {
+      return new Promise((resolve) => {
+        if (!file) return resolve(null);
+        let objectUrl = '';
+        try {
+          objectUrl = URL.createObjectURL(file);
+        } catch (e) {
+          return resolve(null);
+        }
+
+        const img = new Image();
+        let settled = false;
+        const finish = (val) => {
+          if (settled) return;
+          settled = true;
+          if (objectUrl) {
+            try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+          }
+          resolve(val);
+        };
+
+        const timer = setTimeout(() => finish(null), 6000);
+
+        img.onload = () => {
+          clearTimeout(timer);
+          try {
+            let w = img.naturalWidth || img.width || 1200;
+            let h = img.naturalHeight || img.height || 900;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) {
+                h = Math.round((h * maxDim) / w);
+                w = maxDim;
+              } else {
+                w = Math.round((w * maxDim) / h);
+                h = maxDim;
+              }
+            }
+            const rawCanvas = document.createElement('canvas');
+            rawCanvas.width = Math.max(1, w);
+            rawCanvas.height = Math.max(1, h);
+            const rawCtx = rawCanvas.getContext('2d');
+            rawCtx.drawImage(img, 0, 0, rawCanvas.width, rawCanvas.height);
+
+            const ocrCanvas = document.createElement('canvas');
+            ocrCanvas.width = rawCanvas.width;
+            ocrCanvas.height = rawCanvas.height;
+            const ocrCtx = ocrCanvas.getContext('2d');
+            try {
+              ocrCtx.filter = 'grayscale(100%) contrast(135%)';
+            } catch (e) {}
+            ocrCtx.drawImage(img, 0, 0, ocrCanvas.width, ocrCanvas.height);
+
+            finish({ rawCanvas, ocrCanvas });
+          } catch (err) {
+            finish(null);
+          }
+        };
+
+        img.onerror = () => {
+          clearTimeout(timer);
+          finish(null);
+        };
+
+        img.src = objectUrl;
+      });
+    };
+
+    const scanImageFileForVin = async (file, categoryKey) => {
+      if (!file) return '';
+      const isVideo = file.type?.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name || '');
+      if (isVideo) return '';
+
+      try {
+        const canvases = await loadImageCanvasesForScan(file, 1800);
+        if (!canvases) return '';
+
+        // Pass 1: Fast native BarcodeDetector (reads Code 39 / Code 128 / DataMatrix / QR VIN barcodes in <50ms)
+        if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+          try {
+            let formats = ['code_39', 'code_128', 'data_matrix', 'pdf417', 'qr_code'];
+            if (typeof window.BarcodeDetector.getSupportedFormats === 'function') {
+              const supported = await window.BarcodeDetector.getSupportedFormats();
+              formats = formats.filter((f) => supported.includes(f));
+            }
+            if (formats.length > 0) {
+              const detector = new window.BarcodeDetector({ formats });
+              const barcodes = await detector.detect(canvases.rawCanvas);
+              for (let i = 0; i < (barcodes || []).length; i++) {
+                const found = extractVinFromBarcodeValue(barcodes[i]?.rawValue, categoryKey);
+                if (found) return found;
+              }
+            }
+          } catch (barcodeErr) {
+            // Fall through to OCR
+          }
+        }
+
+        // Pass 2: Queued Tesseract.js OCR with safety timeout
+        const runOcr = () =>
+          new Promise(async (resolve) => {
+            const timeout = setTimeout(() => resolve(''), 10000);
+            try {
+              // Wait briefly if defer script is still finishing load
+              for (let tries = 0; tries < 10 && !window.Tesseract; tries++) {
+                await new Promise((r) => setTimeout(r, 200));
+              }
+              const worker = await getSharedTesseractWorker();
+              if (!worker) {
+                clearTimeout(timeout);
+                return resolve('');
+              }
+              const result = await worker.recognize(canvases.ocrCanvas);
+              clearTimeout(timeout);
+              const text = result?.data?.text || '';
+              resolve(extractVinOrSerialFromOcrText(text, categoryKey));
+            } catch (ocrErr) {
+              clearTimeout(timeout);
+              resolve('');
+            }
+          });
+
+        const nextJob = tesseractJobChain.then(runOcr, runOcr);
+        tesseractJobChain = nextJob.then(() => {}, () => {});
+        return await nextJob;
+      } catch (err) {
+        console.warn('VIN scan error:', err);
+        return '';
+      }
     };
 
     // --- REVISED CATEGORIES (NO IMAGE/EMOJI ICONS) ---
@@ -1923,6 +2278,16 @@
       const [uploading, setUploading] = useState(false);
       const [uploadStatus, setUploadStatus] = useState('');
       const [isDragging, setIsDragging] = useState(false);
+      const [scanningVin, setScanningVin] = useState(false);
+      const [checkingVinBeforeNext, setCheckingVinBeforeNext] = useState(false);
+      const [vinScanSource, setVinScanSource] = useState('');
+      const [vinModalMode, setVinModalMode] = useState(null); // null | 'ask' | 'no_manual' | 'yes_upload'
+      const [manualVinInput, setManualVinInput] = useState('');
+      const [vinModalError, setVinModalError] = useState('');
+      const [vinPhotoConfirmed, setVinPhotoConfirmed] = useState(false);
+      const activeScanPromisesRef = useRef([]);
+      const activeScanCountRef = useRef(0);
+      const latestVinRef = useRef('');
 
       const activeCatConfig = CATEGORIES[category] || CATEGORIES.rv;
 
@@ -1939,6 +2304,9 @@
       };
 
       const handleInputChange = (field, value) => {
+        if (field === 'vinOrSerial') {
+          latestVinRef.current = String(value || '').trim();
+        }
         setFormData(prev => ({ ...prev, [field]: value }));
       };
 
@@ -2215,8 +2583,9 @@
           file.type.startsWith('video/') ||
           /\.(mp4|mov|webm|m4v|avi|heic|heif|jpg|jpeg|png|webp)$/i.test(file.name)
         );
-        if (files.length === 0) return;
+        if (files.length === 0) return '';
         setUploading(true);
+        let firstDetectedInBatch = '';
 
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
@@ -2225,6 +2594,37 @@
             const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name);
             const mediaId = 'm-' + Math.random().toString(36).substr(2, 9);
             const label = file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo');
+            let resolvedDetectedVin = '';
+
+            // Start VIN / Serial barcode + OCR scan in parallel on image files
+            if (!isVideo) {
+              activeScanCountRef.current += 1;
+              setScanningVin(true);
+              let scanPromise;
+              scanPromise = scanImageFileForVin(file, category)
+                .then((detected) => {
+                  if (detected) {
+                    resolvedDetectedVin = detected;
+                    if (!firstDetectedInBatch) firstDetectedInBatch = detected;
+                    setPhotos(prev => prev.map(p => (p.id === mediaId ? { ...p, detectedVin: detected } : p)));
+                    if (!latestVinRef.current) {
+                      latestVinRef.current = detected;
+                      setVinScanSource('ocr');
+                      setFormData(prev => (prev.vinOrSerial && prev.vinOrSerial.trim() ? prev : { ...prev, vinOrSerial: detected }));
+                    }
+                  }
+                  return detected || '';
+                })
+                .catch(() => '')
+                .finally(() => {
+                  activeScanPromisesRef.current = activeScanPromisesRef.current.filter(pr => pr !== scanPromise);
+                  activeScanCountRef.current = Math.max(0, activeScanCountRef.current - 1);
+                  if (activeScanCountRef.current === 0) {
+                    setScanningVin(false);
+                  }
+                });
+              activeScanPromisesRef.current.push(scanPromise);
+            }
 
             // 1. Direct upload to Firebase Cloud Storage bucket
             let cloudUrl = null;
@@ -2245,6 +2645,7 @@
                   fileSize: file.size,
                   fileType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
                   label: label,
+                  detectedVin: resolvedDetectedVin || '',
                   uploadedAt: new Date().toISOString()
                 }
               ]);
@@ -2280,6 +2681,7 @@
                       fileSize: file.size,
                       fileType: 'image/jpeg',
                       label: label,
+                      detectedVin: resolvedDetectedVin || '',
                       uploadedAt: new Date().toISOString()
                     }
                   ]);
@@ -2292,6 +2694,7 @@
         }
         setUploading(false);
         setUploadStatus('');
+        return firstDetectedInBatch;
       };
 
       const handleFileSelect = async (e) => {
@@ -2326,10 +2729,112 @@
         }
       };
 
-
       const removePhoto = (id) => {
-        setPhotos(prev => prev.filter(p => p.id !== id));
+        setPhotos(prev => {
+          const removed = prev.find(p => p.id === id);
+          const remaining = prev.filter(p => p.id !== id);
+          if (remaining.length === 0) {
+            setVinPhotoConfirmed(false);
+          }
+          if (removed?.detectedVin && vinScanSource === 'ocr' && latestVinRef.current === removed.detectedVin) {
+            const fallbackVin = remaining.map(p => p.detectedVin).find(Boolean) || '';
+            latestVinRef.current = fallbackVin;
+            setVinScanSource(fallbackVin ? 'ocr' : '');
+            setFormData(f => ({ ...f, vinOrSerial: fallbackVin }));
+          }
+          return remaining;
+        });
       };
+
+      const handleContinueFromStep3 = async () => {
+        if (uploading) {
+          alert('Please wait for photos to finish uploading to cloud storage before continuing.');
+          return;
+        }
+        if (photos.length < 3) {
+          alert('Please upload at least 3 photos of your unit before continuing.');
+          return;
+        }
+
+        if (activeScanPromisesRef.current.length > 0) {
+          setCheckingVinBeforeNext(true);
+          try {
+            await Promise.allSettled([...activeScanPromisesRef.current]);
+          } catch (e) {}
+          setCheckingVinBeforeNext(false);
+        }
+
+        const photoDetectedVin = photos.map(p => p.detectedVin).find(Boolean) || '';
+        const effectiveVin = (latestVinRef.current || formData.vinOrSerial || photoDetectedVin || '').trim();
+
+        if (effectiveVin) {
+          if (!formData.vinOrSerial || !formData.vinOrSerial.trim()) {
+            handleInputChange('vinOrSerial', effectiveVin);
+            setVinScanSource('ocr');
+          }
+          setStep(4);
+          scrollToFormTop();
+          return;
+        }
+
+        if (vinPhotoConfirmed) {
+          setStep(4);
+          scrollToFormTop();
+          return;
+        }
+
+        setVinModalError('');
+        setManualVinInput('');
+        setVinModalMode('ask');
+      };
+
+      const handleVinModalPhotoUpload = async (e) => {
+        const selected = e.target?.files;
+        if (!selected || selected.length === 0) return;
+        await processFiles(selected);
+        if (e.target) e.target.value = '';
+        if (activeScanPromisesRef.current.length > 0) {
+          setCheckingVinBeforeNext(true);
+          try {
+            await Promise.allSettled([...activeScanPromisesRef.current]);
+          } catch (err) {}
+          setCheckingVinBeforeNext(false);
+        }
+        setVinPhotoConfirmed(true);
+        setVinModalError('');
+        setVinModalMode(null);
+        setStep(4);
+        scrollToFormTop();
+      };
+
+      const handleSaveManualVinAndContinue = () => {
+        const cleanedVin = (manualVinInput || '').trim().toUpperCase();
+        if (!cleanedVin) {
+          setVinModalError(
+            category === 'container'
+              ? 'Please enter the Box Identification Number before continuing to Step 4.'
+              : 'Please enter the VIN or Serial Number before continuing to Step 4.'
+          );
+          return;
+        }
+        handleInputChange('vinOrSerial', cleanedVin);
+        setVinScanSource('manual');
+        setVinModalError('');
+        setVinModalMode(null);
+        setStep(4);
+        scrollToFormTop();
+      };
+
+      useEffect(() => {
+        if (!vinModalMode) return;
+        const onKeyDown = (ev) => {
+          if (ev.key === 'Escape' && !uploading && !checkingVinBeforeNext) {
+            setVinModalMode(null);
+          }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+      }, [vinModalMode, uploading, checkingVinBeforeNext]);
 
       const handleSubmit = async (e) => {
         e.preventDefault();
@@ -2393,6 +2898,7 @@
         const primaryEmail = locationEmails[0] || 'appraisals@sr1companies.com';
         const ccEmails = locationEmails.slice(1);
         
+        const resolvedVinOrSerial = (formData.vinOrSerial || '').trim();
         const newInquiry = {
           id: 'inq-' + Date.now(),
           referenceId: refId,
@@ -2425,7 +2931,7 @@
             make: category === 'container' ? 'Shipping Container' : (formData.make || 'Unit Make'),
             model: category === 'container' ? 'Container' : (formData.model || 'Unit Model'),
             trimOrFloorplan: formData.trimOrFloorplan,
-            vinOrSerial: formData.vinOrSerial || 'VIN-PENDING',
+            vinOrSerial: resolvedVinOrSerial || 'VIN-PENDING',
             mileageOrHours: Number(formData.mileageOrHours) || 0,
             isHours: activeCatConfig.isHours,
             specs: {
@@ -2465,8 +2971,8 @@
               createdAt: new Date().toLocaleTimeString(),
               category: 'general',
               content: category === 'container'
-                ? `New shipping container inquiry submitted (Purchased: ${formData.year}, Box ID: ${formData.vinOrSerial}). Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : `OUTRIGHT SALE${resolvedSalespersonName ? ` (SR1 Team Member: ${resolvedSalespersonName})` : ''}`}. Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
-                : `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}. Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : `OUTRIGHT SALE${resolvedSalespersonName ? ` (SR1 Team Member: ${resolvedSalespersonName})` : ''}`}.${formData.titleStatus === 'financed_money_owed' && formData.lienHolderName ? ` Financed with ${formData.lienHolderName.trim()} (Est. Payoff: $${(Number(formData.estimatedPayoff) || 0).toLocaleString()}).` : ''} Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
+                ? `New shipping container inquiry submitted (Purchased: ${formData.year}, Box ID: ${resolvedVinOrSerial || 'See Photos'}). Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : `OUTRIGHT SALE${resolvedSalespersonName ? ` (SR1 Team Member: ${resolvedSalespersonName})` : ''}`}. Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
+                : `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}${resolvedVinOrSerial ? ` (VIN/Serial: ${resolvedVinOrSerial})` : ''}. Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : `OUTRIGHT SALE${resolvedSalespersonName ? ` (SR1 Team Member: ${resolvedSalespersonName})` : ''}`}.${formData.titleStatus === 'financed_money_owed' && formData.lienHolderName ? ` Financed with ${formData.lienHolderName.trim()} (Est. Payoff: $${(Number(formData.estimatedPayoff) || 0).toLocaleString()}).` : ''} Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
             }
           ]
         };
@@ -2480,12 +2986,12 @@
         // Send email notification to dealership team and confirmation copy to submitter
         try {
           const unitSummary = category === 'container'
-            ? `Shipping Container - Purchased: ${formData.year} - Box ID: ${formData.vinOrSerial}`
+            ? `Shipping Container - Purchased: ${formData.year} - Box ID: ${resolvedVinOrSerial || 'See Photos'}`
             : `${formData.year} ${formData.make} ${formData.model} ${formData.trimOrFloorplan || ''}`;
 
           const appraisalPayload = {
             _subject: category === 'container'
-              ? `[${formData.intent === 'trade' ? 'TRADE-IN' : 'SELL'}] Container Request [${refId}]: Box #${formData.vinOrSerial} (${locationName})`
+              ? `[${formData.intent === 'trade' ? 'TRADE-IN' : 'SELL'}] Container Request [${refId}]: ${resolvedVinOrSerial ? `Box #${resolvedVinOrSerial}` : `Purchased ${formData.year}`} (${locationName})`
               : `[${formData.intent === 'trade' ? 'TRADE-IN' : 'SELL'}] Unit Valuation Request [${refId}]: ${formData.year} ${formData.make} ${formData.model} (${locationName})`,
             Reference_ID: refId,
             Closest_SR1_Dealership: locationName,
@@ -2508,7 +3014,7 @@
             Make: category === 'container' ? 'Shipping Container' : (formData.make || 'N/A'),
             Model: category === 'container' ? 'Container' : (formData.model || 'N/A'),
             Trim_or_Floorplan: formData.trimOrFloorplan || 'N/A',
-            VIN_or_Serial_or_Box_ID: formData.vinOrSerial || 'N/A',
+            VIN_or_Serial_or_Box_ID: resolvedVinOrSerial || (vinPhotoConfirmed ? 'Included in Photos' : 'N/A'),
             Mileage_or_Hours: category === 'container' ? 'N/A' : `${formData.mileageOrHours || 0} ${activeCatConfig.isHours ? 'Hours' : 'Miles'}`,
             Overall_Condition: formData.condition,
             Condition_Notes: formData.conditionNotes || 'None',
@@ -2574,6 +3080,7 @@
               year: formData.year,
               make: formData.make,
               model: formData.model,
+              vinOrSerial: resolvedVinOrSerial,
               subcategory: '',
               category: activeCatConfig.label,
               mileageOrHours: formData.mileageOrHours,
@@ -2695,6 +3202,12 @@
                       photos: []
                     });
                     setPhotos([]);
+                    latestVinRef.current = '';
+                    setVinScanSource('');
+                    setVinModalMode(null);
+                    setManualVinInput('');
+                    setVinModalError('');
+                    setVinPhotoConfirmed(false);
                   }}
                   className="w-full sm:w-auto px-8 py-3.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
                 >
@@ -2979,17 +3492,21 @@
                           />
                         </div>
 
-                        {/* Box Identification Number */}
+                        {/* Box Identification Number (Optional) */}
                         <div>
                           <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                            Box Identification Number *
+                            Box Identification Number <span className="text-neutral-500 font-normal normal-case">(Optional)</span>
                           </label>
                           <input
                             type="text"
-                            required
+                            placeholder="Optional — or include a photo in Step 3"
                             value={formData.vinOrSerial}
-                            onChange={(e) => handleInputChange('vinOrSerial', e.target.value.toUpperCase())}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase();
+                              handleInputChange('vinOrSerial', val);
+                              setVinScanSource(val.trim() ? 'manual' : '');
+                            }}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm placeholder:font-sans placeholder:text-neutral-600 focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
                       </div>
@@ -3033,17 +3550,21 @@
                           />
                         </div>
 
-                        {/* VIN / Serial Number */}
+                        {/* VIN / Serial Number (Optional on Step 2) */}
                         <div>
                           <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                            VIN / Serial Number *
+                            VIN / Serial Number <span className="text-neutral-500 font-normal normal-case">(Optional)</span>
                           </label>
                           <input
                             type="text"
-                            required
+                            placeholder="Optional — or include VIN tag photo in Step 3"
                             value={formData.vinOrSerial}
-                            onChange={(e) => handleInputChange('vinOrSerial', e.target.value.toUpperCase())}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase();
+                              handleInputChange('vinOrSerial', val);
+                              setVinScanSource(val.trim() ? 'manual' : '');
+                            }}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm placeholder:font-sans placeholder:text-neutral-600 focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
 
@@ -3098,10 +3619,6 @@
                               alert('Please enter the Year Purchased');
                               return;
                             }
-                            if (!formData.vinOrSerial || !formData.vinOrSerial.trim()) {
-                              alert('Please enter the Box Identification Number');
-                              return;
-                            }
                             setStep(3);
                             scrollToFormTop();
                             return;
@@ -3117,10 +3634,6 @@
                           }
                           if (!formData.model || !formData.model.trim()) {
                             alert('Please enter the Model');
-                            return;
-                          }
-                          if (!formData.vinOrSerial || !formData.vinOrSerial.trim()) {
-                            alert('Please enter the VIN or Serial Number');
                             return;
                           }
                           if (requiresHours && !formData.mileageOrHours) {
@@ -3178,8 +3691,8 @@
                         <p className="text-[11px] text-emerald-400 font-medium">
                           Full-quality photos & walkaround videos welcome — no resolution cap
                         </p>
-                        <p className="text-[11px] text-neutral-500">
-                          Recommended: Walkaround video, exterior profile, interior/controls, hour/mileage display, VIN/serial tag
+                        <p className="text-xs text-neutral-300 font-medium pt-0.5">
+                          Please include a photo of the VIN Tag
                         </p>
                       </div>
                       
@@ -3205,6 +3718,26 @@
                       )}
                     </div>
 
+                    {/* VIN / SERIAL DETECTION STATUS */}
+                    {formData.vinOrSerial && formData.vinOrSerial.trim() ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-950/35 border border-emerald-600/40 text-xs">
+                        <div className="flex items-center gap-2 text-emerald-300">
+                          <span className="font-bold">✓</span>
+                          <span>
+                            {vinScanSource === 'ocr'
+                              ? 'VIN / Serial detected from photo & added to unit details:'
+                              : 'VIN / Serial saved to unit details:'}{' '}
+                            <strong className="font-mono text-white tracking-wide">{formData.vinOrSerial}</strong>
+                          </span>
+                        </div>
+                      </div>
+                    ) : scanningVin ? (
+                      <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-300">
+                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                        <span>Scanning uploaded photos for VIN / Serial tag...</span>
+                      </div>
+                    ) : null}
+
                     {photos.length > 0 && (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
                         {photos.map(p => (
@@ -3226,7 +3759,14 @@
                                 </span>
                               </div>
                             ) : (
-                              <img src={p.thumbUrl || p.url} alt={p.label} className="w-full h-full object-cover" />
+                              <div className="w-full h-full relative">
+                                <img src={p.thumbUrl || p.url} alt={p.label} className="w-full h-full object-cover" />
+                                {p.detectedVin && (
+                                  <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-emerald-600/95 text-[9px] font-bold text-white rounded shadow">
+                                    VIN TAG
+                                  </span>
+                                )}
+                              </div>
                             )}
                             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2">
                               <button
@@ -3259,26 +3799,19 @@
                     </button>
                     <button
                       type="button"
-                      disabled={uploading}
-                      onClick={() => {
-                        if (uploading) {
-                          alert('Please wait for photos to finish uploading to cloud storage before continuing.');
-                          return;
-                        }
-                        if (photos.length < 3) {
-                          alert('Please upload at least 3 photos of your unit before continuing.');
-                          return;
-                        }
-                        setStep(4);
-                        scrollToFormTop();
-                      }}
+                      disabled={uploading || checkingVinBeforeNext}
+                      onClick={handleContinueFromStep3}
                       className={`px-6 py-3 font-bold text-xs rounded-xl transition-all ${
-                        uploading 
+                        uploading || checkingVinBeforeNext
                           ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700' 
                           : 'bg-neutral-100 hover:bg-white text-neutral-950'
                       }`}
                     >
-                      {uploading ? 'Uploading Media...' : 'Continue to Condition →'}
+                      {uploading
+                        ? 'Uploading Media...'
+                        : checkingVinBeforeNext
+                        ? 'Scanning Photos for VIN...'
+                        : 'Continue to Condition →'}
                     </button>
                   </div>
                 </div>
@@ -3593,6 +4126,9 @@
                     <p className="font-semibold text-neutral-200">Submission Summary:</p>
                     <p>• Request Type: {formData.intent === 'trade' ? `Trade-In ${formData.workingWithSalesperson === 'yes' && formData.salespersonName ? `(Salesperson: ${formData.salespersonName})` : ''}` : `Outright Sale to SR1 ${formData.workingWithSalesperson === 'yes' && formData.salespersonName ? `(SR1 Team Member: ${formData.salespersonName})` : ''}`}</p>
                     <p>• {category === 'container' ? `Purchased: ${formData.year} | Box ID: ${formData.vinOrSerial || 'Pending'}` : `${formData.year} ${formData.make} ${formData.model}`}</p>
+                    {category !== 'container' && formData.vinOrSerial && formData.vinOrSerial.trim() && (
+                      <p>• VIN / Serial: <span className="font-mono text-neutral-200">{formData.vinOrSerial}</span></p>
+                    )}
                     <p>• Category: {activeCatConfig.label}</p>
                     <p>• Photos: {photos.length} attached</p>
                   </div>
@@ -3625,6 +4161,178 @@
 
             </form>
           </div>
+
+          {/* VIN TAG CHECK POP-UP MODAL (STEP 3 -> STEP 4) */}
+          {vinModalMode && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="vin-tag-modal-title"
+              className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <div className="bg-neutral-900 border border-neutral-750 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-5 text-neutral-200">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 id="vin-tag-modal-title" className="text-base sm:text-lg font-bold text-white leading-snug">
+                      {vinModalMode === 'yes_upload'
+                        ? 'Include a Photo of the VIN Tag'
+                        : 'Do you have a photo of the VIN tag?'}
+                    </h3>
+                    {vinModalMode === 'ask' && (
+                      <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                        We didn't automatically detect a VIN or Serial Number in your uploaded photos.
+                      </p>
+                    )}
+                    {vinModalMode === 'no_manual' && (
+                      <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                        Please manually enter the {category === 'container' ? 'Box Identification Number' : 'VIN or Serial Number'} before continuing to Step 4.
+                      </p>
+                    )}
+                    {vinModalMode === 'yes_upload' && (
+                      <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                        Upload a clear close-up photo of the VIN tag now, or continue if it is already included in your uploaded photos.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={uploading || checkingVinBeforeNext}
+                    onClick={() => setVinModalMode(null)}
+                    aria-label="Close dialog"
+                    className="text-neutral-400 hover:text-white text-base font-bold px-1.5 py-0.5 rounded transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {vinModalMode === 'ask' && (
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVinModalError('');
+                        setVinModalMode('yes_upload');
+                      }}
+                      className="px-4 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVinModalError('');
+                        setVinModalMode('no_manual');
+                      }}
+                      className="px-4 py-3 bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs rounded-xl border border-neutral-700 transition-all"
+                    >
+                      No
+                    </button>
+                  </div>
+                )}
+
+                {vinModalMode === 'no_manual' && (
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="manual-vin-modal-input" className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                        {category === 'container' ? 'Box Identification Number *' : 'VIN / Serial Number *'}
+                      </label>
+                      <input
+                        id="manual-vin-modal-input"
+                        type="text"
+                        autoFocus
+                        value={manualVinInput}
+                        onChange={(e) => {
+                          setManualVinInput(e.target.value.toUpperCase());
+                          if (vinModalError) setVinModalError('');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSaveManualVinAndContinue();
+                          }
+                        }}
+                        placeholder={category === 'container' ? 'Enter Box Identification Number' : 'Enter VIN or Serial Number'}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm placeholder:font-sans placeholder:text-neutral-600 focus:ring-1 focus:ring-neutral-300 focus:outline-none"
+                      />
+                      {vinModalError && (
+                        <p className="text-xs text-red-400 mt-1.5 font-medium">{vinModalError}</p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVinModalError('');
+                          setVinModalMode('ask');
+                        }}
+                        className="px-3 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
+                      >
+                        ← Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveManualVinAndContinue}
+                        className="px-5 py-2.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
+                      >
+                        Continue to Step 4 →
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {vinModalMode === 'yes_upload' && (
+                  <div className="space-y-3">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleVinModalPhotoUpload}
+                      id="vin-modal-photo-input"
+                      disabled={uploading || checkingVinBeforeNext}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="vin-modal-photo-input"
+                      className={`w-full flex items-center justify-center gap-2 px-4 py-3 font-bold text-xs rounded-xl transition-all ${
+                        uploading || checkingVinBeforeNext
+                          ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700 pointer-events-none'
+                          : 'bg-neutral-100 hover:bg-white text-neutral-950 cursor-pointer'
+                      }`}
+                    >
+                      {uploading || checkingVinBeforeNext
+                        ? 'Uploading & Scanning VIN Tag...'
+                        : '📷 Upload Photo of VIN Tag'}
+                    </label>
+
+                    <button
+                      type="button"
+                      disabled={uploading || checkingVinBeforeNext}
+                      onClick={() => {
+                        setVinPhotoConfirmed(true);
+                        setVinModalMode(null);
+                        setStep(4);
+                        scrollToFormTop();
+                      }}
+                      className="w-full px-4 py-2.5 bg-neutral-800/80 hover:bg-neutral-800 text-neutral-200 font-semibold text-xs rounded-xl border border-neutral-700 transition-all"
+                    >
+                      Already Included in Uploaded Photos — Continue →
+                    </button>
+
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        disabled={uploading || checkingVinBeforeNext}
+                        onClick={() => setVinModalMode('ask')}
+                        className="px-2 py-1 text-neutral-400 hover:text-white text-xs font-semibold"
+                      >
+                        ← Back
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       );
     }

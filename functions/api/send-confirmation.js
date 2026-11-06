@@ -302,6 +302,7 @@ export async function onRequestPost({ request, env }) {
     const refNum = referenceId || String(Math.floor(1000 + Math.random() * 9000));
 
     const unitTitle = `${unit?.year || ''} ${unit?.make || ''} ${unit?.model || ''}`.trim() || 'Your Submitted Unit';
+    const customerVisibleVin = (unit?.vinOrSerial && unit.vinOrSerial !== 'VIN-PENDING') ? String(unit.vinOrSerial).trim() : '';
     const mileageHoursLabel = unit?.isHours ? 'Hours' : 'Mileage';
     const mileageHoursValue = unit?.mileageOrHours ? `${unit.mileageOrHours} ${unit.isHours ? 'hrs' : 'mi'}` : 'Not Specified';
     const transactionType = intent === 'trade' ? 'Trade-In on Purchase' : 'Outright Sale to SR1';
@@ -458,6 +459,15 @@ export async function onRequestPost({ request, env }) {
                           </div>
                         </td>
                       </tr>
+                      ${customerVisibleVin ? `
+                      <tr>
+                        <td colspan="2" class="stat-tile-wrap" style="vertical-align: top; padding: 0 0 12px 0;">
+                          <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">VIN / Serial Number</div>
+                            <div style="font-size: 14px; font-weight: 700; font-family: monospace, Consolas, sans-serif; color: #111827; margin-top: 3px;">${customerVisibleVin}</div>
+                          </div>
+                        </td>
+                      </tr>` : ''}
                       ${unit?.mileageOrHours ? `
                       <tr>
                         <td colspan="2" class="stat-tile-wrap" style="vertical-align: top; padding: 0 0 12px 0;">
@@ -585,7 +595,7 @@ Hi ${firstName},
 Thank you for giving SR1 the opportunity to make you an offer on your item. We have received your valuation request for:
 ${unitTitle}
 - Category: ${unit?.category || 'Item'}
-${unit?.mileageOrHours ? `- ${mileageHoursLabel}: ${mileageHoursValue}\n` : ''}- Transaction: ${transactionType}
+${customerVisibleVin ? `- VIN / Serial Number: ${customerVisibleVin}\n` : ''}${unit?.mileageOrHours ? `- ${mileageHoursLabel}: ${mileageHoursValue}\n` : ''}- Transaction: ${transactionType}
 - Preferred Dealership: ${location}
 ${salesperson !== 'Direct Appraisal Request' ? `- ${salespersonLabel}: ${salesperson}\n` : ''}
 WHAT TO EXPECT NEXT:
@@ -646,7 +656,7 @@ SR1 Companies
     const customerEmailAddr = customer?.email || ad.Customer_Email || 'Not provided';
     const customerLocation = ad.Customer_Location || 'Not provided';
     const preferredContactMethod = ad.Preferred_Contact_Method || 'Any';
-    const vinOrSerial = ad.VIN_or_Serial_or_Box_ID || 'N/A';
+    const vinOrSerial = ad.VIN_or_Serial_or_Box_ID || customerVisibleVin || 'N/A';
     const trimOrFloorplan = ad.Trim_or_Floorplan || 'N/A';
     const conditionNotes = ad.Condition_Notes || 'None';
     const knownIssues = ad.Known_Issues_or_Damage || 'None reported';
