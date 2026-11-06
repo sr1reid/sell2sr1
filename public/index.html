@@ -2343,9 +2343,13 @@
           setStep(3);
           return;
         }
-        if (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') {
+        if (formData.workingWithSalesperson === 'yes') {
           if (!formData.salespersonFirstName?.trim() || !formData.salespersonLastInitial?.trim()) {
-            alert("Please enter your SR1 salesperson's first name and last name initial.");
+            alert(
+              formData.intent === 'trade'
+                ? "Please enter your SR1 salesperson's first name and last name initial."
+                : "Please enter the SR1 team member's first name and last name initial."
+            );
             setStep(1);
             return;
           }
@@ -2370,11 +2374,11 @@
 
         const spFirst = (formData.salespersonFirstName || '').trim();
         const spLastInit = (formData.salespersonLastInitial || '').trim().charAt(0).toUpperCase();
-        const spMatch = (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes')
+        const spMatch = formData.workingWithSalesperson === 'yes'
           ? matchSalespersonDirectory(spFirst, spLastInit)
           : { emails: [], matchedEntries: [] };
         const matchedSalespersonEmails = spMatch.emails || [];
-        const resolvedSalespersonName = (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes')
+        const resolvedSalespersonName = formData.workingWithSalesperson === 'yes'
           ? (spMatch.matchedEntries.length === 1
               ? `${spMatch.matchedEntries[0].first} ${spMatch.matchedEntries[0].last}`
               : `${spFirst} ${spLastInit}.`.trim())
@@ -2393,9 +2397,9 @@
           preferredLocation: formData.preferredLocation,
           intent: formData.intent || 'sell',
           resaleAcknowledgement: !!formData.resaleAcknowledgement,
-          workingWithSalesperson: formData.intent === 'trade' ? formData.workingWithSalesperson : 'no',
-          salespersonFirstName: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? spFirst : '',
-          salespersonLastInitial: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? spLastInit : '',
+          workingWithSalesperson: formData.workingWithSalesperson || 'no',
+          salespersonFirstName: formData.workingWithSalesperson === 'yes' ? spFirst : '',
+          salespersonLastInitial: formData.workingWithSalesperson === 'yes' ? spLastInit : '',
           salespersonName: resolvedSalespersonName,
           salespersonMatchedEmails: matchedSalespersonEmails,
           assignedStaffName: resolvedSalespersonName || 'Appraisal Desk Queue',
@@ -2456,8 +2460,8 @@
               createdAt: new Date().toLocaleTimeString(),
               category: 'general',
               content: category === 'container'
-                ? `New shipping container inquiry submitted (Purchased: ${formData.year}, Box ID: ${formData.vinOrSerial}). Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : 'OUTRIGHT SALE'}. Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
-                : `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}. Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : 'OUTRIGHT SALE'}.${formData.titleStatus === 'financed_money_owed' && formData.lienHolderName ? ` Financed with ${formData.lienHolderName.trim()} (Est. Payoff: $${(Number(formData.estimatedPayoff) || 0).toLocaleString()}).` : ''} Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
+                ? `New shipping container inquiry submitted (Purchased: ${formData.year}, Box ID: ${formData.vinOrSerial}). Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : `OUTRIGHT SALE${resolvedSalespersonName ? ` (SR1 Team Member: ${resolvedSalespersonName})` : ''}`}. Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
+                : `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}. Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : `OUTRIGHT SALE${resolvedSalespersonName ? ` (SR1 Team Member: ${resolvedSalespersonName})` : ''}`}.${formData.titleStatus === 'financed_money_owed' && formData.lienHolderName ? ` Financed with ${formData.lienHolderName.trim()} (Est. Payoff: $${(Number(formData.estimatedPayoff) || 0).toLocaleString()}).` : ''} Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
             }
           ]
         };
@@ -2482,10 +2486,10 @@
             Closest_SR1_Dealership: locationName,
             Dealership_Recipients: locationEmails.join(', '),
             Transaction_Type: formData.intent === 'trade' ? 'Trade-In on Purchase' : 'Outright Sale to SR1',
-            Working_With_Salesperson: formData.intent === 'trade' ? formData.workingWithSalesperson.toUpperCase() : 'N/A',
-            Salesperson_Name: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? (resolvedSalespersonName || 'None Listed') : 'N/A',
-            Salesperson_First_Name: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? spFirst : 'N/A',
-            Salesperson_Last_Initial: (formData.intent === 'trade' && formData.workingWithSalesperson === 'yes') ? spLastInit : 'N/A',
+            Working_With_Salesperson: (formData.workingWithSalesperson || 'no').toUpperCase(),
+            Salesperson_Name: formData.workingWithSalesperson === 'yes' ? (resolvedSalespersonName || 'None Listed') : 'N/A',
+            Salesperson_First_Name: formData.workingWithSalesperson === 'yes' ? spFirst : 'N/A',
+            Salesperson_Last_Initial: formData.workingWithSalesperson === 'yes' ? spLastInit : 'N/A',
             Salesperson_Matched_Email: matchedSalespersonEmails.length > 0 ? matchedSalespersonEmails.join(', ') : 'None matched',
             Customer_Name: `${formData.firstName} ${formData.lastName}`,
             Customer_Email: formData.email,
@@ -2808,12 +2812,14 @@
                       </div>
                     </div>
 
-                    {/* CONDITIONAL SALESPERSON SECTION FOR TRADES */}
-                    {formData.intent === 'trade' && (
+                    {/* CONDITIONAL SR1 TEAM MEMBER / SALESPERSON SECTION FOR SELL OUTRIGHT & TRADES */}
+                    {(formData.intent === 'sell' || formData.intent === 'trade') && (
                       <div className="pt-3 border-t border-neutral-850 space-y-3">
                         <div>
                           <label className="block text-xs font-semibold uppercase text-neutral-300 mb-2">
-                            Are you currently working with an SR1 salesperson? *
+                            {formData.intent === 'trade'
+                              ? 'Are you currently working with an SR1 salesperson? *'
+                              : 'Are you currently working with an SR1 team member already? *'}
                           </label>
                           <div className="flex items-center space-x-6">
                             <label className="flex items-center space-x-2 cursor-pointer text-xs text-neutral-200">
@@ -2846,7 +2852,7 @@
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
                                 <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                                  SALESPERSONS FIRST NAME *
+                                  {formData.intent === 'trade' ? 'SALESPERSONS FIRST NAME *' : 'SR1 TEAM MEMBERS FIRST NAME *'}
                                 </label>
                                 <input
                                   type="text"
@@ -2867,7 +2873,7 @@
                               </div>
                               <div>
                                 <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                                  SALESPERSONS LAST NAME INITIAL *
+                                  {formData.intent === 'trade' ? 'SALESPERSONS LAST NAME INITIAL *' : 'SR1 TEAM MEMBERS LAST NAME INITIAL *'}
                                 </label>
                                 <input
                                   type="text"
@@ -2889,7 +2895,9 @@
                               </div>
                             </div>
                             <p className="text-[11px] text-neutral-500">
-                              We will connect this appraisal directly to your salesperson's deal file.
+                              {formData.intent === 'trade'
+                                ? "We will connect this appraisal directly to your salesperson's deal file."
+                                : 'We will connect this appraisal directly to the SR1 team member you are working with.'}
                             </p>
                           </div>
                         )}
@@ -2902,11 +2910,14 @@
                       type="button"
                       onClick={() => {
                         if (
-                          formData.intent === 'trade' &&
                           formData.workingWithSalesperson === 'yes' &&
                           (!formData.salespersonFirstName?.trim() || !formData.salespersonLastInitial?.trim())
                         ) {
-                          alert("Please enter your salesperson's first name and last name initial.");
+                          alert(
+                            formData.intent === 'trade'
+                              ? "Please enter your salesperson's first name and last name initial."
+                              : "Please enter the SR1 team member's first name and last name initial."
+                          );
                           return;
                         }
                         setStep(2);
@@ -3503,7 +3514,7 @@
                   {/* Recap */}
                   <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 text-xs space-y-1 text-neutral-400">
                     <p className="font-semibold text-neutral-200">Submission Summary:</p>
-                    <p>• Request Type: {formData.intent === 'trade' ? `Trade-In ${formData.workingWithSalesperson === 'yes' && formData.salespersonName ? `(Salesperson: ${formData.salespersonName})` : ''}` : 'Outright Sale to SR1'}</p>
+                    <p>• Request Type: {formData.intent === 'trade' ? `Trade-In ${formData.workingWithSalesperson === 'yes' && formData.salespersonName ? `(Salesperson: ${formData.salespersonName})` : ''}` : `Outright Sale to SR1 ${formData.workingWithSalesperson === 'yes' && formData.salespersonName ? `(SR1 Team Member: ${formData.salespersonName})` : ''}`}</p>
                     <p>• {category === 'container' ? `Purchased: ${formData.year} | Box ID: ${formData.vinOrSerial || 'Pending'}` : `${formData.year} ${formData.make} ${formData.model}`}</p>
                     <p>• Category: {activeCatConfig.label}</p>
                     <p>• Photos: {photos.length} attached</p>
@@ -4797,7 +4808,7 @@
                             </span>
                           ) : (
                             <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-neutral-800 text-neutral-300 border border-neutral-700">
-                              💵 Sell
+                              💵 Sell {item.salespersonName ? `• ${item.salespersonName.split(' ')[0]}` : ''}
                             </span>
                           )}
                           <span className="text-[10px] uppercase font-semibold text-neutral-400">
@@ -5065,8 +5076,9 @@
                                 {item.salespersonName && <span>• {item.salespersonName.split(' ')[0]}</span>}
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-800 text-neutral-300 border border-neutral-700 inline-block">
-                                💵 Sell
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-800 text-neutral-300 border border-neutral-700 inline-flex items-center space-x-1" title={item.salespersonName ? `Outright Sale: SR1 Team Member ${item.salespersonName}` : 'Outright Sale'}>
+                                <span>💵 Sell</span>
+                                {item.salespersonName && <span>• {item.salespersonName.split(' ')[0]}</span>}
                               </span>
                             )}
                           </td>
@@ -5649,8 +5661,13 @@
                       )}
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-neutral-850 border border-neutral-750 text-neutral-300">
-                      💵 Outright Sale
+                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-neutral-850 border border-neutral-750 text-neutral-300 flex items-center gap-1">
+                      <span>💵 Outright Sale</span>
+                      {inquiry.salespersonName && (
+                        <span className="text-white bg-neutral-800 px-1.5 py-0.2 rounded text-[10px]">
+                          Team Member: {inquiry.salespersonName}
+                        </span>
+                      )}
                     </span>
                   )}
                   <h2 className="text-base font-bold text-white">
@@ -5926,9 +5943,11 @@
                         {inquiry.intent === 'trade' ? '🔄 Trade-In' : '💵 Outright Sale to SR1'}
                       </span>
                     </div>
-                    {inquiry.intent === 'trade' && (
+                    {(inquiry.intent === 'trade' || inquiry.salespersonName) && (
                       <div className="text-right">
-                        <span className="text-neutral-500 text-[10px] block">Assigned Salesperson</span>
+                        <span className="text-neutral-500 text-[10px] block">
+                          {inquiry.intent === 'trade' ? 'Assigned Salesperson' : 'SR1 Team Member'}
+                        </span>
                         <span className="font-semibold text-emerald-300">
                           {inquiry.salespersonName || 'Unassigned / Not listed'}
                         </span>

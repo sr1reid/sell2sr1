@@ -305,9 +305,10 @@ export async function onRequestPost({ request, env }) {
     const mileageHoursLabel = unit?.isHours ? 'Hours' : 'Mileage';
     const mileageHoursValue = unit?.mileageOrHours ? `${unit.mileageOrHours} ${unit.isHours ? 'hrs' : 'mi'}` : 'Not Specified';
     const transactionType = intent === 'trade' ? 'Trade-In on Purchase' : 'Outright Sale to SR1';
-    const salesperson = (intent === 'trade' && workingWithSalesperson === 'yes')
+    const salesperson = workingWithSalesperson === 'yes'
       ? (salespersonName || 'Pending Assignment')
       : 'Direct Appraisal Request';
+    const salespersonLabel = intent === 'trade' ? 'Assigned Salesperson' : 'SR1 Team Member';
     const location = preferredLocation || 'SR1 Dealership Network';
 
     // -------------------------------------------------------------------------
@@ -470,7 +471,7 @@ export async function onRequestPost({ request, env }) {
                       <tr>
                         <td colspan="2" class="stat-tile-wrap" style="vertical-align: top; padding: 0 0 12px 0;">
                           <div style="background-color: #f9fafb; border: 1px dashed #d1d5db; border-radius: 8px; padding: 12px 14px;">
-                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">Assigned Salesperson</div>
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">${salespersonLabel}</div>
                             <div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px;">${salesperson}</div>
                           </div>
                         </td>
@@ -586,8 +587,7 @@ ${unitTitle}
 - Category: ${unit?.category || 'Item'}
 ${unit?.mileageOrHours ? `- ${mileageHoursLabel}: ${mileageHoursValue}\n` : ''}- Transaction: ${transactionType}
 - Preferred Dealership: ${location}
-${salesperson !== 'Direct Appraisal Request' ? `- Assigned Salesperson: ${salesperson}\n` : ''}
-
+${salesperson !== 'Direct Appraisal Request' ? `- ${salespersonLabel}: ${salesperson}\n` : ''}
 WHAT TO EXPECT NEXT:
 1. Market Appraisal: Our appraisal team evaluates current book value, internal sales comps, auction comps, dealer network values, and your units condition details.
 2. Written Offer: We will reach out to you by text, call, or email with a competitive offer to purchase your unit or take it on trade.
@@ -609,7 +609,7 @@ SR1 Companies
       ? [...notificationEmails.filter(Boolean)]
       : [centralRecipient];
 
-    if (intent === 'trade' && workingWithSalesperson === 'yes') {
+    if (workingWithSalesperson === 'yes') {
       let spFirst = (salespersonFirstName || '').trim();
       let spLastInit = (salespersonLastInitial || '').trim();
       if ((!spFirst || !spLastInit) && salespersonName) {
@@ -729,7 +729,7 @@ SR1 Companies
           <tr><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Customer Location</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${customerLocation}</td></tr>
           <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Closest SR1 Dealership</td><td style="padding:8px 12px;color:#0f172a;font-weight:700;border-bottom:1px solid #e2e8f0;">${location}</td></tr>
           <tr><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Transaction Type</td><td style="padding:8px 12px;color:#0f172a;font-weight:700;border-bottom:1px solid #e2e8f0;">${transactionType}</td></tr>
-          <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;">Salesperson Assignment</td><td style="padding:8px 12px;color:#0f172a;">${ad.Working_With_Salesperson === 'YES' ? `YES — <strong>${ad.Salesperson_Name || salesperson}</strong>` : 'None / Direct Appraisal Request'}</td></tr>
+          <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;">${intent === 'trade' ? 'Salesperson Assignment' : 'SR1 Team Member'}</td><td style="padding:8px 12px;color:#0f172a;">${(ad.Working_With_Salesperson === 'YES' || workingWithSalesperson === 'yes') ? `YES — <strong>${ad.Salesperson_Name || salesperson}</strong>` : 'None / Direct Appraisal Request'}</td></tr>
         </table>
 
         <!-- 2. Unit Details & Condition -->
@@ -780,7 +780,7 @@ CUSTOMER DETAILS:
 - Phone: ${customerPhone} (Preferred: ${preferredContactMethod})
 - Email: ${customerEmailAddr}
 - Location: ${customerLocation}
-- Working with Salesperson: ${ad.Working_With_Salesperson || 'N/A'} (${ad.Salesperson_Name || salesperson})
+- Working with SR1 Team Member / Salesperson: ${ad.Working_With_Salesperson || (workingWithSalesperson === 'yes' ? 'YES' : 'NO')} (${ad.Salesperson_Name || salesperson})
 
 UNIT DETAILS:
 - Unit: ${ad.Unit_Description || unitTitle}
