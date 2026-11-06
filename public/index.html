@@ -2333,14 +2333,19 @@
 
       const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!formData.titleStatus) {
-          alert('Please select your title / loan status to proceed.');
-          setStep(3);
-          return;
-        }
         if (photos.length < 3) {
           alert('Please upload at least 3 photos of your unit before submitting.');
           setStep(3);
+          return;
+        }
+        if (!formData.conditionNotes?.trim()) {
+          alert('Please describe the condition of the unit and any flaws or issues.');
+          setStep(4);
+          return;
+        }
+        if (!formData.titleStatus) {
+          alert('Please select your title / loan status to proceed.');
+          setStep(5);
           return;
         }
         if (formData.workingWithSalesperson === 'yes') {
@@ -2718,18 +2723,24 @@
 
             {/* NEUTRAL STEPPER */}
             <div id="sell-form-card" className="bg-neutral-900 border border-neutral-800 rounded-xl p-2.5 sm:p-3 md:p-3.5 mb-8">
-              <div className="grid grid-cols-4 gap-1 sm:gap-2 text-center text-[10px] sm:text-xs md:text-sm font-semibold">
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 sm:gap-1.5 text-center text-[10px] sm:text-xs font-semibold">
                 <div className={`py-2 md:py-2.5 px-1 rounded-lg transition-all ${step >= 1 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
-                  <span>1. Category</span>
+                  <span>1. Deal Type</span>
                 </div>
                 <div className={`py-2 md:py-2.5 px-1 rounded-lg transition-all ${step >= 2 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
-                  <span>2. Details</span>
+                  <span>2. Unit Details</span>
                 </div>
                 <div className={`py-2 md:py-2.5 px-1 rounded-lg transition-all ${step >= 3 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
-                  <span>3. Condition</span>
+                  <span>3. Photos</span>
                 </div>
                 <div className={`py-2 md:py-2.5 px-1 rounded-lg transition-all ${step >= 4 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
-                  <span>4. Location</span>
+                  <span>4. Condition</span>
+                </div>
+                <div className={`py-2 md:py-2.5 px-1 rounded-lg transition-all ${step >= 5 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
+                  <span>5. Ownership</span>
+                </div>
+                <div className={`py-2 md:py-2.5 px-1 rounded-lg transition-all ${step >= 6 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
+                  <span>6. Contact Info</span>
                 </div>
               </div>
             </div>
@@ -2737,7 +2748,7 @@
             {/* INTAKE CARD */}
             <form onSubmit={handleSubmit} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 sm:p-8 lg:p-10 space-y-8">
               
-              {/* --- STEP 1: CATEGORY SELECTION (NO ICONS) --- */}
+              {/* --- STEP 1: DEAL TYPE & CATEGORY SELECTION (NO ICONS) --- */}
               {step === 1 && (
                 <div className="space-y-6 lg:space-y-7">
                   <div>
@@ -3125,103 +3136,19 @@
                         }}
                         className="px-6 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
                       >
-                        Continue to Condition & Photos →
+                        Continue to Photos →
                       </button>
                     </div>
                   </div>
                 );
               })()}
 
-              {/* --- STEP 3: CONDITION, TITLE & PHOTOS --- */}
+              {/* --- STEP 3: PHOTOS --- */}
               {step === 3 && (
                 <div className="space-y-6">
                   <div>
-                    <h2 className="text-lg font-bold text-white">Condition & Photos</h2>
-                    <p className="text-xs text-neutral-400 mt-0.5">Help our appraisal team evaluate condition and loan status accurately.</p>
-                  </div>
-
-                  {/* IMPORTANT INSPECTION NOTICE */}
-                  <div className="bg-amber-950/30 border border-amber-600/40 rounded-xl p-3.5 sm:p-4 text-left flex items-start gap-3">
-                    <span className="text-amber-400 text-base leading-none mt-0.5">⚠️</span>
-                    <div className="space-y-1">
-                      <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wide">Thorough Inspection Notice</h4>
-                      <p className="text-xs text-neutral-300 leading-relaxed">
-                        Our team thoroughly inspects all units before finalizing the purchase, so it is important that we are aware of any issues up front to prevent any surprises, value adjustments, or trust flags in our system.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Free Text Condition Field */}
-                  <div>
-                    <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                      Please describe the condition of the unit and any flaws or issues *
-                    </label>
-                    <textarea
-                      rows="4"
-                      required
-                      value={formData.conditionNotes}
-                      onChange={(e) => handleInputChange('conditionNotes', e.target.value)}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                    ></textarea>
-                  </div>
-
-                  {/* Title & Payoff */}
-                  <div className="bg-neutral-950/70 p-4 rounded-xl border border-neutral-800 space-y-4">
-                    <div>
-                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Title / Loan Status *</label>
-                      <select
-                        required
-                        value={formData.titleStatus}
-                        onChange={(e) => handleInputChange('titleStatus', e.target.value)}
-                        className={`w-full bg-neutral-900 border rounded-lg px-3 py-2 text-base sm:text-sm font-medium focus:ring-1 focus:ring-neutral-400 focus:outline-none ${
-                          !formData.titleStatus ? 'text-neutral-400 border-neutral-700' : 'text-white border-neutral-800'
-                        }`}
-                      >
-                        <option value="" disabled>Select title / loan status...</option>
-                        <option value="owned_not_titleable" className="text-white">Owned outright - not titleable</option>
-                        <option value="owned_clean_title" className="text-white">Owned outright - clean title in hand</option>
-                        <option value="financed_money_owed" className="text-white">Financed - money owed</option>
-                        <option value="other" className="text-white">Other</option>
-                      </select>
-                    </div>
-
-                    {formData.titleStatus === 'financed_money_owed' && (
-                      <div className="space-y-3 pt-1">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                          <div>
-                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                              Lien Holder / Lender Name *
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={formData.lienHolderName}
-                              onChange={(e) => handleInputChange('lienHolderName', e.target.value)}
-                              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-base sm:text-sm placeholder-neutral-500 focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                            />
-                            <p className="text-[11px] text-neutral-500 mt-1">Bank, credit union, or lender holding the loan.</p>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                              Estimated Loan Payoff Amount ($) *
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              required
-                              value={formData.estimatedPayoff}
-                              onChange={(e) => handleInputChange('estimatedPayoff', e.target.value)}
-                              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-base sm:text-sm placeholder-neutral-500 focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                            />
-                            <p className="text-[11px] text-neutral-500 mt-1">Approximate 10-day payoff balance.</p>
-                          </div>
-                        </div>
-                        <div className="p-3 bg-neutral-900/80 rounded-lg border border-neutral-800 text-[11px] text-neutral-400 flex items-start space-x-2">
-                          <span className="text-neutral-300 text-xs mt-0.5">ℹ️</span>
-                          <span>SR1 handles all loan payoffs directly with your lender. Any positive equity is paid directly to you. If you have negative equity, you would pay the difference to us, and we would handle the loan payoff.</span>
-                        </div>
-                      </div>
-                    )}
+                    <h2 className="text-lg font-bold text-white">Photos</h2>
+                    <p className="text-xs text-neutral-400 mt-0.5">Upload at least 3 clear photos of your unit so our appraisal team can evaluate it.</p>
                   </div>
 
                   {/* PHOTOS & VIDEOS DROPZONE */}
@@ -3338,10 +3265,168 @@
                           alert('Please wait for photos to finish uploading to cloud storage before continuing.');
                           return;
                         }
+                        if (photos.length < 3) {
+                          alert('Please upload at least 3 photos of your unit before continuing.');
+                          return;
+                        }
+                        setStep(4);
+                        scrollToFormTop();
+                      }}
+                      className={`px-6 py-3 font-bold text-xs rounded-xl transition-all ${
+                        uploading 
+                          ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700' 
+                          : 'bg-neutral-100 hover:bg-white text-neutral-950'
+                      }`}
+                    >
+                      {uploading ? 'Uploading Media...' : 'Continue to Condition →'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* --- STEP 4: CONDITION --- */}
+              {step === 4 && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Condition</h2>
+                    <p className="text-xs text-neutral-400 mt-0.5">Help our appraisal team evaluate your unit's condition accurately.</p>
+                  </div>
+
+                  {/* IMPORTANT INSPECTION NOTICE */}
+                  <div className="bg-amber-950/30 border border-amber-600/40 rounded-xl p-3.5 sm:p-4 text-left flex items-start gap-3">
+                    <span className="text-amber-400 text-base leading-none mt-0.5">⚠️</span>
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wide">Thorough Inspection Notice</h4>
+                      <p className="text-xs text-neutral-300 leading-relaxed">
+                        Our team thoroughly inspects all units before finalizing the purchase, so it is important that we are aware of any issues up front to prevent any surprises, value adjustments, or trust flags in our system.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Free Text Condition Field */}
+                  <div>
+                    <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                      Please describe the condition of the unit and any flaws or issues *
+                    </label>
+                    <textarea
+                      rows="4"
+                      required
+                      value={formData.conditionNotes}
+                      onChange={(e) => handleInputChange('conditionNotes', e.target.value)}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                    ></textarea>
+                  </div>
+
+                  <div className="pt-4 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStep(3);
+                        scrollToFormTop();
+                      }}
+                      className="px-4 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
                         if (!formData.conditionNotes.trim()) {
                           alert('Please describe the condition of the unit and any flaws or issues');
                           return;
                         }
+                        setStep(5);
+                        scrollToFormTop();
+                      }}
+                      className="px-6 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
+                    >
+                      Continue to Ownership →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* --- STEP 5: OWNERSHIP --- */}
+              {step === 5 && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Ownership</h2>
+                    <p className="text-xs text-neutral-400 mt-0.5">Provide the current title or loan status for your unit.</p>
+                  </div>
+
+                  {/* Title & Payoff */}
+                  <div className="bg-neutral-950/70 p-4 rounded-xl border border-neutral-800 space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Title / Loan Status *</label>
+                      <select
+                        required
+                        value={formData.titleStatus}
+                        onChange={(e) => handleInputChange('titleStatus', e.target.value)}
+                        className={`w-full bg-neutral-900 border rounded-lg px-3 py-2 text-base sm:text-sm font-medium focus:ring-1 focus:ring-neutral-400 focus:outline-none ${
+                          !formData.titleStatus ? 'text-neutral-400 border-neutral-700' : 'text-white border-neutral-800'
+                        }`}
+                      >
+                        <option value="" disabled>Select title / loan status...</option>
+                        <option value="owned_not_titleable" className="text-white">Owned outright - not titleable</option>
+                        <option value="owned_clean_title" className="text-white">Owned outright - clean title in hand</option>
+                        <option value="financed_money_owed" className="text-white">Financed - money owed</option>
+                        <option value="other" className="text-white">Other</option>
+                      </select>
+                    </div>
+
+                    {formData.titleStatus === 'financed_money_owed' && (
+                      <div className="space-y-3 pt-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                              Lien Holder / Lender Name *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={formData.lienHolderName}
+                              onChange={(e) => handleInputChange('lienHolderName', e.target.value)}
+                              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-base sm:text-sm placeholder-neutral-500 focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            />
+                            <p className="text-[11px] text-neutral-500 mt-1">Bank, credit union, or lender holding the loan.</p>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                              Estimated Loan Payoff Amount ($) *
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              required
+                              value={formData.estimatedPayoff}
+                              onChange={(e) => handleInputChange('estimatedPayoff', e.target.value)}
+                              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white text-base sm:text-sm placeholder-neutral-500 focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            />
+                            <p className="text-[11px] text-neutral-500 mt-1">Approximate 10-day payoff balance.</p>
+                          </div>
+                        </div>
+                        <div className="p-3 bg-neutral-900/80 rounded-lg border border-neutral-800 text-[11px] text-neutral-400 flex items-start space-x-2">
+                          <span className="text-neutral-300 text-xs mt-0.5">ℹ️</span>
+                          <span>SR1 handles all loan payoffs directly with your lender. Any positive equity is paid directly to you. If you have negative equity, you would pay the difference to us, and we would handle the loan payoff.</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-4 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStep(4);
+                        scrollToFormTop();
+                      }}
+                      className="px-4 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
                         if (!formData.titleStatus) {
                           alert('Please select your title / loan status to continue.');
                           return;
@@ -3356,30 +3441,22 @@
                             return;
                           }
                         }
-                        if (photos.length < 3) {
-                          alert('Please upload at least 3 photos of your unit before continuing.');
-                          return;
-                        }
-                        setStep(4);
+                        setStep(6);
                         scrollToFormTop();
                       }}
-                      className={`px-6 py-3 font-bold text-xs rounded-xl transition-all ${
-                        uploading 
-                          ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700' 
-                          : 'bg-neutral-100 hover:bg-white text-neutral-950'
-                      }`}
+                      className="px-6 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
                     >
-                      {uploading ? 'Uploading Media...' : 'Continue to Location & Contact →'}
+                      Continue to Contact Info →
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* --- STEP 4: CONTACT & LOCATION SELECTION --- */}
-              {step === 4 && (
+              {/* --- STEP 6: CONTACT INFO --- */}
+              {step === 6 && (
                 <div className="space-y-6">
                   <div>
-                    <h2 className="text-lg font-bold text-white">Contact & Location</h2>
+                    <h2 className="text-lg font-bold text-white">Contact Info</h2>
                     <p className="text-xs text-neutral-400 mt-0.5">Where is the unit located and which SR1 store is most convenient?</p>
                   </div>
 
@@ -3524,7 +3601,7 @@
                     <button
                       type="button"
                       onClick={() => {
-                        setStep(3);
+                        setStep(5);
                         scrollToFormTop();
                       }}
                       className="px-4 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
