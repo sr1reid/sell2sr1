@@ -738,6 +738,8 @@
       // Second character of WMI is never '0', and 'WE' is not a valid WMI (common dropped-'5' OCR misread of '5WF' -> 'WEF')
       if (vin[1] === '0') return false;
       if (vin[0] === 'W' && vin[1] === 'E') return false;
+      // North American WMIs starting with 1,2,3,4,5,7 have a letter [A-Z] in position 2 (except '19' for US Honda/Acura); rejects '33...' barcode noise
+      if (/^[123457]/.test(vin[0]) && !/^[A-Z]/.test(vin[1]) && !(vin[0] === '1' && vin[1] === '9')) return false;
       // Validate import country WMI 2-character prefixes per ISO 3779 (rejects crack noise like "KEV..." in "KEVADUGE11D578115")
       if (vin[0] === 'J' && !/^[A-HJ-NPR-TY]/.test(vin[1])) return false;
       if (vin[0] === 'K' && !/^[LMNPR]/.test(vin[1])) return false;
@@ -987,12 +989,37 @@
     // Stitch start-anchored (*prefix) and stop-anchored (suffix*) Code 39 barcode fragments across scanlines
     const stitchBarcodeFragments = (fragments) => {
       if (!fragments || fragments.length === 0) return '';
-      const starts = fragments.filter((f) => f.hasStartStar && f.text && f.text.length >= 5 && f.text.length <= 16);
-      const stops = fragments.filter((f) => f.hasStopStar && f.text && f.text.length >= 5 && f.text.length <= 16);
+      const starts = fragments.filter(
+        (f) =>
+          f.hasStartStar &&
+          !f.hasStopStar &&
+          (f.hits || 1) >= 3 &&
+          f.text &&
+          f.text.length >= 5 &&
+          f.text.length <= 16 &&
+          !fragments.some((s) => s.hasStopStar && (s.text === f.text || s.text === f.text.slice(1)))
+      );
+      const stops = fragments.filter(
+        (f) => f.hasStopStar && !f.hasStartStar && (f.hits || 1) >= 3 && f.text && f.text.length >= 7 && f.text.length <= 16
+      );
       if (starts.length === 0 || stops.length === 0) return '';
+
+      // Any stitched 17-char VIN must agree with the longest reliable (hits >= 3) stop-anchored suffix decoded from the barcode
+      // (prevents a short sub-suffix like "29LN814218*" from contradicting a 15-char stop-anchored read like "9D7EF29LN814218*")
+      let longestReliableStop = stops[0];
+      for (let i = 1; i < stops.length; i++) {
+        if (
+          stops[i].text.length > longestReliableStop.text.length ||
+          (stops[i].text.length === longestReliableStop.text.length && (stops[i].hits || 1) > (longestReliableStop.hits || 1))
+        ) {
+          longestReliableStop = stops[i];
+        }
+      }
+      const requiredSuffix = posNormalizeVin17(longestReliableStop.text);
 
       const candidateScores = new Map();
       const addScore = (vin, sc) => {
+        if (!vin || !vin.endsWith(requiredSuffix)) return;
         if (!isValidNorthAmericanVin(vin)) return;
         candidateScores.set(vin, (candidateScores.get(vin) || 0) + sc);
       };
@@ -1043,19 +1070,48 @@
       if (!ocrText) return '';
       const upper = normalizeVinOcrChars(ocrText);
       const rawTokens = upper.match(/[A-Z0-9]{4,24}/g) || [];
-      // Also collect compact strings right after V.I.N / N.I.V. labels
+      // Also collect compact strings right after V.I.N / N.I.V. labels (including optional "(SERIAL NO.)")
       const labeledMatches = [];
-      const lblRe = /(?:V\.?\s*I\.?\s*N\.?|N\.?\s*I\.?\s*V\.?)\s*[\s:#.\-\/;]*([A-Z0-9][A-Z0-9 \-.]{5,28})/gi;
+      const lblRe = /(?:V\.?\s*I\.?\s*N\.?|N\.?\s*I\.?\s*V\.?)(?:\s*\(?SERIAL\s*(?:NO\.?|NUMBER|#)\)?)?\s*[\s:#.\-\/;]*([A-Z0-9][A-Z0-9 \-.]{3,28})/gi;
       let lm;
       while ((lm = lblRe.exec(upper)) !== null) {
         const comp = normalizeVinOcrChars(lm[1]).replace(/[^A-HJ-NPR-Z0-9]/g, '');
-        if (comp.length >= 4) labeledMatches.push(comp);
+        if (comp.length >= 2) labeledMatches.push(comp);
       }
       const allOcrPieces = [...labeledMatches, ...rawTokens.map((t) => t.replace(/[^A-HJ-NPR-Z0-9]/g, '')).filter((t) => t.length >= 4)];
 
-      for (let f = 0; f < barcodeFragments.length; f++) {
-        const fragObj = barcodeFragments[f];
-        const frag = normalizeVinOcrChars(fragObj.text || '').replace(/[^A-HJ-NPR-Z0-9]/g, '');
+      // Order fragments so high-hit, long stop/start anchored fragments (like "9D7EF29LN814218*" with 47 hits) run first,
+      // and ignore 1-hit noisy scrape extensions whose suffix already has >=5 hits
+      const sortedFragments = [...barcodeFragments]
+        .filter((f) => {
+          if ((f.hits || 1) === 1 && f.text && f.text.length >= 10) {
+            const suf1 = f.text.slice(1);
+            const suf2 = f.text.slice(2);
+            if (barcodeFragments.some((other) => (other.text === suf1 || other.text === suf2) && (other.hits || 1) >= 5)) {
+              return false;
+            }
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          const scoreA = (a.hasStopStar || a.hasStartStar ? 500 : 0) + (a.text?.length || 0) * 25 + Math.min(a.hits || 1, 50) * 8;
+          const scoreB = (b.hasStopStar || b.hasStartStar ? 500 : 0) + (b.text?.length || 0) * 25 + Math.min(b.hits || 1, 50) * 8;
+          return scoreB - scoreA;
+        });
+
+      const prefixLookalikes = {
+        ...VIN_SECONDARY_SWAPS,
+        L: ['1'],
+        I: ['1'],
+        T: ['1', '7'],
+        '0': ['D', '8', '9'],
+        O: ['D', '0'],
+        Q: ['D', '0']
+      };
+
+      for (let f = 0; f < sortedFragments.length; f++) {
+        const fragObj = sortedFragments[f];
+        const frag = posNormalizeVin17(normalizeVinOcrChars(fragObj.text || '').replace(/[^A-HJ-NPR-Z0-9]/g, ''));
         if (frag.length < 5 || frag.length > 17) continue;
         if (frag.length === 17) {
           const v = tryRepairSingleOcrSlipVin(frag, true);
@@ -1098,9 +1154,37 @@
                   if (piece[s + offset + k] === fragOverlap[k]) matches++;
                 }
                 if (matches >= Math.max(2, cmpLen - 1)) {
-                  const candidate17 = piece.slice(s, s + offset) + frag;
+                  const candidate17 = posNormalizeVin17(piece.slice(s, s + offset) + frag);
+                  if (isValidNorthAmericanVin(candidate17)) return candidate17;
+                  // First try repairing 1-char OCR slips strictly inside the OCR-derived prefix (0..offset-1), preserving the barcode suffix `frag`
+                  for (let idx = 0; idx < offset; idx++) {
+                    const alts = prefixLookalikes[candidate17[idx]] || [];
+                    for (let k = 0; k < alts.length; k++) {
+                      const cand = candidate17.slice(0, idx) + alts[k] + candidate17.slice(idx + 1);
+                      if (isValidNorthAmericanVin(cand)) return cand;
+                    }
+                  }
                   const repaired = tryRepairSingleOcrSlipVin(candidate17, true);
                   if (repaired) return repaired;
+                }
+              }
+            }
+
+            // 1b. If `frag` is a long stop-anchored barcode suffix (14-16 chars, e.g. "9D7EF29LN814218*" with offset = 2),
+            // also check labeled VIN prefixes even if OCR split the line right after the first 2-3 characters
+            if (offset <= 3 && fragObj.hasStopStar && (fragObj.hits || 1) >= 5) {
+              for (let lp = 0; lp < labeledMatches.length; lp++) {
+                const lblPiece = labeledMatches[lp];
+                if (lblPiece.length >= offset) {
+                  const candidate17 = posNormalizeVin17(lblPiece.slice(0, offset) + frag);
+                  if (isValidNorthAmericanVin(candidate17)) return candidate17;
+                  for (let idx = 0; idx < offset; idx++) {
+                    const alts = prefixLookalikes[candidate17[idx]] || [];
+                    for (let k = 0; k < alts.length; k++) {
+                      const cand = candidate17.slice(0, idx) + alts[k] + candidate17.slice(idx + 1);
+                      if (isValidNorthAmericanVin(cand)) return cand;
+                    }
+                  }
                 }
               }
             }
@@ -1386,7 +1470,7 @@
       }
 
       // 1. Check explicitly labeled VIN / N.I.V. / PIN lines (handles "V.I.N.. : 1D9D7EF29LN814218", "V.I.N / N.I.V. 4P53F3729V3074758", "VIN: 5NHUPAZ29GW059298")
-      const labeledVinRegex = /(?:V\.?\s*I\.?\s*N\.?|N\.?\s*I\.?\s*V\.?|VEHICLE\s+IDENTIFICATION(?:\s+(?:NO\.?|NUMBER|#))?|P\.?\s*I\.?\s*N\.?)(?:\s*[\/\\|]\s*(?:N\.?\s*I\.?\s*V\.?|V\.?\s*I\.?\s*N\.?))?(?:\s*(?:NO\.?|NUMBER|#))?[\s:#.\-\/;]*([A-Z0-9][A-Z0-9 \-.]{13,30})/g;
+      const labeledVinRegex = /(?:V\.?\s*I\.?\s*N\.?|N\.?\s*I\.?\s*V\.?|VEHICLE\s+IDENTIFICATION(?:\s+(?:NO\.?|NUMBER|#))?|P\.?\s*I\.?\s*N\.?)(?:\s*[\/\\|]\s*(?:N\.?\s*I\.?\s*V\.?|V\.?\s*I\.?\s*N\.?))?(?:\s*\(?(?:SERIAL\s*)?(?:NO\.?|NUMBER|#)\)?)?[\s:#.\-\/;]*([A-Z0-9][A-Z0-9 \-.]{13,30})/g;
       let m;
       while ((m = labeledVinRegex.exec(upper)) !== null) {
         const rawCandidate = m[1].replace(/^(?:N\.?\s*I\.?\s*V\.?|V\.?\s*I\.?\s*N\.?)[\s:#.\-\/;]*/, '');
@@ -2025,9 +2109,10 @@
             const vinLeftTextCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.58, 0.32, 1600, false);
             const isCrazedSticker = isSeverelyCrazedStickerCanvas(vinLeftTextCanvas);
             // Scrape & mildew-erased ink-isolated crops turn medium-gray scrapes & mildew into pure white (IMG_4623, IMG_1689)
+            const inkIsolatedLeftLineErased = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, true);
             const inkIsolatedLeftCanvas = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, false);
             const inkIsolatedCenterCanvas = createInkIsolatedCanvas(stickerCenterCanvas, 0.42, false);
-            const inkIsolatedBandCanvas = createInkIsolatedCanvas(vinBandCanvas, 0.42, false);
+            const inkIsolatedBandCanvas = createInkIsolatedCanvas(vinBandCanvas, 0.42, true);
             // Local contrast-normalized crops restore faded thermal print on metallic tags (IMG_2044) & boost barcodes
             const localContrastLeftCanvas = createLocalContrastCanvas(vinLeftTextCanvas);
             const localContrastBandCanvas = createLocalContrastCanvas(vinBandCanvas);
@@ -2064,6 +2149,7 @@
                     fullCanvas
                   ]
                 : [
+                    inkIsolatedLeftLineErased,
                     vinLeftTextCanvas,
                     inkIsolatedLeftCanvas,
                     inkIsolatedCenterCanvas,
