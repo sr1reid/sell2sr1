@@ -7133,7 +7133,7 @@
         return (
           <div className="py-10 sm:py-16 max-w-xl mx-auto px-4">
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
-              {/* Portal Type Switcher Pill */}
+              {/* Portal Type Badge */}
               <div className="flex items-center justify-between gap-2 pb-4 border-b border-neutral-850">
                 <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
                   isBankPortal
@@ -7142,13 +7142,6 @@
                 }`}>
                   {portalBadge}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => onSwitchPortalType(isBankPortal ? 'dealer' : 'bank')}
-                  className="text-[11px] text-neutral-400 hover:text-white underline cursor-pointer"
-                >
-                  Switch to {isBankPortal ? 'Dealer Portal' : 'Bank / Credit Union Portal'} →
-                </button>
               </div>
 
               <div className="space-y-1.5">
