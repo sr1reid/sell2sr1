@@ -738,11 +738,22 @@
       // Second character of WMI is never '0', and 'WE' is not a valid WMI (common dropped-'5' OCR misread of '5WF' -> 'WEF')
       if (vin[1] === '0') return false;
       if (vin[0] === 'W' && vin[1] === 'E') return false;
-      if (vin[0] === 'Y' && !/^[STUVW]/.test(vin[1])) return false;
-      // Reject 'S' WMI lookalikes where US '5' WMI ('5NH', '5RH', '5WF', '5ZT', '5SF', '5VG', '5JX', '5KT', '50'-'59') had '5' misread as 'S'
-      if (vin[0] === 'S' && /^(?:R|NH|WF|ZT|SF|VG|JX|KT|HV|\d)/.test(vin.slice(1, 4))) return false;
-      // Last 5 characters (positions 13-17) of standard 17-char VINs are sequential production digits
+      // Validate import country WMI 2-character prefixes per ISO 3779 (rejects crack noise like "KEV..." in "KEVADUGE11D578115")
+      if (vin[0] === 'J' && !/^[A-HJ-NPR-TY]/.test(vin[1])) return false;
+      if (vin[0] === 'K' && !/^[LMNPR]/.test(vin[1])) return false;
+      if (vin[0] === 'S' && (!/^[A-HJ-M]/.test(vin[1]) || /^(?:R|NH|WF|ZT|SF|VG|JX|KT|HV|\d)/.test(vin.slice(1, 4)))) return false;
+      if (vin[0] === 'T' && !/^[MNP-W]/.test(vin[1])) return false;
+      if (vin[0] === 'V' && !/^[A-HJ-NPR-W]/.test(vin[1])) return false;
+      if (vin[0] === 'W' && !/^[ABDFGMPUVW01]/.test(vin[1])) return false;
+      if (vin[0] === 'Y' && !/^[HSTUVW]/.test(vin[1])) return false;
+      if (vin[0] === 'Z' && !/^[A-HJ-NPR]/.test(vin[1])) return false;
+      // Positions 4-8 (VDS, vin.slice(3, 8)) must contain at least 1 digit (rejects 8-letter word runs like "KEVADUGE...")
+      const vds = vin.slice(3, 8);
+      if (!/\d/.test(vds)) return false;
+      if (/^[123457]/.test(vin[0]) && !/[A-Z]/.test(vds)) return false;
+      // Last 5 characters (positions 13-17) of standard 17-char VINs are sequential production digits (reject 4+ identical digits like "1111")
       if (!/\d{5}$/.test(vin)) return false;
+      if (/(.)\1{3}/.test(vin.slice(12, 17))) return false;
       const digitCount = (vin.match(/\d/g) || []).length;
       const letterCount = (vin.match(/[A-Z]/g) || []).length;
       if (digitCount < 5 || letterCount < 2) return false;
@@ -773,6 +784,21 @@
       S: '5',
       G: '6',
       B: '8'
+    };
+
+    // Verifies that a raw 17-char candidate already has credible digits before posNormalizeVin17 converts lookalike letters (D,L,Z,S,G,B) into digits
+    const hasCredibleRawVinDigits = (raw17, isLabeledLine = false) => {
+      const s = normalizeVinOcrChars(raw17);
+      if (s.length !== 17) return false;
+      const totalDigits = (s.match(/\d/g) || []).length;
+      const totalLetters = (s.match(/[A-Z]/g) || []).length;
+      const tail5Digits = (s.slice(12, 17).match(/\d/g) || []).length;
+      const tail6Digits = (s.slice(11, 17).match(/\d/g) || []).length;
+      if (totalLetters < 3) return false;
+      if (isLabeledLine) {
+        return totalDigits >= 5 && tail5Digits >= 3 && tail6Digits >= 4;
+      }
+      return totalDigits >= 6 && tail5Digits >= 4 && tail6Digits >= 5;
     };
 
     // Normalizes position 9 (check digit) and positions 12-17 (sequential serial number digits)
@@ -811,7 +837,7 @@
       N: ['R', 'M']
     };
 
-    const trySwapsWithMap = (base, swapMap, allowThreeSwaps = false) => {
+    const trySwapsWithMap = (base, swapMap, allowTwoSwaps = true) => {
       // Order indices from trailing serial digits (16..11) first, then descriptor/plant (10..0)
       const orderedIndices = [16, 15, 14, 13, 12, 11, 10, 9, 7, 6, 5, 4, 3, 2, 1, 0];
 
@@ -825,55 +851,24 @@
           if (isValidNorthAmericanVin(candidate)) return candidate;
         }
       }
-      // 2-character OCR slip repair
-      for (let ii = 0; ii < orderedIndices.length; ii++) {
-        const i = orderedIndices[ii];
-        const altsI = swapMap[base[i]];
-        if (!altsI) continue;
-        for (let jj = ii + 1; jj < orderedIndices.length; jj++) {
-          const j = orderedIndices[jj];
-          const altsJ = swapMap[base[j]];
-          if (!altsJ) continue;
-          const [p1, p2] = i < j ? [i, j] : [j, i];
-          const [a1, a2] = i < j ? [altsI, altsJ] : [altsJ, altsI];
-          for (let k1 = 0; k1 < a1.length; k1++) {
-            for (let k2 = 0; k2 < a2.length; k2++) {
-              const candidate = base.slice(0, p1) + a1[k1] + base.slice(p1 + 1, p2) + a2[k2] + base.slice(p2 + 1);
-              if (isValidNorthAmericanVin(candidate)) return candidate;
-            }
-          }
-        }
-      }
-      // Optional 3-character OCR slip repair (used only on explicitly labeled V.I.N lines or barcode-anchored candidates)
-      if (allowThreeSwaps) {
+      // 2-character OCR slip repair (only allowed on labeled VIN lines or barcode-anchored candidates; never 3+ swaps)
+      if (allowTwoSwaps) {
         for (let ii = 0; ii < orderedIndices.length; ii++) {
           const i = orderedIndices[ii];
-          if (!swapMap[base[i]]) continue;
+          const altsI = swapMap[base[i]];
+          if (!altsI) continue;
           for (let jj = ii + 1; jj < orderedIndices.length; jj++) {
             const j = orderedIndices[jj];
-            if (!swapMap[base[j]]) continue;
-            for (let mm = jj + 1; mm < orderedIndices.length; mm++) {
-              const m = orderedIndices[mm];
-              if (!swapMap[base[m]]) continue;
-              const sorted = [i, j, m].sort((a, b) => a - b);
-              const [p1, p2, p3] = sorted;
-              const a1 = swapMap[base[p1]];
-              const a2 = swapMap[base[p2]];
-              const a3 = swapMap[base[p3]];
-              for (let k1 = 0; k1 < Math.min(3, a1.length); k1++) {
-                for (let k2 = 0; k2 < Math.min(3, a2.length); k2++) {
-                  for (let k3 = 0; k3 < Math.min(3, a3.length); k3++) {
-                    const candidate =
-                      base.slice(0, p1) +
-                      a1[k1] +
-                      base.slice(p1 + 1, p2) +
-                      a2[k2] +
-                      base.slice(p2 + 1, p3) +
-                      a3[k3] +
-                      base.slice(p3 + 1);
-                    if (isValidNorthAmericanVin(candidate)) return candidate;
-                  }
-                }
+            const altsJ = swapMap[base[j]];
+            if (!altsJ) continue;
+            // Require at least one of the two swapped characters to be a primary lookalike
+            if (!VIN_PRIMARY_SWAPS[base[i]] && !VIN_PRIMARY_SWAPS[base[j]]) continue;
+            const [p1, p2] = i < j ? [i, j] : [j, i];
+            const [a1, a2] = i < j ? [altsI, altsJ] : [altsJ, altsI];
+            for (let k1 = 0; k1 < a1.length; k1++) {
+              for (let k2 = 0; k2 < a2.length; k2++) {
+                const candidate = base.slice(0, p1) + a1[k1] + base.slice(p1 + 1, p2) + a2[k2] + base.slice(p2 + 1);
+                if (isValidNorthAmericanVin(candidate)) return candidate;
               }
             }
           }
@@ -882,13 +877,18 @@
       return null;
     };
 
-    const tryRepairSingleOcrSlipVin = (raw17, allowThreeSwaps = false) => {
+    const tryRepairSingleOcrSlipVin = (raw17, isLabeledOrAnchored = false) => {
+      if (!hasCredibleRawVinDigits(raw17, isLabeledOrAnchored)) return null;
       const base = posNormalizeVin17(raw17);
       if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(base)) return null;
       if (isValidNorthAmericanVin(base)) return base;
+      if (!isLabeledOrAnchored) {
+        // On unlabeled lines, allow at most 1 primary lookalike swap
+        return trySwapsWithMap(base, VIN_PRIMARY_SWAPS, false);
+      }
       return (
-        trySwapsWithMap(base, VIN_PRIMARY_SWAPS, false) ||
-        trySwapsWithMap(base, VIN_SECONDARY_SWAPS, allowThreeSwaps)
+        trySwapsWithMap(base, VIN_PRIMARY_SWAPS, true) ||
+        trySwapsWithMap(base, VIN_SECONDARY_SWAPS, true)
       );
     };
 
@@ -898,7 +898,7 @@
       if (clean.length !== 18) return null;
       for (let dropIdx = 0; dropIdx < 18; dropIdx++) {
         const sub17 = clean.slice(0, dropIdx) + clean.slice(dropIdx + 1);
-        const repaired = tryRepairSingleOcrSlipVin(sub17, false);
+        const repaired = tryRepairSingleOcrSlipVin(sub17, true);
         if (repaired) return repaired;
       }
       return null;
@@ -907,6 +907,7 @@
     // Repairs explicitly labeled VINs where weathering/stroke-thinning caused multiple lookalike confusions
     // (e.g. "5NHUPAZ29GW059298" read as "SRHVP4Z20GW059208", optionally cross-referenced against 6-digit unit serials like "PAW059298")
     const tryRepairStrokeThinnedLabeledVin = (raw17, fullUpperText = '') => {
+      if (!hasCredibleRawVinDigits(raw17, true)) return null;
       const base = posNormalizeVin17(raw17);
       if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(base)) return null;
       if (isValidNorthAmericanVin(base)) return base;
@@ -952,19 +953,20 @@
         }
       }
 
+      if (strokeFixes === 0 && !serialFixedFromTag) return null;
+
       const normalizedCandidate = chars.join('');
       if (isValidNorthAmericanVin(normalizedCandidate)) return normalizedCandidate;
 
-      // 5. If multiple horizontal-stroke thinnings occurred (e.g. 5->S, N->R, U->V, A->4) and check digit at index 8 is '0' or '8',
-      // test restoring thinned '9' -> '0' at index 8 (and in trailing serial digits 12..16) BEFORE generic swaps
+      // 5. Test restoring a single thinned check-digit lookalike at index 8 (e.g. '8'->'9' or '0'->'9');
+      // only allow a simultaneous check-digit + serial-digit '0'->'9' pair when >= 3 horizontal-stroke thinnings occurred or serial was tag-corroborated
       const checkLookalikes = { '0': ['9', '8'], '8': ['9', '0', '3'], '9': ['0', '8'], '5': ['6', '8'], '2': ['7'] };
       const checkAlts = checkLookalikes[chars[8]] || [];
-      if ((strokeFixes >= 2 || serialFixedFromTag) && /^[1-57]/.test(chars[0])) {
+      if (strokeFixes >= 1 && /^[1-57]/.test(chars[0])) {
         for (let c = 0; c < checkAlts.length; c++) {
           const withCheck = normalizedCandidate.slice(0, 8) + checkAlts[c] + normalizedCandidate.slice(9);
           if (isValidNorthAmericanVin(withCheck)) return withCheck;
-          // If '9' was thinned to '0' at the check digit, check if a '0' in serial positions 12..16 was also a thinned '9'
-          if (chars[8] === '0' && checkAlts[c] === '9') {
+          if ((strokeFixes >= 3 || serialFixedFromTag) && chars[8] === '0' && checkAlts[c] === '9') {
             for (let sIdx = 15; sIdx >= 12; sIdx--) {
               if (withCheck[sIdx] === '0') {
                 const withBoth9 = withCheck.slice(0, sIdx) + '9' + withCheck.slice(sIdx + 1);
@@ -972,23 +974,14 @@
               }
             }
           }
-          const swapped = trySwapsWithMap(withCheck, VIN_SECONDARY_SWAPS, false);
-          if (swapped) return swapped;
+          if (strokeFixes >= 3 || serialFixedFromTag) {
+            const swapped = trySwapsWithMap(withCheck, VIN_SECONDARY_SWAPS, false);
+            if (swapped) return swapped;
+          }
         }
       }
 
-      const directRepair = tryRepairSingleOcrSlipVin(normalizedCandidate, true);
-      if (directRepair) return directRepair;
-
-      if (/^[1-57]/.test(chars[0])) {
-        for (let c = 0; c < checkAlts.length; c++) {
-          const withCheck = normalizedCandidate.slice(0, 8) + checkAlts[c] + normalizedCandidate.slice(9);
-          if (isValidNorthAmericanVin(withCheck)) return withCheck;
-          const swapped = trySwapsWithMap(withCheck, VIN_SECONDARY_SWAPS, false);
-          if (swapped) return swapped;
-        }
-      }
-      return null;
+      return tryRepairSingleOcrSlipVin(normalizedCandidate, true);
     };
 
     // Stitch start-anchored (*prefix) and stop-anchored (suffix*) Code 39 barcode fragments across scanlines
@@ -1341,31 +1334,20 @@
           tok = tok.slice(1);
         }
         if (tok.length === 17) {
-          const repaired = tryRepairSingleOcrSlipVin(tok);
+          const repaired = tryRepairSingleOcrSlipVin(tok, true);
           if (repaired) return repaired;
-          const norm = posNormalizeVin17(tok);
-          const digits = (norm.match(/\d/g) || []).length;
-          const letters = (norm.match(/[A-Z]/g) || []).length;
-          if (/^[A-HJ-NPR-Z0-9]{17}$/.test(norm) && !VIN_SPEC_NOISE_REGEX.test(norm) && digits >= 4 && letters >= 2) return norm;
         }
       }
 
       const cleaned = strippedPrefix.replace(/[^A-Z0-9]/g, '');
       if (cleaned.length === 18 && cleaned.startsWith('I')) {
         const sub17 = posNormalizeVin17(cleaned.slice(1));
-        if (/^[A-HJ-NPR-Z0-9]{17}$/.test(sub17) && !VIN_SPEC_NOISE_REGEX.test(sub17)) return sub17;
+        if (isValidNorthAmericanVin(sub17)) return sub17;
       }
       // Sliding 17-char check for valid NHTSA check-digit VIN inside longer DataMatrix/QR/Code128 payloads
       for (let i = 0; i <= cleaned.length - 17; i++) {
         const slice17 = posNormalizeVin17(cleaned.slice(i, i + 17));
         if (isValidNorthAmericanVin(slice17)) return slice17;
-      }
-      const match17 = cleaned.match(/[A-HJ-NPR-Z0-9]{17}/);
-      if (match17) {
-        const v = posNormalizeVin17(match17[0]);
-        const digits = (v.match(/\d/g) || []).length;
-        const letters = (v.match(/[A-Z]/g) || []).length;
-        if (!VIN_SPEC_NOISE_REGEX.test(v) && digits >= 4 && letters >= 2) return v;
       }
       if (categoryKey === 'container') {
         const isoMatch = cleaned.match(/[A-Z]{3}[UJZ]\d{6,7}/);
@@ -1378,7 +1360,7 @@
       return '';
     };
 
-    const extractVinOrSerialFromOcrText = (rawText, categoryKey, barcodeFragments = [], requireValidCheckDigit = false) => {
+    const extractVinOrSerialFromOcrText = (rawText, categoryKey, barcodeFragments = [], isCrazedSticker = false) => {
       if (!rawText) return '';
       const upper = String(rawText).toUpperCase();
       const hasTagContext = /\b(V\.?\s*I\.?\s*N\.?|N\.?\s*I\.?\s*V\.?|VEHICLE\s+IDENTIFICATION|IDENTIFICATION\s+NUMBER|GVWR|GAWR|PNBV|MFD\s+BY|MFG\s+BY|FABRIQUE|MANUFACTURED|CONFORMS\s+TO|TRAILER|SERIAL\s*(?:NO|NUMBER|#)|P\.?I\.?N\.?|PRODUCT\s+IDENTIFICATION|HULL\s+ID)/i.test(upper);
@@ -1387,6 +1369,20 @@
       if (barcodeFragments && barcodeFragments.length > 0) {
         const fused = fuseBarcodeFragmentsWithOcr(upper, barcodeFragments);
         if (fused) return fused;
+      }
+
+      // If the sticker surface is severely spiderweb-crazed/cracked with no barcode fragments (e.g. 20261009_163835.jpg),
+      // only accept an exact 0-swap valid check-digit VIN on an explicitly labeled V.I.N./N.I.V. line; never guess across cracks
+      if (isCrazedSticker && (!barcodeFragments || barcodeFragments.length === 0)) {
+        const strictLabelRe = /(?:V\.?\s*I\.?\s*N\.?|N\.?\s*I\.?\s*V\.?)(?:\s*[\/\\|]\s*(?:N\.?\s*I\.?\s*V\.?|V\.?\s*I\.?\s*N\.?))?[\s:#.\-\/;]*([A-HJ-NPR-Z0-9]{17})\b/g;
+        let sm;
+        while ((sm = strictLabelRe.exec(upper)) !== null) {
+          const exact17 = sm[1];
+          if (hasCredibleRawVinDigits(exact17, false) && isValidNorthAmericanVin(exact17)) {
+            return exact17;
+          }
+        }
+        return '';
       }
 
       // 1. Check explicitly labeled VIN / N.I.V. / PIN lines (handles "V.I.N.. : 1D9D7EF29LN814218", "V.I.N / N.I.V. 4P53F3729V3074758", "VIN: 5NHUPAZ29GW059298")
@@ -1405,20 +1401,6 @@
             const repaired18 = tryRepairExtraCharVin18(compact.slice(0, 18));
             if (repaired18) return repaired18;
           }
-          if (!requireValidCheckDigit) {
-            const first17 = posNormalizeVin17(compact.slice(0, 17));
-            const digits = (first17.match(/\d/g) || []).length;
-            const letters = (first17.match(/[A-Z]/g) || []).length;
-            if (
-              /^[A-HJ-NPR-Z0-9]{17}$/.test(first17) &&
-              !VIN_SPEC_NOISE_REGEX.test(first17) &&
-              !/[0UZIOQ]/.test(first17[9]) &&
-              digits >= 5 &&
-              letters >= 2
-            ) {
-              return first17;
-            }
-          }
         }
       }
 
@@ -1432,17 +1414,19 @@
         }
       }
 
-      // 2. Direct valid check-digit 17-char VIN match from contiguous runs
+      // 2. Direct valid check-digit 17-char VIN match from contiguous runs (must have credible raw digits before normalization)
       for (let i = 0; i < candidateWindows17.length; i++) {
-        const norm = posNormalizeVin17(candidateWindows17[i]);
+        const rawWin = candidateWindows17[i];
+        if (!hasCredibleRawVinDigits(rawWin, false)) continue;
+        const norm = posNormalizeVin17(rawWin);
         if (isValidNorthAmericanVin(norm)) return norm;
       }
 
-      // 3. Try 1-char and 2-char OCR slip repair on contiguous 17-char candidate windows BEFORE space-stripping lines
-      for (let i = 0; i < candidateWindows17.length; i++) {
-        const norm = posNormalizeVin17(candidateWindows17[i]);
-        if (hasTagContext || /\d{5,6}$/.test(norm)) {
-          const repaired = tryRepairSingleOcrSlipVin(candidateWindows17[i], false);
+      // 3. Try 1-char primary lookalike slip repair ONLY on standalone 17-char tokens when tag context is present
+      if (hasTagContext) {
+        const standalone17Tokens = upper.match(/\b[A-Z0-9]{17}\b/g) || [];
+        for (let i = 0; i < standalone17Tokens.length; i++) {
+          const repaired = tryRepairSingleOcrSlipVin(standalone17Tokens[i], false);
           if (repaired) return repaired;
         }
       }
@@ -1450,7 +1434,7 @@
       // 3a. Try 18-char split-character repair on contiguous 18-char runs (e.g. faded "5WFBF1218HW071774" read as "5WEFBF1218HW071774")
       for (let r = 0; r < longRuns.length; r++) {
         const run = longRuns[r];
-        if (run.length === 18 && /\d{5,6}$/.test(posNormalizeVin17(run.slice(1)))) {
+        if (run.length === 18 && hasCredibleRawVinDigits(run.slice(1), true)) {
           const repaired18 = tryRepairExtraCharVin18(run);
           if (repaired18) return repaired18;
         }
@@ -1473,40 +1457,15 @@
         }
       }
 
-      // 3c. Check non-spec lines where OCR inserted spaces/hyphens inside a 17-char VIN
-      // Never strip spaces across weight/tire/pressure spec lines (GVWR, GAWR, PNBV, KPA, PSI, TIRE, RIMS)
-      const specLineRegex = /\b(GVWR|GAWR|PNBV|PNBE|KPA|PSI|TIRE|TIRES|RIM|RIMS|COLD|AXLE|CARGO|CAPACITY|PRESSURE|CONFORMS)\b/i;
-      const vinKeywordRegex = /(?:V\.?\s*I\.?\s*N|N\.?\s*I\.?\s*V|IDENTIFICATION|P\.?\s*I\.?\s*N)/i;
-      for (let l = 0; l < lines.length; l++) {
-        const line = lines[l];
-        if (specLineRegex.test(line) && !vinKeywordRegex.test(line)) continue;
-        const strippedLine = line.replace(/[^A-Z0-9]/g, '');
-        if (strippedLine.length >= 17 && strippedLine.length <= 36) {
-          for (let i = 0; i <= strippedLine.length - 17; i++) {
-            const sub = posNormalizeVin17(strippedLine.slice(i, i + 17));
-            if (isValidNorthAmericanVin(sub)) return sub;
-          }
-        }
-      }
-
-      if (requireValidCheckDigit) {
-        return '';
-      }
-
-      // 4. Accept structurally valid 17-char VIN/PIN (e.g. Kubota/equipment PINs without NHTSA Mod-11 check digit)
-      for (let i = 0; i < candidateWindows17.length; i++) {
-        const norm = posNormalizeVin17(candidateWindows17[i]);
-        const digits = (norm.match(/\d/g) || []).length;
-        const letters = (norm.match(/[A-Z]/g) || []).length;
-        if (
-          /^[A-HJ-NPR-Z0-9]{17}$/.test(norm) &&
-          !VIN_SPEC_NOISE_REGEX.test(norm) &&
-          !/[0UZIOQ]/.test(norm[9]) &&
-          digits >= 5 &&
-          letters >= 3 &&
-          (hasTagContext || /^[1-57A-HJ-NPR-Z][A-HJ-NPR-Z0-9]{10}\d{6}$/.test(norm))
-        ) {
-          return norm;
+      // 3c. Check non-spec lines where OCR split a 17-char VIN across exactly 2 alphanumeric chunks (>=6 chars each, e.g. "5NHUPAZ29 GW059298")
+      // Never glue 3+ short crack/noise tokens together on an unlabeled line
+      const twoChunkRe = /\b([A-HJ-NPR-Z0-9]{6,11})[\s\-]+([A-HJ-NPR-Z0-9]{6,11})\b/g;
+      let tc;
+      while ((tc = twoChunkRe.exec(upper)) !== null) {
+        const joined = tc[1] + tc[2];
+        if (joined.length === 17 && hasCredibleRawVinDigits(joined, false)) {
+          const norm = posNormalizeVin17(joined);
+          if (isValidNorthAmericanVin(norm)) return norm;
         }
       }
 
@@ -1953,6 +1912,67 @@
       return outCanvas;
     };
 
+    // Detects severely spiderweb-cracked / crazed sticker surfaces (e.g. 20261009_163835.jpg where >=78% of bright sticker tiles
+    // have dense intersecting horizontal & vertical narrow crack valleys)
+    const isSeverelyCrazedStickerCanvas = (sourceCanvas) => {
+      if (!sourceCanvas || !sourceCanvas.width || !sourceCanvas.height) return false;
+      const sw = sourceCanvas.width;
+      const sh = sourceCanvas.height;
+      const targetW = 600;
+      const scale = targetW / sw;
+      const targetH = Math.max(48, Math.round(sh * scale));
+
+      let srcData;
+      try {
+        srcData = sourceCanvas.getContext('2d').getImageData(0, 0, sw, sh).data;
+      } catch (e) {
+        return false;
+      }
+
+      const gray = new Uint8Array(targetW * targetH);
+      for (let ty = 0; ty < targetH; ty++) {
+        const iy = Math.min(sh - 1, Math.floor(ty / scale));
+        const srcRow = iy * sw;
+        const dstRow = ty * targetW;
+        for (let tx = 0; tx < targetW; tx++) {
+          const ix = Math.min(sw - 1, Math.floor(tx / scale));
+          const p = (srcRow + ix) << 2;
+          gray[dstRow + tx] = (srcData[p] * 77 + srcData[p + 1] * 150 + srcData[p + 2] * 29) >> 8;
+        }
+      }
+
+      const tile = 24;
+      let crazedTiles = 0;
+      let brightTiles = 0;
+      for (let ty = 4; ty < targetH - tile - 4; ty += tile) {
+        for (let tx = 4; tx < targetW - tile - 4; tx += tile) {
+          let hc = 0;
+          let vc = 0;
+          let maxL = 0;
+          for (let y = ty; y < ty + tile; y += 2) {
+            const ro = y * targetW;
+            for (let x = tx; x < tx + tile; x += 2) {
+              const c = gray[ro + x];
+              if (c > maxL) maxL = c;
+              const lr = (gray[ro + x - 2] + gray[ro + x + 2]) >> 1;
+              const tb = (gray[(y - 2) * targetW + x] + gray[(y + 2) * targetW + x]) >> 1;
+              if (lr > 135 && lr - c > 22 && c > 60) hc++;
+              if (tb > 135 && tb - c > 22 && c > 60) vc++;
+            }
+          }
+          if (maxL > 150) {
+            brightTiles++;
+            if (hc >= 5 && vc >= 5) {
+              crazedTiles++;
+            }
+          }
+        }
+      }
+
+      if (brightTiles < 25) return false;
+      return crazedTiles / brightTiles >= 0.78;
+    };
+
     // Creates a rotated (90 deg CW or CCW) canvas from a vertical strip (for vertical backup VINs printed on trailer tags)
     const createRotatedCropCanvasFromImage = (img, rx, ry, rw, rh, clockwise = false, maxLongSide = 1600) => {
       const baseCrop = createCroppedCanvasFromImage(img, rx, ry, rw, rh, maxLongSide, false);
@@ -2003,6 +2023,7 @@
             const vinBandCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.88, 0.36, 1800, false);
             // Left/center text crop excludes right-hand barcode bars so OCR reads "V.I.N / N.I.V." or "V.I.N.. :" cleanly
             const vinLeftTextCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.58, 0.32, 1600, false);
+            const isCrazedSticker = isSeverelyCrazedStickerCanvas(vinLeftTextCanvas);
             // Scrape & mildew-erased ink-isolated crops turn medium-gray scrapes & mildew into pure white (IMG_4623, IMG_1689)
             const inkIsolatedLeftCanvas = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, false);
             const inkIsolatedCenterCanvas = createInkIsolatedCanvas(stickerCenterCanvas, 0.42, false);
@@ -2020,6 +2041,7 @@
             const verticalRightCW = createRotatedCropCanvasFromImage(img, 0.58, 0.18, 0.42, 0.68, true, 1500);
 
             finish({
+              isCrazedSticker,
               barcodeCanvases: [
                 barcodeLeftZoomCanvas,
                 barcodeLeftContrastCanvas,
@@ -2035,20 +2057,26 @@
                 vinBandCanvas,
                 barcodeRightZoomCanvas
               ],
-              ocrCanvases: [
-                vinLeftTextCanvas,
-                inkIsolatedLeftCanvas,
-                inkIsolatedCenterCanvas,
-                vinBandCanvas,
-                inkIsolatedBandCanvas,
-                stickerCenterCanvas,
-                localContrastLeftCanvas,
-                localContrastBandCanvas,
-                verticalRightCCW,
-                verticalRightCW,
-                fullCanvas,
-                contrastCenterCanvas
-              ]
+              ocrCanvases: isCrazedSticker
+                ? [
+                    vinLeftTextCanvas,
+                    stickerCenterCanvas,
+                    fullCanvas
+                  ]
+                : [
+                    vinLeftTextCanvas,
+                    inkIsolatedLeftCanvas,
+                    inkIsolatedCenterCanvas,
+                    vinBandCanvas,
+                    inkIsolatedBandCanvas,
+                    stickerCenterCanvas,
+                    localContrastLeftCanvas,
+                    localContrastBandCanvas,
+                    verticalRightCCW,
+                    verticalRightCW,
+                    fullCanvas,
+                    contrastCenterCanvas
+                  ]
             });
           } catch (err) {
             finish(null);
@@ -2065,13 +2093,13 @@
     };
 
     const scanImageFileForVin = async (file, categoryKey) => {
-      if (!file) return '';
+      if (!file) return { vin: '', unreadableVinTag: false };
       const isVideo = file.type?.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name || '');
-      if (isVideo) return '';
+      if (isVideo) return { vin: '', unreadableVinTag: false };
 
       try {
         const canvases = await loadImageCanvasesForScan(file);
-        if (!canvases) return '';
+        if (!canvases) return { vin: '', unreadableVinTag: false };
 
         // Pass 1A: Fast native BarcodeDetector across zoomed barcode regions, band, center, and full frame
         if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
@@ -2088,7 +2116,7 @@
                   const barcodes = await detector.detect(canvases.barcodeCanvases[c]);
                   for (let i = 0; i < (barcodes || []).length; i++) {
                     const found = extractVinFromBarcodeValue(barcodes[i]?.rawValue, categoryKey);
-                    if (found) return found;
+                    if (found) return { vin: found, unreadableVinTag: false };
                   }
                 } catch (e) {}
               }
@@ -2106,7 +2134,7 @@
                 const res = await zxingReader.decodeFromImageUrl(dataUrl);
                 if (res && res.getText) {
                   const found = extractVinFromBarcodeValue(res.getText(), categoryKey);
-                  if (found) return found;
+                  if (found) return { vin: found, unreadableVinTag: false };
                 }
               } catch (zErr) {}
             }
@@ -2117,7 +2145,7 @@
         const barcodeFragmentsMap = new Map();
         for (let c = 0; c < (canvases.code39Canvases || []).length; c++) {
           const c39 = scanCanvasForCode39(canvases.code39Canvases[c], categoryKey);
-          if (c39.fullVin) return c39.fullVin;
+          if (c39.fullVin) return { vin: c39.fullVin, unreadableVinTag: false };
           for (let f = 0; f < c39.fragments.length; f++) {
             const frag = c39.fragments[f];
             const prev = barcodeFragmentsMap.get(frag.text);
@@ -2131,42 +2159,53 @@
         }
         const barcodeFragments = Array.from(barcodeFragmentsMap.values());
         const crossStitched = stitchBarcodeFragments(barcodeFragments);
-        if (crossStitched) return crossStitched;
+        if (crossStitched) return { vin: crossStitched, unreadableVinTag: false };
+
+        const isCrazed = Boolean(canvases.isCrazedSticker);
 
         // Pass 2: Queued Multi-Crop Tesseract.js OCR (with scrape-erased canvases + partial barcode fragment fusion)
         const runOcr = () =>
           new Promise(async (resolve) => {
-            const timeout = setTimeout(() => resolve(''), 28000);
+            const timeout = setTimeout(() => resolve({ vin: '', unreadableVinTag: isCrazed }), 28000);
             try {
               const worker = await getSharedTesseractWorker();
               if (!worker) {
                 clearTimeout(timeout);
-                return resolve('');
+                return resolve({ vin: '', unreadableVinTag: isCrazed });
               }
               let combinedText = '';
               for (let c = 0; c < canvases.ocrCanvases.length; c++) {
                 const res = await worker.recognize(canvases.ocrCanvases[c]);
                 const text = res?.data?.text || '';
                 if (text) {
-                  // Only allow early-exit during the multi-canvas loop when the 17-char VIN passes NHTSA Mod-11 check digit
-                  const found = extractVinOrSerialFromOcrText(text, categoryKey, barcodeFragments, true);
+                  const found = extractVinOrSerialFromOcrText(text, categoryKey, barcodeFragments, isCrazed);
                   if (found) {
                     clearTimeout(timeout);
-                    return resolve(found);
+                    return resolve({ vin: found, unreadableVinTag: false });
                   }
                   combinedText += '\n' + text;
-                  const combinedFound = extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments, true);
+                  const combinedFound = extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments, isCrazed);
                   if (combinedFound) {
                     clearTimeout(timeout);
-                    return resolve(combinedFound);
+                    return resolve({ vin: combinedFound, unreadableVinTag: false });
                   }
                 }
               }
               clearTimeout(timeout);
-              resolve(extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments, false));
+              const finalVin = extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments, isCrazed);
+              if (finalVin) {
+                return resolve({ vin: finalVin, unreadableVinTag: false });
+              }
+              const sawStickerContext =
+                isCrazed ||
+                barcodeFragments.length > 0 ||
+                /\b(V\.?\s*I\.?\s*N|N\.?\s*I\.?\s*V|IDENTIFICATION|FOREST\s+RIVER|GVWR|GAWR|PNBV|MFD\s+BY|MFG\s+BY|FABRIQUE|MANUFACTURED|CONFORMS\s+TO|TRAILER|REMORQUE|ST2\d\d|KPA|PSI)\b/i.test(
+                  combinedText
+                );
+              resolve({ vin: '', unreadableVinTag: Boolean(sawStickerContext) });
             } catch (ocrErr) {
               clearTimeout(timeout);
-              resolve('');
+              resolve({ vin: '', unreadableVinTag: isCrazed });
             }
           });
 
@@ -2175,7 +2214,7 @@
         return await nextJob;
       } catch (err) {
         console.warn('VIN scan error:', err);
-        return '';
+        return { vin: '', unreadableVinTag: false };
       }
     };
 
@@ -3712,6 +3751,7 @@
             const mediaId = 'm-' + Math.random().toString(36).substr(2, 9);
             const label = file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo');
             let resolvedDetectedVin = '';
+            let resolvedUnreadableVinTag = false;
 
             // Start VIN / Serial barcode + OCR scan in parallel on image files
             if (!isVideo) {
@@ -3719,16 +3759,21 @@
               setScanningVin(true);
               let scanPromise;
               scanPromise = scanImageFileForVin(file, category)
-                .then((detected) => {
+                .then((scanRes) => {
+                  const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
+                  const unreadableTag = Boolean(typeof scanRes === 'object' && scanRes?.unreadableVinTag && !detected);
                   if (detected) {
                     resolvedDetectedVin = detected;
                     if (!firstDetectedInBatch) firstDetectedInBatch = detected;
-                    setPhotos(prev => prev.map(p => (p.id === mediaId ? { ...p, detectedVin: detected } : p)));
+                    setPhotos(prev => prev.map(p => (p.id === mediaId ? { ...p, detectedVin: detected, unreadableVinTag: false } : p)));
                     if (!latestVinRef.current) {
                       latestVinRef.current = detected;
                       setVinScanSource('ocr');
                       setFormData(prev => (prev.vinOrSerial && prev.vinOrSerial.trim() ? prev : { ...prev, vinOrSerial: detected }));
                     }
+                  } else if (unreadableTag) {
+                    resolvedUnreadableVinTag = true;
+                    setPhotos(prev => prev.map(p => (p.id === mediaId ? { ...p, unreadableVinTag: true } : p)));
                   }
                   return detected || '';
                 })
@@ -3766,6 +3811,7 @@
                   fileType: uploadableFile.type || file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
                   label: label,
                   detectedVin: resolvedDetectedVin || '',
+                  unreadableVinTag: resolvedUnreadableVinTag,
                   uploadedAt: new Date().toISOString()
                 }
               ]);
@@ -3802,6 +3848,7 @@
                       fileType: 'image/jpeg',
                       label: label,
                       detectedVin: resolvedDetectedVin || '',
+                      unreadableVinTag: resolvedUnreadableVinTag,
                       uploadedAt: new Date().toISOString()
                     }
                   ]);
@@ -3884,16 +3931,24 @@
           setCheckingVinBeforeNext(false);
         }
 
+        const pendingInlineManualVin = (manualVinInput || '').trim().toUpperCase();
         const photoDetectedVin = photos.map(p => p.detectedVin).find(Boolean) || '';
-        const effectiveVin = (latestVinRef.current || formData.vinOrSerial || photoDetectedVin || '').trim();
+        const effectiveVin = (latestVinRef.current || formData.vinOrSerial || photoDetectedVin || pendingInlineManualVin || '').trim();
 
         if (effectiveVin) {
           if (!formData.vinOrSerial || !formData.vinOrSerial.trim()) {
             handleInputChange('vinOrSerial', effectiveVin);
-            setVinScanSource('ocr');
+            setVinScanSource(photoDetectedVin ? 'ocr' : 'manual');
           }
           setStep(4);
           scrollToFormTop();
+          return;
+        }
+
+        const hasUnreadableVinPhoto = photos.some(p => p.unreadableVinTag);
+        if (hasUnreadableVinPhoto) {
+          setVinModalError('');
+          setVinModalMode('no_manual');
           return;
         }
 
@@ -3911,20 +3966,34 @@
       const handleVinModalPhotoUpload = async (e) => {
         const selected = e.target?.files;
         if (!selected || selected.length === 0) return;
-        await processFiles(selected);
+        const batchDetected = await processFiles(selected);
         if (e.target) e.target.value = '';
+        let scanDetected = batchDetected || '';
         if (activeScanPromisesRef.current.length > 0) {
           setCheckingVinBeforeNext(true);
           try {
-            await Promise.allSettled([...activeScanPromisesRef.current]);
+            const results = await Promise.allSettled([...activeScanPromisesRef.current]);
+            for (let r = 0; r < results.length; r++) {
+              if (results[r].status === 'fulfilled' && results[r].value) {
+                scanDetected = results[r].value;
+                break;
+              }
+            }
           } catch (err) {}
           setCheckingVinBeforeNext(false);
         }
-        setVinPhotoConfirmed(true);
-        setVinModalError('');
-        setVinModalMode(null);
-        setStep(4);
-        scrollToFormTop();
+        const effectiveVin = (latestVinRef.current || formData.vinOrSerial || scanDetected || '').trim();
+        if (effectiveVin) {
+          setVinPhotoConfirmed(true);
+          setVinModalError('');
+          setVinModalMode(null);
+          setStep(4);
+          scrollToFormTop();
+        } else {
+          // If the uploaded VIN sticker could not be read with confidence, request manual VIN entry before Step 4
+          setVinModalError('');
+          setVinModalMode('no_manual');
+        }
       };
 
       const handleSaveManualVinAndContinue = () => {
@@ -4856,6 +4925,56 @@
                         <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
                         <span>Scanning uploaded photos for VIN / Serial tag...</span>
                       </div>
+                    ) : photos.some(p => p.unreadableVinTag) ? (
+                      <div className="p-3.5 sm:p-4 rounded-xl bg-amber-950/35 border border-amber-500/40 space-y-3 text-xs">
+                        <div className="flex items-start gap-2.5 text-amber-200">
+                          <span className="text-amber-400 font-bold text-sm leading-none mt-0.5">⚠️</span>
+                          <div className="space-y-1">
+                            <p className="font-bold text-amber-200">
+                              We couldn't read the {category === 'container' ? 'Box Identification Number' : 'VIN / Serial Number'} from your photo with full confidence.
+                            </p>
+                            <p className="text-neutral-300 leading-relaxed">
+                              Too much of the VIN sticker is damaged, faded, or cut off to be certain. Please manually enter your {category === 'container' ? 'Box Identification Number' : 'VIN or Serial Number'} below:
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-0.5">
+                          <input
+                            type="text"
+                            value={manualVinInput}
+                            onChange={(e) => {
+                              setManualVinInput(e.target.value.toUpperCase());
+                              if (vinModalError) setVinModalError('');
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const cleaned = (manualVinInput || '').trim().toUpperCase();
+                                if (cleaned) {
+                                  handleInputChange('vinOrSerial', cleaned);
+                                  setVinScanSource('manual');
+                                  setVinModalError('');
+                                }
+                              }
+                            }}
+                            placeholder={category === 'container' ? 'Enter Box Identification Number' : 'Enter 17-digit VIN or Serial Number'}
+                            className="flex-1 bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2 text-white font-mono text-sm placeholder:font-sans placeholder:text-neutral-500 focus:ring-1 focus:ring-amber-400 focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cleaned = (manualVinInput || '').trim().toUpperCase();
+                              if (!cleaned) return;
+                              handleInputChange('vinOrSerial', cleaned);
+                              setVinScanSource('manual');
+                              setVinModalError('');
+                            }}
+                            className="px-4 py-2 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all whitespace-nowrap"
+                          >
+                            Save to Unit Details
+                          </button>
+                        </div>
+                      </div>
                     ) : null}
 
                     {photos.length > 0 && (
@@ -4881,11 +5000,15 @@
                             ) : (
                               <div className="w-full h-full relative">
                                 <img src={p.thumbUrl || p.url} alt={p.label} className="w-full h-full object-cover" />
-                                {p.detectedVin && (
+                                {p.detectedVin ? (
                                   <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-emerald-600/95 text-[9px] font-bold text-white rounded shadow">
                                     VIN TAG
                                   </span>
-                                )}
+                                ) : p.unreadableVinTag ? (
+                                  <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-amber-600/95 text-[9px] font-bold text-white rounded shadow">
+                                    ENTER VIN MANUALLY
+                                  </span>
+                                ) : null}
                               </div>
                             )}
                             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2">
@@ -5296,7 +5419,9 @@
                     <h3 id="vin-tag-modal-title" className="text-base sm:text-lg font-bold text-white leading-snug">
                       {vinModalMode === 'yes_upload'
                         ? 'Include a Photo of the VIN Tag'
-                        : 'Do you have a photo of the VIN tag?'}
+                        : vinModalMode === 'no_manual' && photos.some(p => p.unreadableVinTag)
+                          ? 'VIN Tag Not Legible — Please Enter Manually'
+                          : 'Do you have a photo of the VIN tag?'}
                     </h3>
                     {vinModalMode === 'ask' && (
                       <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
@@ -5305,12 +5430,14 @@
                     )}
                     {vinModalMode === 'no_manual' && (
                       <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                        Please manually enter the {category === 'container' ? 'Box Identification Number' : 'VIN or Serial Number'} before continuing to Step 4.
+                        {photos.some(p => p.unreadableVinTag)
+                          ? `We detected your VIN tag photo, but too much of the ${category === 'container' ? 'Box Identification Number' : 'VIN / Serial Number'} is damaged or cut off to read with full confidence. Please manually enter it below before continuing to Step 4.`
+                          : `Please manually enter the ${category === 'container' ? 'Box Identification Number' : 'VIN or Serial Number'} before continuing to Step 4.`}
                       </p>
                     )}
                     {vinModalMode === 'yes_upload' && (
                       <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                        Upload a clear close-up photo of the VIN tag now, or continue if it is already included in your uploaded photos.
+                        Upload a clear close-up photo of the VIN tag now, or enter it manually if the tag is too damaged to scan.
                       </p>
                     )}
                   </div>
@@ -5428,14 +5555,12 @@
                       type="button"
                       disabled={uploading || checkingVinBeforeNext}
                       onClick={() => {
-                        setVinPhotoConfirmed(true);
-                        setVinModalMode(null);
-                        setStep(4);
-                        scrollToFormTop();
+                        setVinModalError('');
+                        setVinModalMode('no_manual');
                       }}
                       className="w-full px-4 py-2.5 bg-neutral-800/80 hover:bg-neutral-800 text-neutral-200 font-semibold text-xs rounded-xl border border-neutral-700 transition-all"
                     >
-                      Already Included in Uploaded Photos — Continue →
+                      Already Included in Uploaded Photos — Enter VIN Manually →
                     </button>
 
                     <div className="pt-1">
