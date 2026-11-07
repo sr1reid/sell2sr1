@@ -739,6 +739,8 @@
       if (vin[1] === '0') return false;
       if (vin[0] === 'W' && vin[1] === 'E') return false;
       if (vin[0] === 'Y' && !/^[STUVW]/.test(vin[1])) return false;
+      // Reject 'S' WMI lookalikes where US '5' WMI ('5NH', '5RH', '5WF', '5ZT', '5SF', '5VG', '5JX', '5KT', '50'-'59') had '5' misread as 'S'
+      if (vin[0] === 'S' && /^(?:R|NH|WF|ZT|SF|VG|JX|KT|HV|\d)/.test(vin.slice(1, 4))) return false;
       // Last 5 characters (positions 13-17) of standard 17-char VINs are sequential production digits
       if (!/\d{5}$/.test(vin)) return false;
       const digitCount = (vin.match(/\d/g) || []).length;
@@ -791,7 +793,7 @@
 
     const VIN_PRIMARY_SWAPS = {
       S: ['5'], Z: ['2'], B: ['8'], G: ['6'],
-      A: ['4'], T: ['7'], Y: ['V'], U: ['V'], E: ['F'], F: ['E']
+      A: ['4'], T: ['7'], Y: ['V'], U: ['V'], V: ['U'], E: ['F'], F: ['E'], R: ['N']
     };
     const VIN_SECONDARY_SWAPS = {
       ...VIN_PRIMARY_SWAPS,
@@ -804,8 +806,9 @@
       '7': ['2', 'T', '1'],
       '1': ['7', '4', 'L', 'T'],
       '3': ['8', '9'],
-      '9': ['0', '8'],
-      D: ['0']
+      '9': ['1', '0', '8'],
+      D: ['0'],
+      N: ['R', 'M']
     };
 
     const trySwapsWithMap = (base, swapMap, allowThreeSwaps = false) => {
@@ -897,6 +900,93 @@
         const sub17 = clean.slice(0, dropIdx) + clean.slice(dropIdx + 1);
         const repaired = tryRepairSingleOcrSlipVin(sub17, false);
         if (repaired) return repaired;
+      }
+      return null;
+    };
+
+    // Repairs explicitly labeled VINs where weathering/stroke-thinning caused multiple lookalike confusions
+    // (e.g. "5NHUPAZ29GW059298" read as "SRHVP4Z20GW059208", optionally cross-referenced against 6-digit unit serials like "PAW059298")
+    const tryRepairStrokeThinnedLabeledVin = (raw17, fullUpperText = '') => {
+      const base = posNormalizeVin17(raw17);
+      if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(base)) return null;
+      if (isValidNorthAmericanVin(base)) return base;
+
+      const chars = base.split('');
+      let strokeFixes = 0;
+      // 1. If first character is 'S' (UK), on North American trailers '5' is often misread as 'S'
+      if (chars[0] === 'S') {
+        chars[0] = '5';
+        strokeFixes++;
+      }
+      // 2. If WMI starts with '5R' + 'H', '5NH' (Forest River) had 'N' misread as 'R'
+      if (chars[0] === '5' && chars[1] === 'R' && chars[2] === 'H') {
+        chars[1] = 'N';
+        strokeFixes++;
+      }
+      // 3. In descriptor positions 3..6, '4' between letters is often 'A', and 'V' after '5NH' is often 'U'
+      if (chars[0] === '5' && chars[1] === 'N' && chars[2] === 'H' && chars[3] === 'V') {
+        chars[3] = 'U';
+        strokeFixes++;
+      }
+      if (chars[5] === '4' && /[A-Z]/.test(chars[4]) && /[A-Z]/.test(chars[6])) {
+        chars[5] = 'A';
+        strokeFixes++;
+      }
+
+      // 4. Cross-check last 6 sequential serial digits (positions 11..16) against 3-letter+6-digit unit tokens (e.g. "PAW059298") in the tag text
+      let serialFixedFromTag = false;
+      const tail6 = chars.slice(11, 17).join('');
+      if (fullUpperText) {
+        const unitTokens = fullUpperText.match(/\b[A-Z]{2,4}(\d{6})\b/g) || [];
+        for (let u = 0; u < unitTokens.length; u++) {
+          const digits6 = unitTokens[u].slice(-6);
+          let agree = 0;
+          for (let k = 0; k < 6; k++) {
+            if (digits6[k] === tail6[k]) agree++;
+          }
+          if (agree >= 4 && agree < 6) {
+            for (let k = 0; k < 6; k++) chars[11 + k] = digits6[k];
+            serialFixedFromTag = true;
+            break;
+          }
+        }
+      }
+
+      const normalizedCandidate = chars.join('');
+      if (isValidNorthAmericanVin(normalizedCandidate)) return normalizedCandidate;
+
+      // 5. If multiple horizontal-stroke thinnings occurred (e.g. 5->S, N->R, U->V, A->4) and check digit at index 8 is '0' or '8',
+      // test restoring thinned '9' -> '0' at index 8 (and in trailing serial digits 12..16) BEFORE generic swaps
+      const checkLookalikes = { '0': ['9', '8'], '8': ['9', '0', '3'], '9': ['0', '8'], '5': ['6', '8'], '2': ['7'] };
+      const checkAlts = checkLookalikes[chars[8]] || [];
+      if ((strokeFixes >= 2 || serialFixedFromTag) && /^[1-57]/.test(chars[0])) {
+        for (let c = 0; c < checkAlts.length; c++) {
+          const withCheck = normalizedCandidate.slice(0, 8) + checkAlts[c] + normalizedCandidate.slice(9);
+          if (isValidNorthAmericanVin(withCheck)) return withCheck;
+          // If '9' was thinned to '0' at the check digit, check if a '0' in serial positions 12..16 was also a thinned '9'
+          if (chars[8] === '0' && checkAlts[c] === '9') {
+            for (let sIdx = 15; sIdx >= 12; sIdx--) {
+              if (withCheck[sIdx] === '0') {
+                const withBoth9 = withCheck.slice(0, sIdx) + '9' + withCheck.slice(sIdx + 1);
+                if (isValidNorthAmericanVin(withBoth9)) return withBoth9;
+              }
+            }
+          }
+          const swapped = trySwapsWithMap(withCheck, VIN_SECONDARY_SWAPS, false);
+          if (swapped) return swapped;
+        }
+      }
+
+      const directRepair = tryRepairSingleOcrSlipVin(normalizedCandidate, true);
+      if (directRepair) return directRepair;
+
+      if (/^[1-57]/.test(chars[0])) {
+        for (let c = 0; c < checkAlts.length; c++) {
+          const withCheck = normalizedCandidate.slice(0, 8) + checkAlts[c] + normalizedCandidate.slice(9);
+          if (isValidNorthAmericanVin(withCheck)) return withCheck;
+          const swapped = trySwapsWithMap(withCheck, VIN_SECONDARY_SWAPS, false);
+          if (swapped) return swapped;
+        }
       }
       return null;
     };
@@ -1037,6 +1127,15 @@
                 const tailDirect = piece.slice(piece.length - needed);
                 const direct17 = posNormalizeVin17(frag + tailDirect);
                 if (isValidNorthAmericanVin(direct17)) return direct17;
+                // First try repairing 1-char OCR slips strictly inside the OCR-derived suffix (preserving the barcode prefix `frag`)
+                for (let idx = frag.length; idx < 17; idx++) {
+                  if (idx === 8) continue;
+                  const alts = VIN_SECONDARY_SWAPS[direct17[idx]] || [];
+                  for (let k = 0; k < alts.length; k++) {
+                    const cand = direct17.slice(0, idx) + alts[k] + direct17.slice(idx + 1);
+                    if (isValidNorthAmericanVin(cand)) return cand;
+                  }
+                }
                 const directRepaired = tryRepairSingleOcrSlipVin(direct17, false);
                 if (directRepaired) return directRepaired;
               }
@@ -1279,7 +1378,7 @@
       return '';
     };
 
-    const extractVinOrSerialFromOcrText = (rawText, categoryKey, barcodeFragments = []) => {
+    const extractVinOrSerialFromOcrText = (rawText, categoryKey, barcodeFragments = [], requireValidCheckDigit = false) => {
       if (!rawText) return '';
       const upper = String(rawText).toUpperCase();
       const hasTagContext = /\b(V\.?\s*I\.?\s*N\.?|N\.?\s*I\.?\s*V\.?|VEHICLE\s+IDENTIFICATION|IDENTIFICATION\s+NUMBER|GVWR|GAWR|PNBV|MFD\s+BY|MFG\s+BY|FABRIQUE|MANUFACTURED|CONFORMS\s+TO|TRAILER|SERIAL\s*(?:NO|NUMBER|#)|P\.?I\.?N\.?|PRODUCT\s+IDENTIFICATION|HULL\s+ID)/i.test(upper);
@@ -1290,7 +1389,7 @@
         if (fused) return fused;
       }
 
-      // 1. Check explicitly labeled VIN / N.I.V. / PIN lines (handles "V.I.N.. : 1D9D7EF29LN814218" and "V.I.N / N.I.V. 4P53F3729V3074758")
+      // 1. Check explicitly labeled VIN / N.I.V. / PIN lines (handles "V.I.N.. : 1D9D7EF29LN814218", "V.I.N / N.I.V. 4P53F3729V3074758", "VIN: 5NHUPAZ29GW059298")
       const labeledVinRegex = /(?:V\.?\s*I\.?\s*N\.?|N\.?\s*I\.?\s*V\.?|VEHICLE\s+IDENTIFICATION(?:\s+(?:NO\.?|NUMBER|#))?|P\.?\s*I\.?\s*N\.?)(?:\s*[\/\\|]\s*(?:N\.?\s*I\.?\s*V\.?|V\.?\s*I\.?\s*N\.?))?(?:\s*(?:NO\.?|NUMBER|#))?[\s:#.\-\/;]*([A-Z0-9][A-Z0-9 \-.]{13,30})/g;
       let m;
       while ((m = labeledVinRegex.exec(upper)) !== null) {
@@ -1299,24 +1398,26 @@
         if (compact.length >= 17) {
           for (let i = 0; i <= Math.min(compact.length - 17, 6); i++) {
             const sub17 = compact.slice(i, i + 17);
-            const repaired = tryRepairSingleOcrSlipVin(sub17, true);
+            const repaired = tryRepairStrokeThinnedLabeledVin(sub17, upper) || tryRepairSingleOcrSlipVin(sub17, true);
             if (repaired) return repaired;
           }
           if (compact.length >= 18) {
             const repaired18 = tryRepairExtraCharVin18(compact.slice(0, 18));
             if (repaired18) return repaired18;
           }
-          const first17 = posNormalizeVin17(compact.slice(0, 17));
-          const digits = (first17.match(/\d/g) || []).length;
-          const letters = (first17.match(/[A-Z]/g) || []).length;
-          if (
-            /^[A-HJ-NPR-Z0-9]{17}$/.test(first17) &&
-            !VIN_SPEC_NOISE_REGEX.test(first17) &&
-            !/[0UZIOQ]/.test(first17[9]) &&
-            digits >= 5 &&
-            letters >= 2
-          ) {
-            return first17;
+          if (!requireValidCheckDigit) {
+            const first17 = posNormalizeVin17(compact.slice(0, 17));
+            const digits = (first17.match(/\d/g) || []).length;
+            const letters = (first17.match(/[A-Z]/g) || []).length;
+            if (
+              /^[A-HJ-NPR-Z0-9]{17}$/.test(first17) &&
+              !VIN_SPEC_NOISE_REGEX.test(first17) &&
+              !/[0UZIOQ]/.test(first17[9]) &&
+              digits >= 5 &&
+              letters >= 2
+            ) {
+              return first17;
+            }
           }
         }
       }
@@ -1365,7 +1466,7 @@
           if (cleanedLine.length >= 17 && cleanedLine.length <= 32) {
             for (let i = 0; i <= cleanedLine.length - 17; i++) {
               const sub17 = cleanedLine.slice(i, i + 17);
-              const repaired = tryRepairSingleOcrSlipVin(sub17, true);
+              const repaired = tryRepairStrokeThinnedLabeledVin(sub17, upper) || tryRepairSingleOcrSlipVin(sub17, true);
               if (repaired) return repaired;
             }
           }
@@ -1386,6 +1487,10 @@
             if (isValidNorthAmericanVin(sub)) return sub;
           }
         }
+      }
+
+      if (requireValidCheckDigit) {
+        return '';
       }
 
       // 4. Accept structurally valid 17-char VIN/PIN (e.g. Kubota/equipment PINs without NHTSA Mod-11 check digit)
@@ -1622,8 +1727,8 @@
       return canvas;
     };
 
-    // Isolates true black printed ink while erasing medium-gray scrapes, smudges, and thin horizontal laminate tear lines
-    const createInkIsolatedCanvas = (sourceCanvas, thresholdRatio = 0.42, removeThinHorizontalLines = true) => {
+    // Isolates true black printed ink while erasing medium-gray scrapes, mildew, smudges, and optional thin horizontal lines
+    const createInkIsolatedCanvas = (sourceCanvas, thresholdRatio = 0.42, removeThinHorizontalLines = false) => {
       if (!sourceCanvas || !sourceCanvas.width || !sourceCanvas.height) return sourceCanvas;
       const w = sourceCanvas.width;
       const h = sourceCanvas.height;
@@ -1645,8 +1750,8 @@
         gray[i] = (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
       }
 
-      // Compute 80th-percentile local background luminance in 64x64 blocks
-      const blockSize = 64;
+      // Compute 85th-percentile local background luminance in 128x128 blocks (clamped >= 125 so mildew patches don't lower bg)
+      const blockSize = 128;
       const bw = Math.ceil(w / blockSize);
       const bh = Math.ceil(h / blockSize);
       const bgGrid = new Uint8Array(bw * bh);
@@ -1667,21 +1772,21 @@
               count++;
             }
           }
-          const target = Math.floor(count * 0.8);
+          const target = Math.floor(count * 0.85);
           let acc = 0;
-          let p80 = 200;
+          let p85 = 200;
           for (let v = 0; v < 256; v++) {
             acc += hist[v];
             if (acc >= target) {
-              p80 = Math.max(90, v);
+              p85 = Math.max(125, v);
               break;
             }
           }
-          bgGrid[by * bw + bx] = p80;
+          bgGrid[by * bw + bx] = p85;
         }
       }
 
-      // Threshold at true ink (lum < localBg * thresholdRatio), turning medium-gray scrapes (90..150) into pure white (0 = white, 1 = black ink)
+      // Threshold at true ink (lum < localBg * thresholdRatio), turning medium-gray scrapes & mildew (85..150) into pure white
       const mask = new Uint8Array(w * h);
       for (let y = 0; y < h; y++) {
         const by = Math.min(bh - 1, (y / blockSize) | 0);
@@ -1695,7 +1800,7 @@
         }
       }
 
-      // Optional: erase 1-2px thin horizontal laminate tear lines where vertical black run in [y-4..y+4] is <= 3px
+      // Optional: erase 1-2px thin horizontal laminate tear lines where vertical black run in [y-4..y+4] is <= 2px
       const outData = outCtx.createImageData(w, h);
       const outPixels = outData.data;
       for (let y = 0; y < h; y++) {
@@ -1746,8 +1851,21 @@
 
       const data = srcData.data;
       const gray = new Uint8Array(w * h);
+      const globalHist = new Int32Array(256);
       for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
-        gray[i] = (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
+        const g = (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
+        gray[i] = g;
+        globalHist[g]++;
+      }
+      let gAcc = 0;
+      let globalInk = 50;
+      const gTarget = Math.floor(gray.length * 0.05);
+      for (let v = 0; v < 256; v++) {
+        gAcc += globalHist[v];
+        if (gAcc >= gTarget) {
+          globalInk = v;
+          break;
+        }
       }
 
       const tile = 32;
@@ -1790,6 +1908,10 @@
             }
           }
           if (hi - lo < 16) lo = Math.max(0, hi - 60);
+          // When the sticker already has dark ink globally, prevent mildew-only tiles from stretching gray mildew (lum 90+) to black
+          if (globalInk < 70) {
+            lo = Math.min(lo, Math.max(globalInk + 35, 65));
+          }
           pLow[ty * gw + tx] = lo;
           pHigh[ty * gw + tx] = hi;
         }
@@ -1881,12 +2003,13 @@
             const vinBandCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.88, 0.36, 1800, false);
             // Left/center text crop excludes right-hand barcode bars so OCR reads "V.I.N / N.I.V." or "V.I.N.. :" cleanly
             const vinLeftTextCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.58, 0.32, 1600, false);
+            // Scrape & mildew-erased ink-isolated crops turn medium-gray scrapes & mildew into pure white (IMG_4623, IMG_1689)
+            const inkIsolatedLeftCanvas = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, false);
+            const inkIsolatedCenterCanvas = createInkIsolatedCanvas(stickerCenterCanvas, 0.42, false);
+            const inkIsolatedBandCanvas = createInkIsolatedCanvas(vinBandCanvas, 0.42, false);
             // Local contrast-normalized crops restore faded thermal print on metallic tags (IMG_2044) & boost barcodes
             const localContrastLeftCanvas = createLocalContrastCanvas(vinLeftTextCanvas);
             const localContrastBandCanvas = createLocalContrastCanvas(vinBandCanvas);
-            // Scrape-erased ink-isolated crops turn medium-gray scrapes & thin laminate tear lines into pure white (IMG_4623)
-            const inkIsolatedLeftCanvas = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, true);
-            const inkIsolatedBandCanvas = createInkIsolatedCanvas(vinBandCanvas, 0.42, true);
             // Right/middle and left/middle native-res barcode crops cover both right-side (IMG_2270) and left-side (IMG_4623, IMG_2044) barcodes
             const barcodeRightZoomCanvas = createCroppedCanvasFromImage(img, 0.42, 0.32, 0.52, 0.40, 1800, false);
             const barcodeLeftZoomCanvas = createCroppedCanvasFromImage(img, 0.06, 0.36, 0.56, 0.30, 1800, false);
@@ -1913,15 +2036,16 @@
                 barcodeRightZoomCanvas
               ],
               ocrCanvases: [
-                localContrastLeftCanvas,
-                inkIsolatedLeftCanvas,
-                localContrastBandCanvas,
-                inkIsolatedBandCanvas,
                 vinLeftTextCanvas,
+                inkIsolatedLeftCanvas,
+                inkIsolatedCenterCanvas,
                 vinBandCanvas,
+                inkIsolatedBandCanvas,
+                stickerCenterCanvas,
+                localContrastLeftCanvas,
+                localContrastBandCanvas,
                 verticalRightCCW,
                 verticalRightCW,
-                stickerCenterCanvas,
                 fullCanvas,
                 contrastCenterCanvas
               ]
@@ -2024,13 +2148,14 @@
                 const res = await worker.recognize(canvases.ocrCanvases[c]);
                 const text = res?.data?.text || '';
                 if (text) {
-                  const found = extractVinOrSerialFromOcrText(text, categoryKey, barcodeFragments);
+                  // Only allow early-exit during the multi-canvas loop when the 17-char VIN passes NHTSA Mod-11 check digit
+                  const found = extractVinOrSerialFromOcrText(text, categoryKey, barcodeFragments, true);
                   if (found) {
                     clearTimeout(timeout);
                     return resolve(found);
                   }
                   combinedText += '\n' + text;
-                  const combinedFound = extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments);
+                  const combinedFound = extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments, true);
                   if (combinedFound) {
                     clearTimeout(timeout);
                     return resolve(combinedFound);
@@ -2038,7 +2163,7 @@
                 }
               }
               clearTimeout(timeout);
-              resolve(extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments));
+              resolve(extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments, false));
             } catch (ocrErr) {
               clearTimeout(timeout);
               resolve('');
