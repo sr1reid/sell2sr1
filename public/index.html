@@ -735,8 +735,9 @@
       if (/[0UZIOQ]/.test(vin[9])) return false;
       // Valid WMI first character (1,4,5,7=US, 2=Canada, 3=Mexico, J=Japan, K=Korea, L=China, S-Z=Europe)
       if (!/^[123457JKLSTVWYZ]/.test(vin[0])) return false;
-      // Second character of WMI is never '0'
+      // Second character of WMI is never '0', and 'WE' is not a valid WMI (common dropped-'5' OCR misread of '5WF' -> 'WEF')
       if (vin[1] === '0') return false;
+      if (vin[0] === 'W' && vin[1] === 'E') return false;
       if (vin[0] === 'Y' && !/^[STUVW]/.test(vin[1])) return false;
       // Last 5 characters (positions 13-17) of standard 17-char VINs are sequential production digits
       if (!/\d{5}$/.test(vin)) return false;
@@ -900,10 +901,63 @@
       return null;
     };
 
-    // Combine partial Code 39 barcode fragments (e.g. "9D7EF29LN814218*" from a left-scraped barcode)
-    // with OCR text tokens (e.g. "1D9D7EF29LN814..." where the right end was scraped)
+    // Stitch start-anchored (*prefix) and stop-anchored (suffix*) Code 39 barcode fragments across scanlines
+    const stitchBarcodeFragments = (fragments) => {
+      if (!fragments || fragments.length === 0) return '';
+      const starts = fragments.filter((f) => f.hasStartStar && f.text && f.text.length >= 5 && f.text.length <= 16);
+      const stops = fragments.filter((f) => f.hasStopStar && f.text && f.text.length >= 5 && f.text.length <= 16);
+      if (starts.length === 0 || stops.length === 0) return '';
+
+      const candidateScores = new Map();
+      const addScore = (vin, sc) => {
+        if (!isValidNorthAmericanVin(vin)) return;
+        candidateScores.set(vin, (candidateScores.get(vin) || 0) + sc);
+      };
+
+      for (let i = 0; i < starts.length; i++) {
+        const pre = starts[i];
+        const pText = posNormalizeVin17(pre.text);
+        for (let j = 0; j < stops.length; j++) {
+          const suf = stops[j];
+          const sText = posNormalizeVin17(suf.text);
+          const L = pText.length + sText.length;
+          const baseWeight = Math.min(pre.hits || 1, 15) * Math.min(suf.hits || 1, 15) + (pre.hits || 1) + (suf.hits || 1);
+
+          if (L === 17) {
+            // Exact 17-char abutment
+            const cand = posNormalizeVin17(pText + sText);
+            addScore(cand, baseWeight);
+          } else if (L > 17) {
+            // Overlapping fragments (e.g. "5WFBF121" + "18HW071774" overlapping on "1")
+            const ov = L - 17;
+            if (ov <= pText.length && ov <= sText.length && pText.slice(-ov) === sText.slice(0, ov)) {
+              const cand = posNormalizeVin17(pText + sText.slice(ov));
+              addScore(cand, baseWeight + ov * 45);
+            }
+          } else if (L === 16 && pText.length !== 8 && (pre.hits || 1) >= 3 && (suf.hits || 1) >= 3) {
+            // 1-character damaged crease between high-confidence start and stop barcode fragments; solve via Mod-11 check digit
+            for (let d = 0; d <= 9; d++) {
+              const cand = posNormalizeVin17(pText + String(d) + sText);
+              addScore(cand, baseWeight);
+            }
+          }
+        }
+      }
+
+      if (candidateScores.size === 0) return '';
+      const ranked = Array.from(candidateScores.entries()).sort((a, b) => b[1] - a[1]);
+      return ranked[0][0];
+    };
+
+    // Combine partial Code 39 barcode fragments (e.g. "9D7EF29LN814218*" or "*5WFBF121")
+    // with OCR text tokens (e.g. "1D9D7EF29LN814..." or "...8HW071774")
     const fuseBarcodeFragmentsWithOcr = (ocrText, barcodeFragments) => {
-      if (!barcodeFragments || barcodeFragments.length === 0 || !ocrText) return '';
+      if (!barcodeFragments || barcodeFragments.length === 0) return '';
+      // First check if start+stop barcode fragments stitch directly into a complete 17-char VIN
+      const stitched = stitchBarcodeFragments(barcodeFragments);
+      if (stitched) return stitched;
+
+      if (!ocrText) return '';
       const upper = normalizeVinOcrChars(ocrText);
       const rawTokens = upper.match(/[A-Z0-9]{4,24}/g) || [];
       // Also collect compact strings right after V.I.N / N.I.V. labels
@@ -919,7 +973,7 @@
       for (let f = 0; f < barcodeFragments.length; f++) {
         const fragObj = barcodeFragments[f];
         const frag = normalizeVinOcrChars(fragObj.text || '').replace(/[^A-HJ-NPR-Z0-9]/g, '');
-        if (frag.length < 7 || frag.length > 17) continue;
+        if (frag.length < 5 || frag.length > 17) continue;
         if (frag.length === 17) {
           const v = tryRepairSingleOcrSlipVin(frag, true);
           if (v) return v;
@@ -933,7 +987,7 @@
         } else if (fragObj.hasStartStar && !fragObj.hasStopStar) {
           // Anchored at the left start of the barcode (prefix of the 17-char VIN)
           candidateOffsets.push(0);
-        } else {
+        } else if (frag.length >= 7) {
           // Try suffix first (if ends in 5 digits), then prefix, then interior offsets
           if (/\d{5}$/.test(frag)) candidateOffsets.push(17 - frag.length);
           for (let off = 0; off <= 17 - frag.length; off++) {
@@ -953,7 +1007,6 @@
             for (let p = 0; p < allOcrPieces.length; p++) {
               const piece = allOcrPieces[p];
               if (piece.length < offset + 2) continue;
-              // Look for an alignment in `piece` where `piece.slice(s + offset, s + offset + overlapLen)` agrees with `fragOverlap`
               for (let s = 0; s <= Math.min(4, piece.length - (offset + 2)); s++) {
                 const cmpLen = Math.min(overlapLen, piece.length - (s + offset));
                 if (cmpLen < 2) continue;
@@ -970,7 +1023,7 @@
             }
           }
 
-          // Case 2: Prefix fragment (e.g. offset = 0, needs trailing chars from OCR)
+          // Case 2: Prefix fragment (e.g. offset = 0, "*5WFBF121" or "*5WFBF1", needs trailing chars from OCR)
           if (offset === 0 && frag.length < 17) {
             const needed = 17 - frag.length;
             const overlapLen = Math.min(6, frag.length);
@@ -978,6 +1031,17 @@
 
             for (let p = 0; p < allOcrPieces.length; p++) {
               const piece = allOcrPieces[p];
+              // 2a. If `piece` is a 16..19-char VIN-like token ending in 5+ serial digits (even if its left side was mangled like "WEFBEA298HW071774"),
+              // splice the barcode-anchored prefix `frag` directly onto the last `needed` characters of `piece`!
+              if (fragObj.hasStartStar && piece.length >= Math.max(needed, 15) && piece.length <= 19 && /\d{5}$/.test(piece)) {
+                const tailDirect = piece.slice(piece.length - needed);
+                const direct17 = posNormalizeVin17(frag + tailDirect);
+                if (isValidNorthAmericanVin(direct17)) return direct17;
+                const directRepaired = tryRepairSingleOcrSlipVin(direct17, false);
+                if (directRepaired) return directRepaired;
+              }
+
+              // 2b. Overlap alignment in `piece`
               if (piece.length < needed + 2) continue;
               for (let s = 0; s <= piece.length - (needed + 2); s++) {
                 const cmpLen = Math.min(overlapLen, piece.length - s - needed);
@@ -1002,7 +1066,7 @@
       return '';
     };
 
-    // Custom multi-scanline Code 39 decoder that reads intact lower/upper scanlines of scraped barcodes
+    // Custom multi-scanline Code 39 decoder that reads intact lower/upper/tilted scanlines of scraped barcodes
     const CODE39_PATTERNS = {
       '0': 'nnnwwnwnn', '1': 'wnnwnnnnw', '2': 'nnwwnnnnw', '3': 'wnwwnnnnn',
       '4': 'nnnwwnnnw', '5': 'wnnwwnnnn', '6': 'nnwwwnnnn', '7': 'nnnwnnwnw',
@@ -1079,8 +1143,8 @@
       }
 
       const fragmentMap = new Map();
-      const tiltOffsets = [0, -8, 8, -16, 16, -24, 24];
-      const numRows = 28;
+      const tiltOffsets = [0, -8, 8, -16, 16, -24, 24, -34, 34, -44, 44];
+      const numRows = 64;
       const halfWin = 22;
 
       for (let r = 1; r < numRows; r++) {
@@ -1123,12 +1187,12 @@
           const firstBlackIdx = (line[0] < (prefix[Math.min(w, halfWin)] / Math.min(w, halfWin)) * 0.91) ? 0 : 1;
           for (let s = firstBlackIdx; s < runs.length - 49; s += 2) {
             const decoded = decodeCode39RunLengths(runs, s);
-            if (!decoded || decoded.length < 7) continue;
+            if (!decoded || decoded.length < 6) continue;
 
             const hasStartStar = decoded.startsWith('*');
             const hasStopStar = decoded.endsWith('*') && decoded.length > 1;
             const core = decoded.replace(/^\*+|\*+$/g, '').replace(/[^A-Z0-9]/g, '');
-            if (core.length < 7) continue;
+            if (core.length < 5) continue;
 
             // Check if this scanline decoded a complete 17-char VIN!
             const full = extractVinFromBarcodeValue(core, categoryKey);
@@ -1137,8 +1201,8 @@
               return result;
             }
 
-            // Record partial barcode fragment (e.g. "9D7EF29LN814218" from a left-scraped barcode)
-            if (core.length >= 7 && core.length <= 17 && (hasStopStar || hasStartStar || core.length >= 10)) {
+            // Record partial barcode fragment (e.g. "*5WFBF121" or "8HW071774*" or "9D7EF29LN814218*")
+            if (core.length >= 5 && core.length <= 17 && (hasStopStar || hasStartStar || core.length >= 10)) {
               const prev = fragmentMap.get(core);
               fragmentMap.set(core, {
                 text: core,
@@ -1156,6 +1220,11 @@
         const anchorScoreB = (b.hasStopStar || b.hasStartStar ? 100 : 0) + b.text.length * 4 + b.hits;
         return anchorScoreB - anchorScoreA;
       });
+
+      const stitched = stitchBarcodeFragments(result.fragments);
+      if (stitched) {
+        result.fullVin = stitched;
+      }
       return result;
     };
 
@@ -1274,6 +1343,15 @@
         if (hasTagContext || /\d{5,6}$/.test(norm)) {
           const repaired = tryRepairSingleOcrSlipVin(candidateWindows17[i], false);
           if (repaired) return repaired;
+        }
+      }
+
+      // 3a. Try 18-char split-character repair on contiguous 18-char runs (e.g. faded "5WFBF1218HW071774" read as "5WEFBF1218HW071774")
+      for (let r = 0; r < longRuns.length; r++) {
+        const run = longRuns[r];
+        if (run.length === 18 && /\d{5,6}$/.test(posNormalizeVin17(run.slice(1)))) {
+          const repaired18 = tryRepairExtraCharVin18(run);
+          if (repaired18) return repaired18;
         }
       }
 
@@ -1648,6 +1726,111 @@
       return outCanvas;
     };
 
+    // Local 32x32 tile adaptive contrast normalization (CLAHE-like) that restores faded/rubbed-off thermal print
+    // on metallic silver stickers (e.g. IMG_2044) and sharpens low-contrast Code 39 barcodes
+    const createLocalContrastCanvas = (sourceCanvas) => {
+      if (!sourceCanvas || !sourceCanvas.width || !sourceCanvas.height) return sourceCanvas;
+      const w = sourceCanvas.width;
+      const h = sourceCanvas.height;
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = w;
+      outCanvas.height = h;
+      const outCtx = outCanvas.getContext('2d');
+
+      let srcData;
+      try {
+        srcData = sourceCanvas.getContext('2d').getImageData(0, 0, w, h);
+      } catch (e) {
+        return sourceCanvas;
+      }
+
+      const data = srcData.data;
+      const gray = new Uint8Array(w * h);
+      for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
+        gray[i] = (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
+      }
+
+      const tile = 32;
+      const gw = Math.ceil(w / tile) + 1;
+      const gh = Math.ceil(h / tile) + 1;
+      const pLow = new Uint8Array(gw * gh);
+      const pHigh = new Uint8Array(gw * gh);
+      const hist = new Int32Array(256);
+
+      for (let ty = 0; ty < gh; ty++) {
+        const y0 = Math.max(0, Math.min(h - tile, ty * tile - (tile >> 1)));
+        const y1 = Math.min(h, y0 + tile);
+        for (let tx = 0; tx < gw; tx++) {
+          const x0 = Math.max(0, Math.min(w - tile, tx * tile - (tile >> 1)));
+          const x1 = Math.min(w, x0 + tile);
+          hist.fill(0);
+          let cnt = 0;
+          for (let y = y0; y < y1; y += 2) {
+            const ro = y * w;
+            for (let x = x0; x < x1; x += 2) {
+              hist[gray[ro + x]]++;
+              cnt++;
+            }
+          }
+          const tLo = Math.floor(cnt * 0.08);
+          const tHi = Math.floor(cnt * 0.85);
+          let acc = 0;
+          let lo = 0;
+          let hi = 255;
+          let gotLo = false;
+          for (let v = 0; v < 256; v++) {
+            acc += hist[v];
+            if (!gotLo && acc >= tLo) {
+              lo = v;
+              gotLo = true;
+            }
+            if (acc >= tHi) {
+              hi = v;
+              break;
+            }
+          }
+          if (hi - lo < 16) lo = Math.max(0, hi - 60);
+          pLow[ty * gw + tx] = lo;
+          pHigh[ty * gw + tx] = hi;
+        }
+      }
+
+      const outData = outCtx.createImageData(w, h);
+      const outPixels = outData.data;
+      for (let y = 0; y < h; y++) {
+        const fy = y / tile;
+        const ty0 = Math.min(gh - 2, fy | 0);
+        const wy = fy - ty0;
+        const ro = y * w;
+        for (let x = 0; x < w; x++) {
+          const fx = x / tile;
+          const tx0 = Math.min(gw - 2, fx | 0);
+          const wx = fx - tx0;
+          const i00 = ty0 * gw + tx0;
+          const lo =
+            pLow[i00] * (1 - wx) * (1 - wy) +
+            pLow[i00 + 1] * wx * (1 - wy) +
+            pLow[i00 + gw] * (1 - wx) * wy +
+            pLow[i00 + gw + 1] * wx * wy;
+          const hi =
+            pHigh[i00] * (1 - wx) * (1 - wy) +
+            pHigh[i00 + 1] * wx * (1 - wy) +
+            pHigh[i00 + gw] * (1 - wx) * wy +
+            pHigh[i00 + gw + 1] * wx * wy;
+          const norm = Math.max(0, Math.min(255, ((gray[ro + x] - lo) * 255) / Math.max(18, hi - lo)));
+          const val = norm < 135 ? 0 : norm | 0;
+          const p = (ro + x) << 2;
+          outPixels[p] = val;
+          outPixels[p + 1] = val;
+          outPixels[p + 2] = val;
+          outPixels[p + 3] = 255;
+        }
+      }
+
+      outCtx.putImageData(outData, 0, 0);
+      return outCanvas;
+    };
+
     // Creates a rotated (90 deg CW or CCW) canvas from a vertical strip (for vertical backup VINs printed on trailer tags)
     const createRotatedCropCanvasFromImage = (img, rx, ry, rw, rh, clockwise = false, maxLongSide = 1600) => {
       const baseCrop = createCroppedCanvasFromImage(img, rx, ry, rw, rh, maxLongSide, false);
@@ -1694,34 +1877,53 @@
           try {
             // Crop directly from full native camera resolution (e.g. 4032x3024) so barcodes & text stay razor-sharp
             const fullCanvas = createCroppedCanvasFromImage(img, 0, 0, 1, 1, 2000, false);
-            const stickerCenterCanvas = createCroppedCanvasFromImage(img, 0.08, 0.14, 0.84, 0.72, 1800, false);
-            const vinBandCanvas = createCroppedCanvasFromImage(img, 0.08, 0.34, 0.84, 0.36, 1800, false);
+            const stickerCenterCanvas = createCroppedCanvasFromImage(img, 0.06, 0.14, 0.88, 0.72, 1800, false);
+            const vinBandCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.88, 0.36, 1800, false);
             // Left/center text crop excludes right-hand barcode bars so OCR reads "V.I.N / N.I.V." or "V.I.N.. :" cleanly
-            const vinLeftTextCanvas = createCroppedCanvasFromImage(img, 0.10, 0.34, 0.58, 0.32, 1600, false);
-            // Scrape-erased ink-isolated crops turn medium-gray scrapes & thin laminate tear lines into pure white
+            const vinLeftTextCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.58, 0.32, 1600, false);
+            // Local contrast-normalized crops restore faded thermal print on metallic tags (IMG_2044) & boost barcodes
+            const localContrastLeftCanvas = createLocalContrastCanvas(vinLeftTextCanvas);
+            const localContrastBandCanvas = createLocalContrastCanvas(vinBandCanvas);
+            // Scrape-erased ink-isolated crops turn medium-gray scrapes & thin laminate tear lines into pure white (IMG_4623)
             const inkIsolatedLeftCanvas = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, true);
             const inkIsolatedBandCanvas = createInkIsolatedCanvas(vinBandCanvas, 0.42, true);
-            // Right/middle and left/middle native-res barcode crops cover both right-side (IMG_2270) and left-side (IMG_4623) barcodes
+            // Right/middle and left/middle native-res barcode crops cover both right-side (IMG_2270) and left-side (IMG_4623, IMG_2044) barcodes
             const barcodeRightZoomCanvas = createCroppedCanvasFromImage(img, 0.42, 0.32, 0.52, 0.40, 1800, false);
-            const barcodeLeftZoomCanvas = createCroppedCanvasFromImage(img, 0.10, 0.38, 0.58, 0.32, 1800, false);
-            const contrastCenterCanvas = createCroppedCanvasFromImage(img, 0.08, 0.14, 0.84, 0.72, 1600, true);
-            // Vertical backup VIN strip on the right side of trailer stickers (rotated 90° CCW and 90° CW)
-            const verticalRightCCW = createRotatedCropCanvasFromImage(img, 0.58, 0.20, 0.32, 0.65, false, 1500);
-            const verticalRightCW = createRotatedCropCanvasFromImage(img, 0.58, 0.20, 0.32, 0.65, true, 1500);
+            const barcodeLeftZoomCanvas = createCroppedCanvasFromImage(img, 0.06, 0.36, 0.56, 0.30, 1800, false);
+            const barcodeLeftContrastCanvas = createLocalContrastCanvas(barcodeLeftZoomCanvas);
+            const contrastCenterCanvas = createCroppedCanvasFromImage(img, 0.06, 0.14, 0.88, 0.72, 1600, true);
+            // Vertical backup VIN strip on the right side / far right edge of trailer stickers (rotated 90° CCW and 90° CW)
+            const verticalRightCCW = createRotatedCropCanvasFromImage(img, 0.58, 0.18, 0.42, 0.68, false, 1500);
+            const verticalRightCW = createRotatedCropCanvasFromImage(img, 0.58, 0.18, 0.42, 0.68, true, 1500);
 
             finish({
-              barcodeCanvases: [barcodeLeftZoomCanvas, barcodeRightZoomCanvas, vinBandCanvas, stickerCenterCanvas, fullCanvas],
-              code39Canvases: [barcodeLeftZoomCanvas, vinBandCanvas, barcodeRightZoomCanvas],
+              barcodeCanvases: [
+                barcodeLeftZoomCanvas,
+                barcodeLeftContrastCanvas,
+                barcodeRightZoomCanvas,
+                vinBandCanvas,
+                stickerCenterCanvas,
+                fullCanvas
+              ],
+              code39Canvases: [
+                barcodeLeftContrastCanvas,
+                barcodeLeftZoomCanvas,
+                localContrastBandCanvas,
+                vinBandCanvas,
+                barcodeRightZoomCanvas
+              ],
               ocrCanvases: [
+                localContrastLeftCanvas,
                 inkIsolatedLeftCanvas,
+                localContrastBandCanvas,
                 inkIsolatedBandCanvas,
                 vinLeftTextCanvas,
                 vinBandCanvas,
+                verticalRightCCW,
+                verticalRightCW,
                 stickerCenterCanvas,
                 fullCanvas,
-                contrastCenterCanvas,
-                verticalRightCCW,
-                verticalRightCW
+                contrastCenterCanvas
               ]
             });
           } catch (err) {
@@ -1787,15 +1989,25 @@
           } catch (zxingInitErr) {}
         }
 
-        // Pass 1C: Custom multi-scanline Code 39 decoder (reads intact scanlines of scraped barcodes & collects fragments)
-        const barcodeFragments = [];
+        // Pass 1C: Custom multi-scanline Code 39 decoder (reads intact scanlines of scraped/creased barcodes & stitches fragments)
+        const barcodeFragmentsMap = new Map();
         for (let c = 0; c < (canvases.code39Canvases || []).length; c++) {
           const c39 = scanCanvasForCode39(canvases.code39Canvases[c], categoryKey);
           if (c39.fullVin) return c39.fullVin;
           for (let f = 0; f < c39.fragments.length; f++) {
-            barcodeFragments.push(c39.fragments[f]);
+            const frag = c39.fragments[f];
+            const prev = barcodeFragmentsMap.get(frag.text);
+            barcodeFragmentsMap.set(frag.text, {
+              text: frag.text,
+              hasStartStar: Boolean(prev?.hasStartStar || frag.hasStartStar),
+              hasStopStar: Boolean(prev?.hasStopStar || frag.hasStopStar),
+              hits: (prev?.hits || 0) + (frag.hits || 1)
+            });
           }
         }
+        const barcodeFragments = Array.from(barcodeFragmentsMap.values());
+        const crossStitched = stitchBarcodeFragments(barcodeFragments);
+        if (crossStitched) return crossStitched;
 
         // Pass 2: Queued Multi-Crop Tesseract.js OCR (with scrape-erased canvases + partial barcode fragment fusion)
         const runOcr = () =>
