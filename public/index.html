@@ -5450,7 +5450,7 @@
                         </div>
 
                         {/* Model */}
-                        <div>
+                        <div className={(!requiresHours && !requiresMiles) ? 'sm:col-span-2' : ''}>
                           <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Model *</label>
                           <input
                             type="text"
@@ -5461,27 +5461,9 @@
                           />
                         </div>
 
-                        {/* VIN / Serial Number (Optional on Step 2) */}
-                        <div>
-                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                            VIN / Serial Number <span className="text-neutral-500 font-normal normal-case">(Optional)</span>
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Optional — or include VIN tag photo in Step 3"
-                            value={formData.vinOrSerial}
-                            onChange={(e) => {
-                              const val = e.target.value.toUpperCase();
-                              handleInputChange('vinOrSerial', val);
-                              setVinScanSource(val.trim() ? 'manual' : '');
-                            }}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm placeholder:font-sans placeholder:text-neutral-600 focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                          />
-                        </div>
-
                         {/* Hours: Required for tractors, heavy equipment, boats & pwcs */}
                         {requiresHours && (
-                          <div className="sm:col-span-2">
+                          <div>
                             <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Hours *</label>
                             <input
                               type="number"
@@ -5496,7 +5478,7 @@
 
                         {/* Miles: Required for powersports and motorcycles */}
                         {requiresMiles && (
-                          <div className="sm:col-span-2">
+                          <div>
                             <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">Miles *</label>
                             <input
                               type="number"
