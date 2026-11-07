@@ -620,7 +620,7 @@
     };
 
     const PARTNER_ROUTING_CHANNELS = [
-      { id: 'dealer_portal', name: 'Dealer Trade-Banking Portal (Submissions & Chats)', category: 'partner_portal' },
+      { id: 'dealer_portal', name: 'Dealer Portal (Submissions & Chats)', category: 'partner_portal' },
       { id: 'bank_portal', name: 'Bank & Credit Union Repo Portal (Submissions & Chats)', category: 'partner_portal' }
     ];
 
@@ -6421,10 +6421,10 @@
       const isBankPortal = portalType === 'bank';
       const portalTitle = isBankPortal
         ? 'Bank & Credit Union Repo Liquidation Portal'
-        : 'Dealer Trade-Banking Portal';
+        : 'Dealer Portal';
       const portalBadge = isBankPortal
         ? '🏦 BANK & CREDIT UNION REPO PORTAL'
-        : '🤝 DEALER TRADE-BANKING PORTAL';
+        : '🤝 DEALER PORTAL';
       const orgLabel = isBankPortal ? 'Bank or Credit Union Name' : 'Dealership Name';
 
       // Auth states
@@ -6625,7 +6625,7 @@
             senderEmail: 'appraisals@sr1companies.com',
             text: isBankPortal
               ? `Welcome to the SR1 Bank & Credit Union Repo Liquidation Portal, ${contactClean}! Submit single or multiple repo units anytime, and use this General Chat or any Unit Chat to reach our buyers directly.`
-              : `Welcome to the SR1 Dealer Trade-Banking Portal, ${contactClean}! Submit single or multiple trade-in units anytime for wholesale buy offers, and use this General Chat or any Unit Chat to reach our buyers directly.`,
+              : `Welcome to the SR1 Dealer Portal, ${contactClean}! Submit single or multiple trade-in units anytime for wholesale buy offers, and use this General Chat or any Unit Chat to reach our buyers directly.`,
             createdAt: nowIso
           };
 
@@ -10963,7 +10963,7 @@
                   </span>
                   {inquiry.submissionSource === 'dealer' ? (
                     <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-950 border border-blue-700 text-blue-300 flex items-center gap-1">
-                      <span>🤝 Dealer Trade-Banking</span>
+                      <span>🤝 Dealer Portal</span>
                       {inquiry.partnerOrgName && (
                         <span className="text-white bg-blue-900/60 px-1.5 py-0.2 rounded text-[10px]">
                           {inquiry.partnerOrgName}
