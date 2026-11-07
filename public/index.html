@@ -2303,6 +2303,50 @@
       return rawImg;
     };
 
+    // Fast pre-screening gate: determines if quick OCR text shows any sign of a VIN tag, compliance sticker, or 17-digit VIN string
+    const doesOcrTextLookLikeVinOrTag = (rawText) => {
+      if (!rawText) return false;
+      const upper = String(rawText)
+        .replace(/(?<=[A-Za-z0-9])[l|!]|[l|!](?=[A-Za-z0-9])/g, '1')
+        .toUpperCase();
+
+      // 1. Check for any VIN tag / compliance label / trailer or equipment spec plate keywords
+      if (
+        /(?:V\.?\s*[IJL1]\.?\s*N|N\.?\s*[IJL1]\.?\s*V|VJN|NJV|VEHICLE\s+ID|IDENTIFICATION|GVWR|GAWR|PNBV|PNBE|KPA|PSI|\bLBS?\.?\b|\d+\s*KG\b|COLD|TIRE|RIMS?\b|AXLE|TRAILER|REMORQUE|MFD\b|MFG\b|DATE\s+OF|MANUFACTUR|FABRIQUE|CONFORMS|FEDERAL|SAFETY|MODEL|SERIAL|S\/N|P\.?\s*I\.?\s*N|HULL|FOREST\s+RIVER|TRIPLE\s+CROWN|ST2\d\d|15\s*[X"'])/i.test(
+          upper
+        )
+      ) {
+        return true;
+      }
+
+      // 2. Check for any standalone or contiguous VIN-like alphanumeric run (8+ chars with letters & digits, or 6+ digits)
+      // Handles plain 17-digit VIN stickers that have no "VIN" label (e.g. 5WFBU2424PW126186.jpg)
+      const runs = upper.match(/[A-Z0-9]{8,28}/g) || [];
+      for (let i = 0; i < runs.length; i++) {
+        const r = runs[i];
+        const digits = (r.match(/\d/g) || []).length;
+        const letters = (r.match(/[A-Z]/g) || []).length;
+        if ((digits >= 2 && letters >= 1) || digits >= 6) {
+          return true;
+        }
+      }
+
+      // 3. Check if any single line has 11+ alphanumeric chars with at least 3 digits when spaces/hyphens are removed
+      const lines = upper.split(/\r?\n/);
+      for (let l = 0; l < lines.length; l++) {
+        const compact = lines[l].replace(/[^A-Z0-9]/g, '');
+        if (compact.length >= 11 && compact.length <= 28) {
+          const digits = (compact.match(/\d/g) || []).length;
+          const letters = (compact.match(/[A-Z]/g) || []).length;
+          if (digits >= 3 && letters >= 2) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    };
+
     const loadImageCanvasesForScan = async (file) => {
       if (!file) return null;
       const [decodableBlob, irotSteps] = await Promise.all([
@@ -2342,103 +2386,130 @@
             const isWideBanner = natW / Math.max(1, natH) >= 2.2;
             const isPortrait = natW < natH * 0.95;
 
-            // Crop directly from full native camera resolution so barcodes & text stay razor-sharp
-            const fullCanvas = createCroppedCanvasFromImage(img, 0, 0, 1, 1, 2000, false);
-            const strictInkFullCanvas = createInkIsolatedCanvas(fullCanvas, 0.28, false);
-            const inkIsolatedFullCanvas = createInkIsolatedCanvas(fullCanvas, 0.42, false);
-            const vinTopBannerCanvas = createCroppedCanvasFromImage(img, 0.02, 0.05, 0.96, 0.68, 1800, false);
-            const strictInkTopBannerCanvas = createInkIsolatedCanvas(vinTopBannerCanvas, 0.28, false);
-
-            const stickerCenterCanvas = createCroppedCanvasFromImage(img, 0.06, 0.14, 0.88, 0.72, 1800, false);
+            // STAGE 1 FAST GATE CANVASES: Only build lightweight screening canvases upfront so normal unit photos don't pay for 18 heavy crops
+            const gateFullCanvas = createCroppedCanvasFromImage(img, 0, 0, 1, 1, 1350, false);
             const vinBandCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.88, 0.36, 1800, false);
-            // Bottom compliance band crop captures VINs printed near the bottom of stickers (e.g. 2NEB212B5PN037870, 5JW1U1827T1494127, IMG_1689)
-            const vinBottomBandCanvas = createCroppedCanvasFromImage(img, 0.06, 0.54, 0.84, 0.36, 1800, false);
-            const inkIsolatedBottomBandCanvas = createInkIsolatedCanvas(vinBottomBandCanvas, 0.42, false);
-
-            // Left/center text crop excludes right-hand barcode bars so OCR reads "V.I.N / N.I.V." or "V.I.N.. :" cleanly
             const vinLeftTextCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.58, 0.32, 1600, false);
             const isCrazedSticker = isSeverelyCrazedStickerCanvas(vinLeftTextCanvas);
-            // Scrape & mildew-erased ink-isolated crops turn medium-gray scrapes & mildew into pure white (IMG_4623, IMG_1689)
             const inkIsolatedLeftLineErased = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, true);
-            const inkIsolatedLeftCanvas = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, false);
-            const inkIsolatedCenterCanvas = createInkIsolatedCanvas(stickerCenterCanvas, 0.42, false);
-            const inkIsolatedBandCanvas = createInkIsolatedCanvas(vinBandCanvas, 0.42, true);
-            // Local contrast-normalized crops restore faded thermal print on metallic tags (IMG_2044) & boost barcodes
-            const localContrastLeftCanvas = createLocalContrastCanvas(vinLeftTextCanvas);
-            const localContrastBandCanvas = createLocalContrastCanvas(vinBandCanvas);
-            // Right/middle and left/middle native-res barcode crops cover both right-side (IMG_2270, 5JW) and left-side (IMG_4623, IMG_2044) barcodes
-            const barcodeRightZoomCanvas = createCroppedCanvasFromImage(img, 0.42, 0.32, 0.54, 0.40, 1800, false);
-            const barcodeLeftZoomCanvas = createCroppedCanvasFromImage(img, 0.06, 0.36, 0.56, 0.30, 1800, false);
-            const barcodeLeftContrastCanvas = createLocalContrastCanvas(barcodeLeftZoomCanvas);
-            // Vertical sticker / vertical backup VIN crops rotated 90° CW and 90° CCW (handles 1XNBU0816N2024607 & 2NEB212B5PN037870)
-            const verticalStickerZoomCW = createRotatedCropCanvasFromImage(img, 0.34, 0.14, 0.32, 0.82, true, 1600);
-            const verticalStickerFullCW = createRotatedCropCanvasFromImage(img, 0.20, 0.04, 0.52, 0.92, true, 1600);
-            const verticalStickerFullCCW = createRotatedCropCanvasFromImage(img, 0.20, 0.04, 0.52, 0.92, false, 1600);
+            const verticalStickerZoomCW = (isPortrait && !irotSteps)
+              ? createRotatedCropCanvasFromImage(img, 0.34, 0.14, 0.32, 0.82, true, 1600)
+              : null;
+
+            const gateOcrCanvases = isCrazedSticker
+              ? [vinLeftTextCanvas]
+              : isWideBanner
+              ? [gateFullCanvas, inkIsolatedLeftLineErased]
+              : (isPortrait && !irotSteps && verticalStickerZoomCW)
+              ? [verticalStickerZoomCW, gateFullCanvas]
+              : [gateFullCanvas, inkIsolatedLeftLineErased];
+
+            let cachedDeepCanvases = null;
+            const getDeepCanvases = () => {
+              if (cachedDeepCanvases) return cachedDeepCanvases;
+
+              // STAGE 2 DEEP SCAN CANVASES: Built ONLY after Stage 1 confirms this photo looks like a VIN number or VIN tag
+              const fullCanvas = createCroppedCanvasFromImage(img, 0, 0, 1, 1, 2000, false);
+              const strictInkFullCanvas = createInkIsolatedCanvas(fullCanvas, 0.28, false);
+              const inkIsolatedFullCanvas = createInkIsolatedCanvas(fullCanvas, 0.42, false);
+              const vinTopBannerCanvas = createCroppedCanvasFromImage(img, 0.02, 0.05, 0.96, 0.68, 1800, false);
+              const strictInkTopBannerCanvas = createInkIsolatedCanvas(vinTopBannerCanvas, 0.28, false);
+
+              const stickerCenterCanvas = createCroppedCanvasFromImage(img, 0.06, 0.14, 0.88, 0.72, 1800, false);
+              // Bottom compliance band crop captures VINs printed near the bottom of stickers (e.g. 2NEB212B5PN037870, 5JW1U1827T1494127, IMG_1689)
+              const vinBottomBandCanvas = createCroppedCanvasFromImage(img, 0.06, 0.54, 0.84, 0.36, 1800, false);
+              const inkIsolatedBottomBandCanvas = createInkIsolatedCanvas(vinBottomBandCanvas, 0.42, false);
+
+              const inkIsolatedLeftCanvas = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, false);
+              const inkIsolatedCenterCanvas = createInkIsolatedCanvas(stickerCenterCanvas, 0.42, false);
+              const inkIsolatedBandCanvas = createInkIsolatedCanvas(vinBandCanvas, 0.42, true);
+              // Local contrast-normalized crops restore faded thermal print on metallic tags (IMG_2044) & boost barcodes
+              const localContrastLeftCanvas = createLocalContrastCanvas(vinLeftTextCanvas);
+              const localContrastBandCanvas = createLocalContrastCanvas(vinBandCanvas);
+              // Right/middle and left/middle native-res barcode crops cover both right-side (IMG_2270, 5JW) and left-side (IMG_4623, IMG_2044) barcodes
+              const barcodeRightZoomCanvas = createCroppedCanvasFromImage(img, 0.42, 0.32, 0.54, 0.40, 1800, false);
+              const barcodeLeftZoomCanvas = createCroppedCanvasFromImage(img, 0.06, 0.36, 0.56, 0.30, 1800, false);
+              const barcodeLeftContrastCanvas = createLocalContrastCanvas(barcodeLeftZoomCanvas);
+              // Vertical sticker / vertical backup VIN crops rotated 90° CW and 90° CCW (handles 1XNBU0816N2024607 & 2NEB212B5PN037870)
+              const deepVerticalZoomCW = verticalStickerZoomCW || createRotatedCropCanvasFromImage(img, 0.34, 0.14, 0.32, 0.82, true, 1600);
+              const verticalStickerFullCW = createRotatedCropCanvasFromImage(img, 0.20, 0.04, 0.52, 0.92, true, 1600);
+              const verticalStickerFullCCW = createRotatedCropCanvasFromImage(img, 0.20, 0.04, 0.52, 0.92, false, 1600);
+
+              cachedDeepCanvases = {
+                barcodeCanvases: [
+                  barcodeLeftZoomCanvas,
+                  barcodeLeftContrastCanvas,
+                  barcodeRightZoomCanvas,
+                  vinBandCanvas,
+                  stickerCenterCanvas,
+                  fullCanvas,
+                  verticalStickerFullCW
+                ],
+                code39Canvases: [
+                  barcodeLeftContrastCanvas,
+                  barcodeLeftZoomCanvas,
+                  localContrastBandCanvas,
+                  vinBandCanvas,
+                  barcodeRightZoomCanvas
+                ],
+                ocrCanvases: isCrazedSticker
+                  ? [
+                      vinLeftTextCanvas,
+                      stickerCenterCanvas,
+                      fullCanvas
+                    ]
+                  : isWideBanner
+                  ? [
+                      strictInkFullCanvas,
+                      fullCanvas,
+                      strictInkTopBannerCanvas,
+                      vinTopBannerCanvas,
+                      inkIsolatedFullCanvas,
+                      vinBandCanvas,
+                      vinLeftTextCanvas
+                    ]
+                  : isPortrait && !irotSteps
+                  ? [
+                      deepVerticalZoomCW,
+                      verticalStickerFullCW,
+                      inkIsolatedLeftLineErased,
+                      vinLeftTextCanvas,
+                      vinBottomBandCanvas,
+                      inkIsolatedBottomBandCanvas,
+                      inkIsolatedCenterCanvas,
+                      stickerCenterCanvas,
+                      verticalStickerFullCCW,
+                      fullCanvas
+                    ]
+                  : [
+                      inkIsolatedLeftLineErased,
+                      vinLeftTextCanvas,
+                      vinBottomBandCanvas,
+                      inkIsolatedBottomBandCanvas,
+                      deepVerticalZoomCW,
+                      verticalStickerFullCW,
+                      inkIsolatedCenterCanvas,
+                      localContrastLeftCanvas,
+                      vinBandCanvas,
+                      inkIsolatedBandCanvas,
+                      localContrastBandCanvas,
+                      stickerCenterCanvas,
+                      inkIsolatedLeftCanvas,
+                      verticalStickerFullCCW,
+                      fullCanvas
+                    ]
+              };
+              return cachedDeepCanvases;
+            };
 
             finish({
               isCrazedSticker,
-              barcodeCanvases: [
-                barcodeLeftZoomCanvas,
-                barcodeLeftContrastCanvas,
-                barcodeRightZoomCanvas,
-                vinBandCanvas,
-                stickerCenterCanvas,
-                fullCanvas,
-                verticalStickerFullCW
-              ],
-              code39Canvases: [
-                barcodeLeftContrastCanvas,
-                barcodeLeftZoomCanvas,
-                localContrastBandCanvas,
-                vinBandCanvas,
-                barcodeRightZoomCanvas
-              ],
-              ocrCanvases: isCrazedSticker
-                ? [
-                    vinLeftTextCanvas,
-                    stickerCenterCanvas,
-                    fullCanvas
-                  ]
-                : isWideBanner
-                ? [
-                    strictInkFullCanvas,
-                    fullCanvas,
-                    strictInkTopBannerCanvas,
-                    vinTopBannerCanvas,
-                    inkIsolatedFullCanvas,
-                    vinBandCanvas,
-                    vinLeftTextCanvas
-                  ]
-                : isPortrait && !irotSteps
-                ? [
-                    verticalStickerZoomCW,
-                    verticalStickerFullCW,
-                    inkIsolatedLeftLineErased,
-                    vinLeftTextCanvas,
-                    vinBottomBandCanvas,
-                    inkIsolatedBottomBandCanvas,
-                    inkIsolatedCenterCanvas,
-                    stickerCenterCanvas,
-                    verticalStickerFullCCW,
-                    fullCanvas
-                  ]
-                : [
-                    inkIsolatedLeftLineErased,
-                    vinLeftTextCanvas,
-                    vinBottomBandCanvas,
-                    inkIsolatedBottomBandCanvas,
-                    verticalStickerZoomCW,
-                    verticalStickerFullCW,
-                    inkIsolatedCenterCanvas,
-                    localContrastLeftCanvas,
-                    vinBandCanvas,
-                    inkIsolatedBandCanvas,
-                    localContrastBandCanvas,
-                    stickerCenterCanvas,
-                    inkIsolatedLeftCanvas,
-                    verticalStickerFullCCW,
-                    fullCanvas
-                  ]
+              gateBarcodeCanvases: verticalStickerZoomCW
+                ? [vinBandCanvas, gateFullCanvas, verticalStickerZoomCW]
+                : [vinBandCanvas, gateFullCanvas],
+              gateCode39Canvases: [vinBandCanvas, gateFullCanvas],
+              gateOcrCanvases,
+              getDeepCanvases
             });
           } catch (err) {
             finish(null);
@@ -2454,16 +2525,23 @@
       });
     };
 
-    const scanImageFileForVin = async (file, categoryKey) => {
+    const scanImageFileForVin = async (file, categoryKey, shouldAbortScan = null) => {
       if (!file) return { vin: '', unreadableVinTag: false };
       const isVideo = file.type?.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name || '');
       if (isVideo) return { vin: '', unreadableVinTag: false };
+      if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
+        return { vin: '', unreadableVinTag: false };
+      }
 
       try {
         const canvases = await loadImageCanvasesForScan(file);
         if (!canvases) return { vin: '', unreadableVinTag: false };
+        if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
+          return { vin: '', unreadableVinTag: false };
+        }
 
-        // Pass 1A: Fast native BarcodeDetector across zoomed barcode regions, band, center, and full frame
+        // Fast Gate Step 1A: Quick native BarcodeDetector on gate canvases (<25ms)
+        let detector = null;
         if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
           try {
             let formats = ['code_39', 'code_128', 'codabar', 'itf', 'data_matrix', 'pdf417', 'qr_code'];
@@ -2472,10 +2550,10 @@
               formats = formats.filter((f) => supported.includes(f));
             }
             if (formats.length > 0) {
-              const detector = new window.BarcodeDetector({ formats });
-              for (let c = 0; c < canvases.barcodeCanvases.length; c++) {
+              detector = new window.BarcodeDetector({ formats });
+              for (let c = 0; c < (canvases.gateBarcodeCanvases || []).length; c++) {
                 try {
-                  const barcodes = await detector.detect(canvases.barcodeCanvases[c]);
+                  const barcodes = await detector.detect(canvases.gateBarcodeCanvases[c]);
                   for (let i = 0; i < (barcodes || []).length; i++) {
                     const found = extractVinFromBarcodeValue(barcodes[i]?.rawValue, categoryKey);
                     if (found) return { vin: found, unreadableVinTag: false };
@@ -2486,27 +2564,10 @@
           } catch (barcodeErr) {}
         }
 
-        // Pass 1B: ZXing Multi-Format Barcode Reader fallback on zoomed barcode canvases
-        if (typeof window !== 'undefined' && window.ZXing && typeof window.ZXing.BrowserMultiFormatReader === 'function') {
-          try {
-            const zxingReader = new window.ZXing.BrowserMultiFormatReader();
-            for (let c = 0; c < Math.min(3, canvases.barcodeCanvases.length); c++) {
-              try {
-                const dataUrl = canvases.barcodeCanvases[c].toDataURL('image/jpeg', 0.92);
-                const res = await zxingReader.decodeFromImageUrl(dataUrl);
-                if (res && res.getText) {
-                  const found = extractVinFromBarcodeValue(res.getText(), categoryKey);
-                  if (found) return { vin: found, unreadableVinTag: false };
-                }
-              } catch (zErr) {}
-            }
-          } catch (zxingInitErr) {}
-        }
-
-        // Pass 1C: Custom multi-scanline Code 39 decoder (reads intact scanlines of scraped/creased barcodes & stitches fragments)
+        // Fast Gate Step 1B: Quick Code 39 scanline check on gate canvases (<15ms)
         const barcodeFragmentsMap = new Map();
-        for (let c = 0; c < (canvases.code39Canvases || []).length; c++) {
-          const c39 = scanCanvasForCode39(canvases.code39Canvases[c], categoryKey);
+        for (let c = 0; c < (canvases.gateCode39Canvases || []).length; c++) {
+          const c39 = scanCanvasForCode39(canvases.gateCode39Canvases[c], categoryKey);
           if (c39.fullVin) return { vin: c39.fullVin, unreadableVinTag: false };
           for (let f = 0; f < c39.fragments.length; f++) {
             const frag = c39.fragments[f];
@@ -2519,15 +2580,20 @@
             });
           }
         }
-        const barcodeFragments = Array.from(barcodeFragmentsMap.values());
-        const crossStitched = stitchBarcodeFragments(barcodeFragments);
-        if (crossStitched) return { vin: crossStitched, unreadableVinTag: false };
+        let barcodeFragments = Array.from(barcodeFragmentsMap.values());
+        const gateStitched = stitchBarcodeFragments(barcodeFragments);
+        if (gateStitched) return { vin: gateStitched, unreadableVinTag: false };
 
         const isCrazed = Boolean(canvases.isCrazedSticker);
+        // If we already detected barcode fragments or a crazed compliance sticker surface, it's confirmed as a VIN tag
+        let confirmedVinOrTag = isCrazed || barcodeFragments.length > 0;
 
-        // Pass 2: Queued Multi-Crop Tesseract.js OCR (with scrape-erased canvases + partial barcode fragment fusion)
+        // Stage 1C (Fast OCR Gate) -> Stage 2 (Full Deep Scan ONLY if photo clearly looks like a VIN number or VIN tag)
         const runOcr = () =>
           new Promise(async (resolve) => {
+            if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
+              return resolve({ vin: '', unreadableVinTag: false });
+            }
             const timeout = setTimeout(() => resolve({ vin: '', unreadableVinTag: isCrazed }), 28000);
             try {
               const worker = await getSharedTesseractWorker();
@@ -2535,9 +2601,133 @@
                 clearTimeout(timeout);
                 return resolve({ vin: '', unreadableVinTag: isCrazed });
               }
+
               let combinedText = '';
-              for (let c = 0; c < canvases.ocrCanvases.length; c++) {
-                const res = await worker.recognize(canvases.ocrCanvases[c]);
+              const recognizedCanvases = new Set();
+
+              // STAGE 1C: Fast Pre-Screening OCR Gate (1-2 lightweight crops)
+              if (!confirmedVinOrTag) {
+                const gateCrops = canvases.gateOcrCanvases || [];
+                for (let g = 0; g < gateCrops.length; g++) {
+                  if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
+                    clearTimeout(timeout);
+                    return resolve({ vin: '', unreadableVinTag: false });
+                  }
+                  const gCanvas = gateCrops[g];
+                  if (!gCanvas) continue;
+                  const res = await worker.recognize(gCanvas);
+                  recognizedCanvases.add(gCanvas);
+                  const text = res?.data?.text || '';
+                  if (text) {
+                    const immediateVin = extractVinOrSerialFromOcrText(text, categoryKey, barcodeFragments, isCrazed);
+                    if (immediateVin) {
+                      clearTimeout(timeout);
+                      return resolve({ vin: immediateVin, unreadableVinTag: false });
+                    }
+                    combinedText += '\n' + text;
+                    const combinedImmediate = extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments, isCrazed);
+                    if (combinedImmediate) {
+                      clearTimeout(timeout);
+                      return resolve({ vin: combinedImmediate, unreadableVinTag: false });
+                    }
+                    if (doesOcrTextLookLikeVinOrTag(text) || doesOcrTextLookLikeVinOrTag(combinedText)) {
+                      confirmedVinOrTag = true;
+                      break;
+                    }
+                  }
+                }
+
+                // If Stage 1 Gate determines this photo is NOT a VIN number or VIN tag (e.g. normal RV/trailer/tractor photo), exit immediately!
+                if (!confirmedVinOrTag) {
+                  clearTimeout(timeout);
+                  return resolve({ vin: '', unreadableVinTag: false });
+                }
+              }
+
+              // STAGE 2: Photo is confirmed to look like a VIN number or VIN tag!
+              // Now build the full suite of deep-scan canvases and run all established barcode + multi-crop OCR steps.
+              const deep = canvases.getDeepCanvases();
+
+              // Deep Pass 2A: Native BarcodeDetector on zoomed left/right/contrast barcode crops
+              if (detector && deep.barcodeCanvases) {
+                for (let c = 0; c < deep.barcodeCanvases.length; c++) {
+                  try {
+                    const barcodes = await detector.detect(deep.barcodeCanvases[c]);
+                    for (let i = 0; i < (barcodes || []).length; i++) {
+                      const found = extractVinFromBarcodeValue(barcodes[i]?.rawValue, categoryKey);
+                      if (found) {
+                        clearTimeout(timeout);
+                        return resolve({ vin: found, unreadableVinTag: false });
+                      }
+                    }
+                  } catch (e) {}
+                }
+              }
+
+              // Deep Pass 2B: ZXing Multi-Format Barcode Reader fallback on zoomed barcode canvases
+              if (typeof window !== 'undefined' && window.ZXing && typeof window.ZXing.BrowserMultiFormatReader === 'function') {
+                try {
+                  const zxingReader = new window.ZXing.BrowserMultiFormatReader();
+                  for (let c = 0; c < Math.min(3, (deep.barcodeCanvases || []).length); c++) {
+                    try {
+                      const dataUrl = deep.barcodeCanvases[c].toDataURL('image/jpeg', 0.92);
+                      const res = await zxingReader.decodeFromImageUrl(dataUrl);
+                      if (res && res.getText) {
+                        const found = extractVinFromBarcodeValue(res.getText(), categoryKey);
+                        if (found) {
+                          clearTimeout(timeout);
+                          return resolve({ vin: found, unreadableVinTag: false });
+                        }
+                      }
+                    } catch (zErr) {}
+                  }
+                } catch (zxingInitErr) {}
+              }
+
+              // Deep Pass 2C: Custom multi-scanline Code 39 decoder across all zoomed & local-contrast barcode crops
+              for (let c = 0; c < (deep.code39Canvases || []).length; c++) {
+                const c39 = scanCanvasForCode39(deep.code39Canvases[c], categoryKey);
+                if (c39.fullVin) {
+                  clearTimeout(timeout);
+                  return resolve({ vin: c39.fullVin, unreadableVinTag: false });
+                }
+                for (let f = 0; f < c39.fragments.length; f++) {
+                  const frag = c39.fragments[f];
+                  const prev = barcodeFragmentsMap.get(frag.text);
+                  barcodeFragmentsMap.set(frag.text, {
+                    text: frag.text,
+                    hasStartStar: Boolean(prev?.hasStartStar || frag.hasStartStar),
+                    hasStopStar: Boolean(prev?.hasStopStar || frag.hasStopStar),
+                    hits: (prev?.hits || 0) + (frag.hits || 1)
+                  });
+                }
+              }
+              barcodeFragments = Array.from(barcodeFragmentsMap.values());
+              const crossStitched = stitchBarcodeFragments(barcodeFragments);
+              if (crossStitched) {
+                clearTimeout(timeout);
+                return resolve({ vin: crossStitched, unreadableVinTag: false });
+              }
+
+              // Re-check any text collected during the gate pass now that we have full deep barcode fragments
+              if (combinedText && barcodeFragments.length > 0) {
+                const fusedFromGate = extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments, isCrazed);
+                if (fusedFromGate) {
+                  clearTimeout(timeout);
+                  return resolve({ vin: fusedFromGate, unreadableVinTag: false });
+                }
+              }
+
+              // Deep Pass 2D: Full Multi-Crop Tesseract.js OCR across all enhanced canvases
+              for (let c = 0; c < (deep.ocrCanvases || []).length; c++) {
+                if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
+                  clearTimeout(timeout);
+                  return resolve({ vin: '', unreadableVinTag: false });
+                }
+                const targetCanvas = deep.ocrCanvases[c];
+                if (!targetCanvas || recognizedCanvases.has(targetCanvas)) continue;
+                recognizedCanvases.add(targetCanvas);
+                const res = await worker.recognize(targetCanvas);
                 const text = res?.data?.text || '';
                 if (text) {
                   const found = extractVinOrSerialFromOcrText(text, categoryKey, barcodeFragments, isCrazed);
@@ -2553,6 +2743,7 @@
                   }
                 }
               }
+
               clearTimeout(timeout);
               const finalVin = extractVinOrSerialFromOcrText(combinedText, categoryKey, barcodeFragments, isCrazed);
               if (finalVin) {
@@ -4272,12 +4463,12 @@
             let resolvedDetectedVin = '';
             let resolvedUnreadableVinTag = false;
 
-            // Start VIN / Serial barcode + OCR scan in parallel on image files
-            if (!isVideo) {
+            // Start VIN / Serial barcode + OCR scan in parallel on image files (only if a VIN hasn't already been found)
+            if (!isVideo && !latestVinRef.current) {
               activeScanCountRef.current += 1;
               setScanningVin(true);
               let scanPromise;
-              scanPromise = scanImageFileForVin(file, category)
+              scanPromise = scanImageFileForVin(file, category, () => Boolean(latestVinRef.current))
                 .then((scanRes) => {
                   const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
                   const unreadableTag = Boolean(typeof scanRes === 'object' && scanRes?.unreadableVinTag && !detected);
