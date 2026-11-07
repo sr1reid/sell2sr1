@@ -277,6 +277,124 @@ export async function onRequestPost({ request, env }) {
     }
 
     // =========================================================================
+    // CASE A2: PARTNER PORTAL NOTIFICATION (DEALER & BANK CHATS, OFFERS, BATCHES)
+    // =========================================================================
+    if (data.type === 'partner_notification') {
+      const rawRecipients = Array.isArray(data.recipients) && data.recipients.length > 0
+        ? data.recipients
+        : ['appraisals@sr1companies.com', 'reid@sr1companies.com'];
+      const cleanRecipients = Array.from(new Set(
+        rawRecipients
+          .map(e => String(e || '').trim().toLowerCase())
+          .filter(e => e && e.includes('@'))
+      ));
+      if (cleanRecipients.length === 0) {
+        cleanRecipients.push('appraisals@sr1companies.com');
+      }
+
+      const primaryTo = cleanRecipients[0];
+      const ccList = cleanRecipients.slice(1);
+      const portalLabel = data.partnerType === 'bank'
+        ? 'SR1 Bank & Credit Union Repo Portal'
+        : 'SR1 Dealer Trade-Banking Portal';
+      const subject = data.subject || `[${portalLabel}] Notification - selltosr1.com`;
+      const heading = data.heading || 'New Portal Update';
+      const partnerOrg = data.partnerOrgName || 'Partner Organization';
+      const partnerContact = data.partnerContactName || '';
+      const partnerEmail = data.partnerEmail || '';
+      const partnerPhone = data.partnerPhone || '';
+      const unitSummary = data.unitTitle || '';
+      const refNumStr = data.referenceId ? `#${data.referenceId}` : '';
+      const vinStr = data.vinOrSerial || '';
+      const offerStr = data.offerAmount ? `$${Number(data.offerAmount).toLocaleString()}` : '';
+      const senderName = data.senderName || '';
+      const messageBody = data.messageText || '';
+      const ctaUrl = data.ctaUrl || 'https://selltosr1.com/?view=portal';
+      const ctaLabel = data.ctaLabel || 'Open Portal →';
+      const extraRows = Array.isArray(data.extraRows) ? data.extraRows : [];
+
+      const rowsHtml = [
+        partnerOrg ? `<tr><td style="padding:7px 12px;color:#475569;font-weight:700;width:36%;border-bottom:1px solid #e2e8f0;">Organization:</td><td style="padding:7px 12px;font-weight:800;color:#0f172a;border-bottom:1px solid #e2e8f0;">${partnerOrg}</td></tr>` : '',
+        partnerContact ? `<tr><td style="padding:7px 12px;color:#475569;font-weight:700;border-bottom:1px solid #e2e8f0;">Contact Person:</td><td style="padding:7px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${partnerContact}${partnerPhone ? ` • <a href="tel:${partnerPhone}" style="color:#2563eb;font-weight:700;text-decoration:none;">${partnerPhone}</a>` : ''}${partnerEmail ? ` • <a href="mailto:${partnerEmail}" style="color:#2563eb;text-decoration:none;">${partnerEmail}</a>` : ''}</td></tr>` : '',
+        unitSummary ? `<tr><td style="padding:7px 12px;color:#475569;font-weight:700;border-bottom:1px solid #e2e8f0;">Unit:</td><td style="padding:7px 12px;font-weight:700;color:#0f172a;border-bottom:1px solid #e2e8f0;">${refNumStr ? `<span style="font-family:monospace;background:#f1f5f9;padding:2px 6px;border-radius:4px;margin-right:6px;">${refNumStr}</span>` : ''}${unitSummary}</td></tr>` : '',
+        vinStr ? `<tr><td style="padding:7px 12px;color:#475569;font-weight:700;border-bottom:1px solid #e2e8f0;">VIN / Serial:</td><td style="padding:7px 12px;font-family:monospace;font-weight:700;color:#0f172a;border-bottom:1px solid #e2e8f0;">${vinStr}</td></tr>` : '',
+        offerStr ? `<tr><td style="padding:7px 12px;color:#475569;font-weight:700;border-bottom:1px solid #e2e8f0;">SR1 Offer:</td><td style="padding:7px 12px;font-weight:800;color:#059669;font-size:15px;border-bottom:1px solid #e2e8f0;">${offerStr}</td></tr>` : '',
+        ...extraRows.map(r => `<tr><td style="padding:7px 12px;color:#475569;font-weight:700;border-bottom:1px solid #e2e8f0;">${r.label || ''}:</td><td style="padding:7px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${r.value || ''}</td></tr>`)
+      ].filter(Boolean).join('');
+
+      const partnerHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>${subject}</title></head>
+<body style="margin:0;padding:24px;background-color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;margin:0 auto;background-color:#ffffff;border:1px solid #d1d5db;border-radius:12px;overflow:hidden;">
+    <tr>
+      <td style="padding:20px 24px;background-color:#0f172a;color:#ffffff;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+          <tr>
+            <td style="vertical-align:middle;">
+              <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;">${portalLabel}</div>
+              <div style="font-size:19px;font-weight:800;margin-top:4px;color:#ffffff;">${heading}</div>
+            </td>
+            <td align="right" style="vertical-align:middle;">
+              <a href="https://selltosr1.com" target="_blank" style="text-decoration:none;display:inline-block;">
+                <img src="https://selltosr1.com/logo.png?v=3" alt="Sell to SR1" height="34" style="height:34px;width:auto;max-height:36px;display:block;border:0;" />
+              </a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:24px;">
+        ${rowsHtml ? `
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-size:13px;margin-bottom:18px;">
+          ${rowsHtml}
+        </table>` : ''}
+        ${messageBody ? `
+        <div style="padding:16px;background-color:#f8fafc;border:1px solid #cbd5e1;border-left:4px solid #0f172a;border-radius:8px;margin-bottom:20px;">
+          <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#475569;margin-bottom:6px;">
+            ${senderName ? `Message from ${senderName}` : 'Message / Details'}
+          </div>
+          <div style="font-size:14px;color:#0f172a;white-space:pre-wrap;line-height:1.6;">${messageBody}</div>
+        </div>` : ''}
+        <div style="text-align:center;padding-top:6px;">
+          <a href="${ctaUrl}" style="display:inline-block;padding:12px 24px;background-color:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:800;">
+            ${ctaLabel}
+          </a>
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+      const partnerPlain = `${portalLabel.toUpperCase()} — ${heading}\nOrganization: ${partnerOrg}\nContact: ${partnerContact} (${partnerPhone} / ${partnerEmail})\n${unitSummary ? `Unit: ${refNumStr} ${unitSummary}\n` : ''}${vinStr ? `VIN/Serial: ${vinStr}\n` : ''}${offerStr ? `SR1 Offer: ${offerStr}\n` : ''}\n${senderName ? `From ${senderName}:\n` : ''}${messageBody}\n\nOpen Portal: ${ctaUrl}`;
+
+      if (resendKey) {
+        const sendRes = await sendResendEmail(resendKey, {
+          from: `${fromName} <${fromAddress}>`,
+          to: [primaryTo],
+          ...(ccList.length > 0 ? { cc: ccList } : {}),
+          reply_to: partnerEmail && partnerEmail.includes('@') ? partnerEmail : fromAddress,
+          subject,
+          html: partnerHtml,
+          text: partnerPlain,
+        });
+
+        return new Response(JSON.stringify({
+          success: sendRes.ok,
+          provider: 'resend',
+          routedTo: cleanRecipients,
+          result: sendRes.data,
+        }), {
+          status: sendRes.ok ? 200 : 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+    }
+
+    // =========================================================================
     // CASE B: VALUATION INQUIRY SUBMISSION (CUSTOMER + INTERNAL DEALERSHIP ALERT)
     // =========================================================================
     const {
