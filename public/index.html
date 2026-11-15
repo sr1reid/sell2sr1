@@ -4218,6 +4218,7 @@
           mileageOrHours: Number(unit.mileageOrHours) || 0,
           isHours: !!unit.isHours,
           specs: unit.specs && typeof unit.specs === 'object' ? unit.specs : {},
+          extrasOrUpgrades: unit.extrasOrUpgrades || '',
           condition: unit.condition || 'Good',
           conditionNotes: unit.conditionNotes || '',
           tireOrTrackCondition: unit.tireOrTrackCondition || '',
@@ -6083,6 +6084,7 @@
         trimOrFloorplan: '',
         vinOrSerial: '',
         mileageOrHours: '',
+        extrasOrUpgrades: '',
         condition: 'good',
         conditionNotes: '',
         knownIssuesOrDamage: '',
@@ -6206,6 +6208,7 @@
             model: category === 'container' ? 'Container' : (formData.model || ''),
             mileageOrHours: formData.mileageOrHours || '',
             isHours: !!activeCatConfig.isHours,
+            extrasOrUpgrades: (formData.extrasOrUpgrades || '').trim(),
             vinOrSerial: resolvedVin,
             conditionNotes: (formData.conditionNotes || '').trim()
           },
@@ -7080,6 +7083,7 @@
               horsepower: Number(formData.horsepower) || 0,
               cabType: formData.cabType || 'standard'
             },
+            extrasOrUpgrades: (formData.extrasOrUpgrades || '').trim(),
             condition: formData.condition === 'excellent' ? 'Excellent' : formData.condition === 'very_good' ? 'Very Good' : formData.condition === 'good' ? 'Good' : 'Fair',
             conditionNotes: formData.conditionNotes,
             tireOrTrackCondition: formData.tireOrTrackCondition,
@@ -7159,6 +7163,7 @@
             Trim_or_Floorplan: formData.trimOrFloorplan || 'N/A',
             VIN_or_Serial_or_Box_ID: resolvedVinOrSerial || (vinPhotoConfirmed ? 'Included in Photos' : 'N/A'),
             Mileage_or_Hours: category === 'container' ? 'N/A' : `${formData.mileageOrHours || 0} ${activeCatConfig.isHours ? 'Hours' : 'Miles'}`,
+            Extras_or_Upgrades: (formData.extrasOrUpgrades || '').trim() || 'None listed',
             Overall_Condition: formData.condition,
             Condition_Notes: formData.conditionNotes || 'None',
             Known_Issues_or_Damage: formData.knownIssuesOrDamage || 'None reported',
@@ -7227,7 +7232,8 @@
               subcategory: '',
               category: activeCatConfig.label,
               mileageOrHours: formData.mileageOrHours,
-              isHours: activeCatConfig.isHours
+              isHours: activeCatConfig.isHours,
+              extrasOrUpgrades: (formData.extrasOrUpgrades || '').trim()
             },
             intent: formData.intent,
             workingWithSalesperson: formData.workingWithSalesperson,
@@ -7317,6 +7323,7 @@
                       trimOrFloorplan: '',
                       vinOrSerial: '',
                       mileageOrHours: '',
+                      extrasOrUpgrades: '',
                       condition: 'very_good',
                       conditionNotes: '',
                       knownIssuesOrDamage: '',
@@ -7708,6 +7715,19 @@
                         )}
                       </div>
                     )}
+
+                    {/* Optional Extras, Upgrades, or Additional Details (All Unit Types) */}
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                        Extras, Upgrades, or Additional Details <span className="text-neutral-500 font-normal normal-case">(Optional)</span>
+                      </label>
+                      <textarea
+                        rows="3"
+                        value={formData.extrasOrUpgrades}
+                        onChange={(e) => handleInputChange('extrasOrUpgrades', e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      ></textarea>
+                    </div>
 
                     <div className="pt-4 flex items-center justify-between">
                       <button
@@ -8393,6 +8413,9 @@
                       <p>• {idMeta.label}: <span className="font-mono text-neutral-200">{formData.vinOrSerial}</span></p>
                     )}
                     <p>• Category: {activeCatConfig.label}</p>
+                    {formData.extrasOrUpgrades && formData.extrasOrUpgrades.trim() && (
+                      <p>• Extras / Upgrades: <span className="text-neutral-200">{formData.extrasOrUpgrades.trim()}</span></p>
+                    )}
                     <p>• Photos: {photos.length} attached</p>
                   </div>
 
@@ -11412,7 +11435,7 @@
             const unitStr = `${pf.unit?.year || ''} ${pf.unit?.make || ''} ${pf.unit?.model || ''} ${pf.categoryLabel || ''}`.toLowerCase();
             const vinStr = String(pf.unit?.vinOrSerial || '').toLowerCase();
             const custStr = `${pf.customer?.firstName || ''} ${pf.customer?.lastName || ''} ${pf.customer?.email || ''} ${pf.customer?.phone || ''} ${pf.customer?.city || ''}`.toLowerCase();
-            const notesStr = String(pf.unit?.conditionNotes || '').toLowerCase();
+            const notesStr = `${pf.unit?.conditionNotes || ''} ${pf.unit?.extrasOrUpgrades || ''}`.toLowerCase();
             const spStr = String(pf.salespersonName || '').toLowerCase();
             return unitStr.includes(q) || vinStr.includes(q) || custStr.includes(q) || notesStr.includes(q) || spStr.includes(q);
           }
@@ -11551,6 +11574,7 @@
             mileageOrHours: Number(pf.unit?.mileageOrHours) || 0,
             isHours: !!pf.unit?.isHours,
             specs: {},
+            extrasOrUpgrades: pf.unit?.extrasOrUpgrades || '',
             condition: 'Good',
             conditionNotes: pf.unit?.conditionNotes || `Converted from incomplete form (visitor stopped at ${STEP_NAME_MAP[pf.maxStepReached] || `Step ${pf.maxStepReached}`}).`,
             tireOrTrackCondition: 'good',
@@ -11961,6 +11985,11 @@
                                 {pf.unit.isHours ? 'Hours' : 'Mileage'}: <strong className="text-neutral-200">{Number(pf.unit.mileageOrHours).toLocaleString()}</strong>
                               </div>
                             ) : null}
+                            {pf.unit?.extrasOrUpgrades && (
+                              <div className="text-[11px] text-neutral-300 line-clamp-2 pt-0.5">
+                                <span className="text-neutral-500">Extras:</span> {pf.unit.extrasOrUpgrades}
+                              </div>
+                            )}
                             {pf.workingWithSalesperson === 'yes' && pf.salespersonName && (
                               <div className="text-[11px] text-amber-300">
                                 SR1 Rep: <strong>{pf.salespersonName}</strong>
@@ -12400,6 +12429,12 @@
                           <span className="text-neutral-500 text-[10px] block">{selectedPartial.unit?.isHours ? 'Hours' : 'Mileage'}</span>
                           <span className="text-white font-semibold">{selectedPartial.unit?.mileageOrHours || 'Not applicable / Not entered'}</span>
                         </div>
+                        {selectedPartial.unit?.extrasOrUpgrades && (
+                          <div className="col-span-2">
+                            <span className="text-neutral-500 text-[10px] block">Extras, Upgrades, or Additional Details (Step 2)</span>
+                            <span className="text-neutral-200 whitespace-pre-line">{selectedPartial.unit.extrasOrUpgrades}</span>
+                          </div>
+                        )}
                         <div className="col-span-2">
                           <span className="text-neutral-500 text-[10px] block">VIN / Serial (Step 3)</span>
                           <span className="text-emerald-300 font-mono">{selectedPartial.unit?.vinOrSerial || 'None captured before leaving'}</span>
@@ -14931,6 +14966,13 @@
                         <span className="text-neutral-500 text-[10px] block">Estimated Payoff</span>
                         <span className="text-neutral-200 font-bold">${(inquiry.financials.estimatedPayoff || 0).toLocaleString()}</span>
                       </div>
+                    </div>
+                  )}
+
+                  {inquiry.unit.extrasOrUpgrades && (
+                    <div className="pt-2 border-t border-neutral-850">
+                      <span className="text-neutral-500 text-[10px] block">Extras, Upgrades &amp; Additional Details:</span>
+                      <p className="text-neutral-200 text-[11px] mt-0.5 whitespace-pre-line">{inquiry.unit.extrasOrUpgrades}</p>
                     </div>
                   )}
 

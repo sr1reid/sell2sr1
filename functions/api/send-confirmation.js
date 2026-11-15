@@ -423,6 +423,13 @@ export async function onRequestPost({ request, env }) {
     const customerVisibleVin = (unit?.vinOrSerial && unit.vinOrSerial !== 'VIN-PENDING') ? String(unit.vinOrSerial).trim() : '';
     const mileageHoursLabel = unit?.isHours ? 'Hours' : 'Mileage';
     const mileageHoursValue = unit?.mileageOrHours ? `${unit.mileageOrHours} ${unit.isHours ? 'hrs' : 'mi'}` : 'Not Specified';
+    const customerExtras = unit?.extrasOrUpgrades ? String(unit.extrasOrUpgrades).trim() : '';
+    const customerExtrasHtml = customerExtras
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/\r?\n/g, '<br/>');
     const transactionType = intent === 'trade' ? 'Trade-In on Purchase' : 'Outright Sale to SR1';
     const salesperson = workingWithSalesperson === 'yes'
       ? (salespersonName || 'Pending Assignment')
@@ -595,6 +602,15 @@ export async function onRequestPost({ request, env }) {
                           </div>
                         </td>
                       </tr>` : ''}
+                      ${customerExtrasHtml ? `
+                      <tr>
+                        <td colspan="2" class="stat-tile-wrap" style="vertical-align: top; padding: 0 0 12px 0;">
+                          <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">Extras, Upgrades, or Additional Details</div>
+                            <div style="font-size: 14px; font-weight: 600; color: #111827; margin-top: 3px; line-height: 1.45;">${customerExtrasHtml}</div>
+                          </div>
+                        </td>
+                      </tr>` : ''}
                       ${salesperson !== 'Direct Appraisal Request' ? `
                       <tr>
                         <td colspan="2" class="stat-tile-wrap" style="vertical-align: top; padding: 0 0 12px 0;">
@@ -713,7 +729,7 @@ Hi ${firstName},
 Thank you for giving SR1 the opportunity to make you an offer on your item. We have received your valuation request for:
 ${unitTitle}
 - Category: ${unit?.category || 'Item'}
-${customerVisibleVin ? `- VIN / Serial Number: ${customerVisibleVin}\n` : ''}${unit?.mileageOrHours ? `- ${mileageHoursLabel}: ${mileageHoursValue}\n` : ''}- Transaction: ${transactionType}
+${customerVisibleVin ? `- VIN / Serial Number: ${customerVisibleVin}\n` : ''}${unit?.mileageOrHours ? `- ${mileageHoursLabel}: ${mileageHoursValue}\n` : ''}${customerExtras ? `- Extras / Upgrades / Details: ${customerExtras}\n` : ''}- Transaction: ${transactionType}
 - Preferred Dealership: ${location}
 ${salesperson !== 'Direct Appraisal Request' ? `- ${salespersonLabel}: ${salesperson}\n` : ''}
 WHAT TO EXPECT NEXT:
@@ -776,6 +792,13 @@ SR1 Companies
     const preferredContactMethod = ad.Preferred_Contact_Method || 'Any';
     const vinOrSerial = ad.VIN_or_Serial_or_Box_ID || customerVisibleVin || 'N/A';
     const trimOrFloorplan = ad.Trim_or_Floorplan || 'N/A';
+    const extrasOrUpgrades = customerExtras || (ad.Extras_or_Upgrades && ad.Extras_or_Upgrades !== 'None listed' ? String(ad.Extras_or_Upgrades).trim() : '') || 'None listed';
+    const extrasOrUpgradesHtml = extrasOrUpgrades
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/\r?\n/g, '<br/>');
     const conditionNotes = ad.Condition_Notes || 'None';
     const knownIssues = ad.Known_Issues_or_Damage || 'None reported';
     const tireCondition = ad.Tire_or_Track_Condition || 'N/A';
@@ -871,8 +894,9 @@ SR1 Companies
           <tr><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">VIN / Serial / Box ID</td><td style="padding:8px 12px;font-family:monospace;color:#0f172a;font-weight:700;border-bottom:1px solid #e2e8f0;">${vinOrSerial}</td></tr>
           <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">${mileageHoursLabel}</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${ad.Mileage_or_Hours || mileageHoursValue}</td></tr>
           <tr><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Specifications</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${unitSpecs}</td></tr>
-          <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Condition Notes</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${conditionNotes}</td></tr>
-          <tr><td style="padding:8px 12px;font-weight:700;color:#475569;">Known Issues / Damage</td><td style="padding:8px 12px;color:#b91c1c;font-weight:600;">${knownIssues}</td></tr>
+          <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Extras / Upgrades / Details</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${extrasOrUpgradesHtml}</td></tr>
+          <tr><td style="padding:8px 12px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;">Condition Notes</td><td style="padding:8px 12px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${conditionNotes}</td></tr>
+          <tr style="background-color:#f8fafc;"><td style="padding:8px 12px;font-weight:700;color:#475569;">Known Issues / Damage</td><td style="padding:8px 12px;color:#b91c1c;font-weight:600;">${knownIssues}</td></tr>
         </table>
 
         <!-- 3. Financials & Title -->
@@ -916,6 +940,7 @@ UNIT DETAILS:
 - VIN / Serial / Box ID: ${vinOrSerial}
 - ${mileageHoursLabel}: ${ad.Mileage_or_Hours || mileageHoursValue}
 - Specs: ${unitSpecs}
+- Extras / Upgrades / Details: ${extrasOrUpgrades}
 - Condition Notes: ${conditionNotes}
 - Known Issues / Damage: ${knownIssues}
 
