@@ -12609,20 +12609,15 @@
         let consumerActive = 0;
         let dealerActive = 0;
         let bankActive = 0;
-        let dealerUnreadUnit = 0;
-        let bankUnreadUnit = 0;
 
         list.forEach(inq => {
           if (!inq) return;
           const isArch = inq.isArchived || inq.stage === 'archived';
           const src = inq.submissionSource || 'consumer';
-          const unreadCount = Number(inq.unreadUnitForStaff) || 0;
           if (src === 'dealer') {
             if (!isArch) dealerActive += 1;
-            if (unreadCount > 0) dealerUnreadUnit += unreadCount;
           } else if (src === 'bank') {
             if (!isArch) bankActive += 1;
-            if (unreadCount > 0) bankUnreadUnit += unreadCount;
           } else {
             if (!isArch) consumerActive += 1;
           }
@@ -12648,12 +12643,10 @@
           consumerActive,
           dealerActive,
           bankActive,
-          dealerUnreadUnit,
-          bankUnreadUnit,
           dealerUnreadGeneral,
           bankUnreadGeneral,
-          dealerTotalUnread: dealerUnreadUnit + dealerUnreadGeneral,
-          bankTotalUnread: bankUnreadUnit + bankUnreadGeneral,
+          dealerTotalUnread: dealerUnreadGeneral,
+          bankTotalUnread: bankUnreadGeneral,
           dealerOrgs,
           bankOrgs
         };
@@ -13232,8 +13225,8 @@
                       </div>
                       <p className="text-xs text-neutral-400 mt-0.5">
                         {activePartnerType === 'bank'
-                          ? 'Review repo units submitted by banks & credit unions, send formal bids, and chat on specific units or the general relationship.'
-                          : 'Review trade-in units submitted by partner dealers, issue wholesale buy bids, and chat on specific units or the general relationship.'}
+                          ? 'Review repo units submitted by banks & credit unions, send formal bids, and message via the general relationship chat.'
+                          : 'Review trade-in units submitted by partner dealers, issue wholesale buy bids, and message via the general relationship chat.'}
                       </p>
                     </div>
                   </div>
@@ -13246,11 +13239,6 @@
                     >
                       <span>📋</span>
                       <span>Submitted Units ({activePartnerType === 'bank' ? sectionMetrics.bankActive : sectionMetrics.dealerActive})</span>
-                      {(activePartnerType === 'bank' ? sectionMetrics.bankUnreadUnit : sectionMetrics.dealerUnreadUnit) > 0 && (
-                        <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-red-500 text-white">
-                          {activePartnerType === 'bank' ? sectionMetrics.bankUnreadUnit : sectionMetrics.dealerUnreadUnit} New Unit Chat
-                        </span>
-                      )}
                     </button>
                     <button
                       type="button"
@@ -13646,8 +13634,6 @@
                   : null;
                 const stageConfig = STAGES[item.stage] || STAGES.new;
                 const seenList = Array.isArray(item.seenBy) ? item.seenBy : [];
-                const unitMsgs = Array.isArray(item.unitMessages) ? item.unitMessages : [];
-                const unreadUnit = Number(item.unreadUnitForStaff) || 0;
 
                 return (
                   <div
@@ -13655,23 +13641,12 @@
                     onClick={() => handleOpenInquiry(item)}
                     className="bg-neutral-900 border border-neutral-800 hover:border-neutral-700 active:border-neutral-600 rounded-2xl p-3.5 space-y-3 shadow-md transition-all cursor-pointer w-full max-w-full overflow-hidden"
                   >
-                    {/* Top Row: Date & Unread Chat */}
+                    {/* Top Row: Date */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center space-x-2">
                         <span className="text-[11px] text-neutral-400">
                           {dateInfo.date} • {dateInfo.time}
                         </span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {unreadUnit > 0 ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-black bg-red-500 text-white animate-pulse">
-                            💬 {unreadUnit} New
-                          </span>
-                        ) : unitMsgs.length > 0 ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-neutral-800 border border-neutral-700 text-neutral-200">
-                            💬 {unitMsgs.length}
-                          </span>
-                        ) : null}
                       </div>
                     </div>
 
@@ -13872,7 +13847,7 @@
                         {sortField === 'location' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
                       </div>
                     </th>
-                    <th className="p-3.5 min-w-[130px]">Status / Chat</th>
+                    <th className="p-3.5 min-w-[130px]">Status</th>
                     <th className="p-3.5 text-right w-[110px]">Action</th>
                   </tr>
                 </thead>
@@ -13909,8 +13884,6 @@
                         : null;
                       const stageConfig = STAGES[item.stage] || STAGES.new;
                       const seenList = Array.isArray(item.seenBy) ? item.seenBy : [];
-                      const unitMsgs = Array.isArray(item.unitMessages) ? item.unitMessages : [];
-                      const unreadUnit = Number(item.unreadUnitForStaff) || 0;
 
                       return (
                         <tr
@@ -14051,22 +14024,13 @@
                             />
                           </td>
 
-                          {/* Status, Unit Chat & Seen By */}
+                          {/* Status & Seen By */}
                           <td className="p-3.5 whitespace-nowrap">
                             <div className="flex flex-col items-start gap-1">
                               <InlineDealStatusSelect
                                 item={item}
                                 onChangeStatus={(val) => handleQuickStatusChange(item, val)}
                               />
-                              {unreadUnit > 0 ? (
-                                <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded text-[10px] font-black bg-red-500 text-white shadow-sm animate-pulse">
-                                  <span>💬 {unreadUnit} New Unit Chat</span>
-                                </span>
-                              ) : unitMsgs.length > 0 ? (
-                                <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded text-[10px] font-semibold bg-blue-950/80 border border-blue-800/80 text-blue-300">
-                                  <span>💬 {unitMsgs.length} {unitMsgs.length === 1 ? 'Message' : 'Messages'}</span>
-                                </span>
-                              ) : null}
                               {seenList.length > 0 ? (
                                 <span
                                   className="inline-flex items-center gap-1 text-[10px] text-neutral-400 font-medium"
@@ -14238,66 +14202,6 @@
       );
       const [offerNotes, setOfferNotes] = useState(latestOffer?.notes || 'Subject to physical inspection and title verification.');
       const [newNoteText, setNewNoteText] = useState('');
-      const [staffUnitMsgText, setStaffUnitMsgText] = useState('');
-      const [sendingStaffUnitMsg, setSendingStaffUnitMsg] = useState(false);
-
-      // Clear unreadUnitForStaff when staff opens this unit
-      useEffect(() => {
-        if (inquiry && Number(inquiry.unreadUnitForStaff) > 0 && onUpdateInquiry) {
-          onUpdateInquiry({
-            ...inquiry,
-            unreadUnitForStaff: 0
-          });
-        }
-      }, [inquiry?.id, inquiry?.unreadUnitForStaff]);
-
-      const handleSendStaffUnitMessage = (e) => {
-        e.preventDefault();
-        if (!staffUnitMsgText.trim() || sendingStaffUnitMsg) return;
-        setSendingStaffUnitMsg(true);
-        const text = staffUnitMsgText.trim();
-        const nowIso = new Date().toISOString();
-        const newMsg = {
-          id: 'umsg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-          senderRole: 'staff',
-          senderName: staffUser?.name || 'SR1 Buying Team',
-          senderEmail: staffUser?.email || '',
-          text,
-          createdAt: nowIso
-        };
-        const updatedMsgs = [...(Array.isArray(inquiry.unitMessages) ? inquiry.unitMessages : []), newMsg];
-        const updated = {
-          ...inquiry,
-          unitMessages: updatedMsgs,
-          unreadUnitForPartner: (Number(inquiry.unreadUnitForPartner) || 0) + 1,
-          unreadUnitForStaff: 0,
-          updatedAt: nowIso
-        };
-        onUpdateInquiry(updated);
-        setStaffUnitMsgText('');
-        setSendingStaffUnitMsg(false);
-
-        const targetEmail = (inquiry.partnerEmail || inquiry.customer?.email || '').trim();
-        if (targetEmail) {
-          const unitTitle = [inquiry.unit?.year, inquiry.unit?.make, inquiry.unit?.model].filter(Boolean).join(' ') || 'Submitted Unit';
-          const pType = inquiry.submissionSource === 'bank' ? 'bank' : 'dealer';
-          dispatchPartnerEmailNotification({
-            notificationKind: 'unit_chat',
-            partnerType: pType,
-            organizationName: inquiry.partnerOrgName || `${inquiry.customer?.firstName || ''} ${inquiry.customer?.lastName || ''}`.trim(),
-            contactName: inquiry.partnerContactName || `${inquiry.customer?.firstName || ''} ${inquiry.customer?.lastName || ''}`.trim(),
-            partnerEmail: targetEmail,
-            partnerPhone: inquiry.partnerPhone || inquiry.customer?.phone || '',
-            referenceId: inquiry.referenceId,
-            unitSummary: unitTitle,
-            senderName: staffUser?.name || 'SR1 Buying Team',
-            senderRole: 'staff',
-            messageText: text,
-            recipientEmails: [targetEmail],
-            portalUrl: `https://selltosr1.com/?view=${pType}`
-          });
-        }
-      };
       const mediaItems = Array.isArray(inquiry.photos) ? inquiry.photos : [];
       const [activeMediaIndex, setActiveMediaIndex] = useState(0);
       const [isLightboxOpen, setIsLightboxOpen] = useState(false);
@@ -15194,74 +15098,6 @@
                     </div>
                   </div>
                 </div>
-              </div>
-
-              {/* DIRECT UNIT CHAT WITH DEALER / BANK / SELLER */}
-              <div className="bg-neutral-950 p-4 rounded-xl border border-blue-800/60 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-blue-300 flex items-center gap-1.5">
-                      <span>💬</span>
-                      <span>
-                        Direct Unit Chat with {inquiry.partnerOrgName || `${inquiry.customer.firstName} ${inquiry.customer.lastName}`}
-                      </span>
-                    </span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950 border border-blue-800 text-blue-300">
-                      {(inquiry.unitMessages || []).length} {(inquiry.unitMessages || []).length === 1 ? 'Message' : 'Messages'}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-neutral-400">
-                    Synced in real time with Partner Portal & emailed to {inquiry.partnerEmail || inquiry.customer.email || 'partner'}
-                  </span>
-                </div>
-
-                <div className="bg-neutral-900/80 border border-neutral-800 rounded-xl p-3 max-h-56 overflow-y-auto space-y-2.5">
-                  {(!Array.isArray(inquiry.unitMessages) || inquiry.unitMessages.length === 0) ? (
-                    <div className="text-center py-4 text-neutral-500 text-xs">
-                      No unit-specific chat messages yet. Send a message below to discuss condition, payoff, reserve price, or offer details on this unit.
-                    </div>
-                  ) : (
-                    inquiry.unitMessages.map((msg, idx) => {
-                      const isStaff = msg.senderRole === 'staff';
-                      return (
-                        <div key={msg.id || idx} className={`flex flex-col ${isStaff ? 'items-end' : 'items-start'}`}>
-                          <div className="flex items-center gap-1.5 mb-0.5 px-1">
-                            <span className="text-[10px] font-bold text-neutral-300">
-                              {msg.senderName || (isStaff ? 'SR1 Buying Team' : (inquiry.partnerOrgName || inquiry.customer.firstName))}
-                            </span>
-                            <span className="text-[10px] text-neutral-500">
-                              {msg.createdAt ? new Date(msg.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
-                            </span>
-                          </div>
-                          <div className={`max-w-[85%] rounded-xl px-3.5 py-2 text-xs leading-relaxed whitespace-pre-wrap ${
-                            isStaff
-                              ? 'bg-white text-neutral-950 font-medium rounded-br-xs shadow-sm'
-                              : 'bg-neutral-800 border border-neutral-700 text-neutral-100 rounded-bl-xs'
-                          }`}>
-                            {msg.text}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                <form onSubmit={handleSendStaffUnitMessage} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={staffUnitMsgText}
-                    onChange={(e) => setStaffUnitMsgText(e.target.value)}
-                    placeholder={`Send message on #${inquiry.referenceId} (${[inquiry.unit.year, inquiry.unit.make, inquiry.unit.model].filter(Boolean).join(' ') || 'Unit'})...`}
-                    className="flex-1 bg-neutral-900 border border-neutral-750 rounded-lg px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-white"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!staffUnitMsgText.trim() || sendingStaffUnitMsg}
-                    className="px-4 py-2 bg-blue-500 hover:bg-blue-400 disabled:opacity-40 text-neutral-950 font-extrabold rounded-lg text-xs cursor-pointer transition-colors shrink-0"
-                  >
-                    {sendingStaffUnitMsg ? 'Sending...' : 'Send Unit Chat →'}
-                  </button>
-                </form>
               </div>
 
               {/* OFFER BUILDER */}
