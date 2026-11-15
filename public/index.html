@@ -1576,6 +1576,7 @@
 
     const VIN_PRIMARY_SWAPS = {
       S: ['5'],
+      '5': ['8'],
       Z: ['2'],
       B: ['8'], '8': ['B'],
       G: ['6'],
@@ -1584,7 +1585,7 @@
       L: ['1'],
       D: ['0'],
       Y: ['V'], U: ['V'], V: ['U'],
-      E: ['F'], F: ['E'], R: ['N']
+      E: ['F'], F: ['E'], R: ['N'], K: ['H']
     };
     const VIN_SECONDARY_SWAPS = {
       ...VIN_PRIMARY_SWAPS,
@@ -1601,6 +1602,8 @@
       '9': ['1', '0', '8'],
       D: ['0'],
       E: ['F', '8', 'B'],
+      H: ['K'],
+      K: ['H'],
       N: ['R', 'M']
     };
 
@@ -1618,6 +1621,10 @@
     };
 
     const isAllowedVinSwapAt = (idx, fromCh, toCh) => {
+      // Never mutate position 0 (WMI country code) into European/import 'V' or 'Y' (blocks garbled "ony MDAKAR..." -> "VMD4KAR...")
+      if (idx === 0 && (toCh === 'V' || toCh === 'Y')) return false;
+      // Never mutate plant-code letter 'A' at index 10 into '4' or '1' (protects e.g. Midwest "1MDAHAR10DA512875" from "1MDAKAR10D4512875")
+      if (idx === 10 && fromCh === 'A') return false;
       // Positions 10..16 (plant + 6-digit serial): never swap a digit into a letter
       if (idx >= 10 && /\d/.test(fromCh) && /[A-Z]/.test(toCh)) return false;
       // Only allow '0' -> 'D' at WMI position 1 (e.g. "109" -> "1D9")
@@ -2359,7 +2366,10 @@
       const labeledVinRegex = /(?:V\.?\s*[IJL1]\.?\s*N\.?|N\.?\s*[IJL1]\.?\s*V\.?|W\.?\s*I\.?\s*V\.?|VEHICLE\s+IDENTIFICATION(?:\s+(?:NO\.?|NUMBER|#))?|P\.?\s*I\.?\s*N\.?)(?:\s*[\/\\|\n]\s*(?:N\.?\s*[IJL1]\.?\s*V\.?|V\.?\s*[IJL1]\.?\s*N\.?|W\.?\s*I\.?\s*V\.?))?(?:\s*\(?(?:SERIAL\s*)?(?:NO\.?|NUMBER|#)\)?)?[\s:#.\-\/;]*([A-Z0-9][A-Z0-9 \-.]{13,30})/g;
       let m;
       while ((m = labeledVinRegex.exec(upper)) !== null) {
-        const rawCandidate = m[1].replace(/^(?:N\.?\s*[IJL1]\.?\s*V\.?|V\.?\s*[IJL1]\.?\s*N\.?|W\.?\s*I\.?\s*V\.?)[\s:#.\-\/;]*/, '');
+        const rawCandidate = m[1].replace(
+          /^(?:N\.?\s*[IJL1]\.?\s*V\.?|V\.?\s*[IJL1]\.?\s*N\.?|W\.?\s*I\.?\s*V\.?|[O0]?N\.?\s*[IJL1YV]{1,2}\.?)[\s:#.\-\/;]*/i,
+          ''
+        );
         // If the first whitespace-delimited token right after V.I.N./N.I.V. is 18 alphanumeric chars (e.g. wide serif '1'->'A1' in "SJWA1U1827T1494127"), repair the 18-char token before slicing to 17!
         const firstTokMatch = rawCandidate.match(/^([A-Z0-9]{18})(?:\b|\s)/);
         if (firstTokMatch) {
@@ -2482,9 +2492,9 @@
         }
       }
 
-      // 3c. Check non-spec lines where OCR split a 17-char VIN across exactly 2 alphanumeric chunks (>=6 chars each, e.g. "5NHUPAZ29 GW059298")
+      // 3c. Check non-spec lines where OCR split a 17-char VIN across exactly 2 alphanumeric chunks (e.g. "5NHUPAZ29 GW059298" or "IMDAHAR10DAS 12575")
       // Never glue 3+ short crack/noise tokens together on an unlabeled line
-      const twoChunkRe = /\b([A-HJ-NPR-Z0-9]{6,11})[\s\-]+([A-HJ-NPR-Z0-9]{6,11})\b/g;
+      const twoChunkRe = /\b([A-Z0-9]{5,12})[\s\-]+([A-Z0-9]{5,12})\b/g;
       let tc;
       while ((tc = twoChunkRe.exec(upper)) !== null) {
         const joined = tc[1] + tc[2];
@@ -3479,6 +3489,13 @@
                 const inkIsolatedFullCanvas = createInkIsolatedCanvas(fullCanvas, 0.42, false);
                 const vinTopBannerCanvas = createCroppedCanvasFromImage(img, 0.02, 0.05, 0.96, 0.68, 1800, false);
                 const strictInkTopBannerCanvas = createInkIsolatedCanvas(vinTopBannerCanvas, 0.28, false);
+                // Dual-placard wide banners (e.g. 1MDAHAR10DA512875 ShoreLand'r tire placard + silver compliance tag + vertical divider VIN)
+                const wideComplianceZoomCanvas = isWideBanner
+                  ? createCroppedCanvasFromImage(img, 0.31, 0.34, 0.52, 0.38, 1800, false)
+                  : null;
+                const wideVerticalDividerCCW = isWideBanner
+                  ? createRotatedCropCanvasFromImage(img, 0.27, 0.20, 0.08, 0.52, false, 1600)
+                  : null;
 
                 const stickerCenterCanvas = createCroppedCanvasFromImage(img, 0.06, 0.14, 0.88, 0.72, 1800, false);
                 // Bottom compliance band crop captures VINs printed near the bottom of stickers (e.g. 2NEB212B5PN037870, 5JW1U1827T1494127, IMG_1689)
@@ -3511,13 +3528,15 @@
                     ]
                   : isWideBanner
                   ? [
-                      strictInkFullCanvas,
-                      fullCanvas,
-                      strictInkTopBannerCanvas,
-                      vinTopBannerCanvas,
-                      inkIsolatedFullCanvas,
-                      vinBandCanvas,
+                      wideComplianceZoomCanvas,
                       vinLeftTextCanvas,
+                      wideVerticalDividerCCW,
+                      vinBandCanvas,
+                      fullCanvas,
+                      vinTopBannerCanvas,
+                      strictInkFullCanvas,
+                      strictInkTopBannerCanvas,
+                      inkIsolatedFullCanvas,
                       gateFullCanvas
                     ]
                   : isPortrait && !irotSteps
