@@ -12875,16 +12875,6 @@
                             <span>Unseen</span>
                           </span>
                         )}
-
-                        <span className="text-neutral-600">•</span>
-
-                        {lastOffer && typeof lastOffer.amount === 'number' ? (
-                          <span className="text-[10px] text-neutral-300 font-medium">
-                            Initial Offer: <strong className="text-xs font-bold text-white font-mono">${lastOffer.amount.toLocaleString()}</strong>
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-neutral-500">No Initial Offer</span>
-                        )}
                       </div>
 
                       {item.isArchived || item.stage === 'archived' ? (
@@ -12969,19 +12959,13 @@
                       </div>
                     </th>
                     <th className="p-3.5 min-w-[130px]">Status / Chat</th>
-                    <th onClick={() => handleSort('offer')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[105px]">
-                      <div className="flex items-center space-x-1">
-                        <span>Initial Offer</span>
-                        {sortField === 'offer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
-                      </div>
-                    </th>
                     <th className="p-3.5 text-right w-[110px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800 text-xs">
                   {sorted.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="p-12 text-center text-neutral-400 space-y-3">
+                      <td colSpan="7" className="p-12 text-center text-neutral-400 space-y-3">
                         <p className="text-sm font-semibold text-neutral-300">No units found matching your filters</p>
                         <p className="text-xs text-neutral-500">Try clearing search terms or changing category / location filters</p>
                         {(searchTerm || filterStage !== 'all' || filterPartnerId !== 'all' || filterCategory !== 'all' || filterLocation !== 'all' || filterIntent !== 'all') && (
@@ -13198,24 +13182,6 @@
                                 </span>
                               )}
                             </div>
-                          </td>
-
-                          {/* Offer */}
-                          <td className="p-3.5 whitespace-nowrap">
-                            {lastOffer && typeof lastOffer.amount === 'number' ? (
-                              <div>
-                                <span className="font-bold text-white font-mono text-sm">
-                                  ${lastOffer.amount.toLocaleString()}
-                                </span>
-                                {item.offers.length > 1 && (
-                                  <div className="text-[9px] text-neutral-400">
-                                    {item.offers.length} offers logged
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-neutral-500 font-mono text-xs">—</span>
-                            )}
                           </td>
 
                           {/* Action */}
