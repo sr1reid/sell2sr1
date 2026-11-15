@@ -3411,6 +3411,48 @@
       return false;
     };
 
+    // Positive confirmation that a photo actually shows a VIN / Serial / HIN / PIN / compliance tag
+    // (excludes exterior model decals like "COUGAR 29RKS" or normal UI/English sentences with numbers)
+    const doesTextConfirmActualVinTag = (rawText) => {
+      if (!rawText) return false;
+      const upper = String(rawText)
+        .replace(/(?<=[A-Za-z0-9])[l|!]|[l|!](?=[A-Za-z0-9])/g, '1')
+        .toUpperCase();
+
+      if (
+        /(?:\bV\.?\s*[IJL1]\.?\s*N\.?\b|\bN\.?\s*[IJL1]\.?\s*V\.?\b|\bVJN\b|\bNJV\b|VEHICLE\s+ID|IDENTIFICATION|FOREST\s+RIVER,?\s+INC|\bGVWR\b|\bGAWR\b|\bPNBV\b|\bPNBE\b|\bMFD\.?\s+BY\b|\bMFG\.?\s+BY\b|FABRIQUE|MANUFACTURED|CONFORMS\s+TO|MOTOR\s+VEHICLE|\bSERIAL\b|\bS\/N\b|\bP\.?\s*I\.?\s*N\.?\b|\bHULL\b|\bST[12]\d\d|\bKPA\b|\bPSI\b|TIRE\s+AND\s+LOADING)/i.test(
+          upper
+        )
+      ) {
+        return true;
+      }
+
+      let specHits = 0;
+      const specPatterns = [
+        /\b\d{3,5}\s*LBS?\.?\b/i,
+        /\b\d{3,5}\s*KG\b/i,
+        /\bAXLE\b|\bESSIEU\b/i,
+        /\bRIMS?\b|\bJANTE\b/i,
+        /\bTRA\/REM\b|\bREMORQUE\b/i
+      ];
+      for (let p = 0; p < specPatterns.length; p++) {
+        if (specPatterns[p].test(upper)) {
+          specHits++;
+          if (specHits >= 2) return true;
+        }
+      }
+
+      // Contiguous 15-17 char VIN-like token (not separate words with spaces) containing >= 5 digits
+      const contiguousTokens = upper.match(/\b[A-HJ-NPR-Z0-9]{15,17}\b/g) || [];
+      for (let t = 0; t < contiguousTokens.length; t++) {
+        if ((contiguousTokens[t].match(/\d/g) || []).length >= 5) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
     const loadImageCanvasesForScan = (file, shouldAbortScan = null) =>
       withScanDecodeSlot(async () => {
         if (!file) return null;
@@ -3549,13 +3591,13 @@
                       verticalTightVinLineCW,
                       deepVerticalZoomCW,
                       verticalStickerFullCW,
+                      verticalStickerFullCCW,
                       inkIsolatedLeftLineErased,
                       vinLeftTextCanvas,
                       vinBottomBandCanvas,
                       inkIsolatedBottomBandCanvas,
                       inkIsolatedCenterCanvas,
                       stickerCenterCanvas,
-                      verticalStickerFullCCW,
                       fullCanvas,
                       gateFullCanvas
                     ]
@@ -3564,8 +3606,9 @@
                       vinLeftTextCanvas,
                       vinBottomBandCanvas,
                       inkIsolatedBottomBandCanvas,
-                      deepVerticalZoomCW,
                       verticalStickerFullCW,
+                      verticalStickerFullCCW,
+                      deepVerticalZoomCW,
                       inkIsolatedCenterCanvas,
                       localContrastLeftCanvas,
                       vinBandCanvas,
@@ -3573,7 +3616,6 @@
                       localContrastBandCanvas,
                       stickerCenterCanvas,
                       inkIsolatedLeftCanvas,
-                      verticalStickerFullCCW,
                       fullCanvas,
                       gateFullCanvas
                     ];
@@ -3632,7 +3674,9 @@
         });
       });
 
-    const scanImageFileForVin = async (file, categoryKey, shouldAbortScan = null) => {
+    const STEP2_CONFIDENCE_TIMEOUT_MS = 8000;
+
+    const scanImageFileForVin = async (file, categoryKey, shouldAbortScan = null, onVinTagIdentified = null) => {
       if (!file) return { vin: '', unreadableVinTag: false };
       const isVideo = file.type?.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name || '');
       if (isVideo) return { vin: '', unreadableVinTag: false };
@@ -3654,8 +3698,10 @@
         // =========================================================================
         // STEP 1: FAST IDENTIFICATION GATE ("Does this photo have a VIN/tag on it?")
         // Never returns a low-res guess — if ANY sign of a barcode, tag, or VIN is
-        // detected, the photo is immediately handed to Step 2 for 100% full-accuracy scanning!
+        // detected, the photo is immediately handed to Step 2 for 100% full-accuracy scanning
+        // with a strict 8-second post-identification deadline before requiring manual entry!
         // =========================================================================
+        let confirmedVinTagEvidence = quickIsCrazed;
         let hasPotentialVinOrTag = quickIsCrazed || isWideBanner;
         const barcodeSerial6HintsSet = new Set();
         const recordBarcodeSerialHint = (rawVal) => {
@@ -3677,7 +3723,7 @@
             }
             if (formats.length > 0) {
               detector = new window.BarcodeDetector({ formats });
-              if (!hasPotentialVinOrTag) {
+              if (!confirmedVinTagEvidence) {
                 for (let c = 0; c < (canvases.fastGateBarcodeCanvases || []).length; c++) {
                   try {
                     const barcodes = await detector.detect(canvases.fastGateBarcodeCanvases[c]);
@@ -3685,6 +3731,7 @@
                       for (let b = 0; b < barcodes.length; b++) {
                         recordBarcodeSerialHint(barcodes[b]?.rawValue);
                       }
+                      confirmedVinTagEvidence = true;
                       hasPotentialVinOrTag = true;
                       break;
                     }
@@ -3696,10 +3743,11 @@
         }
 
         // Fast Gate 1B: Quick Code 39 scanline check (<15ms)
-        if (!hasPotentialVinOrTag) {
+        if (!confirmedVinTagEvidence) {
           for (let c = 0; c < (canvases.fastGateCode39Canvases || []).length; c++) {
             const c39 = scanCanvasForCode39(canvases.fastGateCode39Canvases[c], categoryKey);
             if (c39.fullVin || (c39.fragments && c39.fragments.length > 0)) {
+              confirmedVinTagEvidence = true;
               hasPotentialVinOrTag = true;
               break;
             }
@@ -3708,16 +3756,82 @@
 
         const queuePriority = hasPotentialVinOrTag ? 100 : (visualSignal.priorityScore || 0);
 
-        return await enqueuePrioritizedOcrTask(queuePriority, shouldAbortScan, quickIsCrazed, (worker) =>
-          new Promise(async (resolve) => {
-            if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
-              return resolve({ vin: '', unreadableVinTag: false });
+        return await new Promise((resolveOuter) => {
+          let outerSettled = false;
+          let vinTagIdentified = false;
+          let step2DeadlineAt = 0;
+          let step2TimeoutId = null;
+          let wideBannerCapAt = 0;
+          let wideBannerTimeoutId = null;
+          let preStep2SafetyTimeoutId = null;
+
+          const clearAllTimers = () => {
+            if (step2TimeoutId) {
+              clearTimeout(step2TimeoutId);
+              step2TimeoutId = null;
             }
-            const timeout = setTimeout(() => resolve({ vin: '', unreadableVinTag: quickIsCrazed }), 28000);
+            if (wideBannerTimeoutId) {
+              clearTimeout(wideBannerTimeoutId);
+              wideBannerTimeoutId = null;
+            }
+            if (preStep2SafetyTimeoutId) {
+              clearTimeout(preStep2SafetyTimeoutId);
+              preStep2SafetyTimeoutId = null;
+            }
+          };
+
+          const finishOuter = (resObj) => {
+            if (outerSettled) return resObj;
+            outerSettled = true;
+            clearAllTimers();
+            resolveOuter(resObj);
+            return resObj;
+          };
+
+          // Starts the strict 8.0-second full-confidence countdown the instant a photo is identified as having a VIN/tag
+          const markVinTagIdentified = () => {
+            if (vinTagIdentified) return;
+            vinTagIdentified = true;
+            confirmedVinTagEvidence = true;
+            if (preStep2SafetyTimeoutId) {
+              clearTimeout(preStep2SafetyTimeoutId);
+              preStep2SafetyTimeoutId = null;
+            }
+            const now = performance.now();
+            const targetDeadline = now + STEP2_CONFIDENCE_TIMEOUT_MS;
+            step2DeadlineAt = wideBannerCapAt > 0 ? Math.min(wideBannerCapAt, targetDeadline) : targetDeadline;
+            const remainingMs = Math.max(0, Math.round(step2DeadlineAt - now));
+            if (typeof onVinTagIdentified === 'function') {
+              try {
+                onVinTagIdentified();
+              } catch (cbErr) {}
+            }
+            step2TimeoutId = setTimeout(() => {
+              finishOuter({ vin: '', unreadableVinTag: true, timedOutVinTag: true });
+            }, remainingMs);
+          };
+
+          if (confirmedVinTagEvidence) {
+            markVinTagIdentified();
+          } else {
+            preStep2SafetyTimeoutId = setTimeout(() => {
+              finishOuter({ vin: '', unreadableVinTag: false });
+            }, 15000);
+          }
+
+          const effectiveShouldAbort = () =>
+            outerSettled || (typeof shouldAbortScan === 'function' && Boolean(shouldAbortScan()));
+
+          enqueuePrioritizedOcrTask(queuePriority, effectiveShouldAbort, quickIsCrazed, async (worker) => {
+            if (outerSettled) {
+              return { vin: '', unreadableVinTag: Boolean(confirmedVinTagEvidence) };
+            }
+            if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
+              return finishOuter({ vin: '', unreadableVinTag: false });
+            }
             try {
               if (!worker) {
-                clearTimeout(timeout);
-                return resolve({ vin: '', unreadableVinTag: quickIsCrazed });
+                return finishOuter({ vin: '', unreadableVinTag: Boolean(confirmedVinTagEvidence) });
               }
 
               let stickerHeaderContext = '';
@@ -3727,13 +3841,14 @@
                 const gateOcrList = canvases.fastGateOcrCanvases || [];
                 let totalGateAlnum = 0;
                 for (let g = 0; g < gateOcrList.length; g++) {
+                  if (outerSettled) return { vin: '', unreadableVinTag: Boolean(confirmedVinTagEvidence) };
                   if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
-                    clearTimeout(timeout);
-                    return resolve({ vin: '', unreadableVinTag: false });
+                    return finishOuter({ vin: '', unreadableVinTag: false });
                   }
                   const gCanvas = gateOcrList[g];
                   if (!gCanvas) continue;
                   const gateRes = await worker.recognize(gCanvas);
+                  if (outerSettled) return { vin: '', unreadableVinTag: Boolean(confirmedVinTagEvidence) };
                   const gateText = gateRes?.data?.text || '';
                   totalGateAlnum += (gateText.match(/[A-Za-z0-9]/g) || []).length;
                   if (gateText) {
@@ -3742,8 +3857,14 @@
                       doesOcrTextLookLikeVinOrTag(gateText) ||
                       Boolean(extractVinOrSerialFromOcrText(gateText, categoryKey, [], false))
                     ) {
-                      // Identified! Do NOT return the low-res screening string — proceed to full-accuracy Step 2 below!
+                      // Candidate identified! Do NOT return the low-res screening string — proceed to full-accuracy Step 2 below!
                       hasPotentialVinOrTag = true;
+                      if (
+                        doesTextConfirmActualVinTag(gateText) ||
+                        Boolean(extractVinOrSerialFromOcrText(gateText, categoryKey, [], false))
+                      ) {
+                        confirmedVinTagEvidence = true;
+                      }
                       break;
                     }
                   }
@@ -3756,36 +3877,79 @@
 
                 // If Step 1 confirms this photo does NOT have a VIN or compliance tag, skip it immediately!
                 if (!hasPotentialVinOrTag) {
-                  clearTimeout(timeout);
-                  return resolve({ vin: '', unreadableVinTag: false });
+                  return finishOuter({ vin: '', unreadableVinTag: false });
                 }
               }
 
               // =========================================================================
-              // STEP 2: FULL-ACCURACY SCAN (Highest-DPI zoomed crops + barcodes + Code39 + OCR)
+              // STEP 2: FULL-ACCURACY SCAN (8.0s max after identifying which photo has a VIN)
               // =========================================================================
-              if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
-                clearTimeout(timeout);
-                return resolve({ vin: '', unreadableVinTag: false });
+              if (confirmedVinTagEvidence) {
+                markVinTagIdentified();
+              } else {
+                if (preStep2SafetyTimeoutId) {
+                  clearTimeout(preStep2SafetyTimeoutId);
+                  preStep2SafetyTimeoutId = null;
+                }
+                wideBannerCapAt = performance.now() + STEP2_CONFIDENCE_TIMEOUT_MS;
+                wideBannerTimeoutId = setTimeout(() => {
+                  finishOuter({
+                    vin: '',
+                    unreadableVinTag: Boolean(confirmedVinTagEvidence),
+                    timedOutVinTag: Boolean(confirmedVinTagEvidence)
+                  });
+                }, STEP2_CONFIDENCE_TIMEOUT_MS);
+              }
+
+              const checkStep2Stop = () => {
+                if (outerSettled) return true;
+                if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
+                  finishOuter({ vin: '', unreadableVinTag: false });
+                  return true;
+                }
+                const now = performance.now();
+                if (step2DeadlineAt > 0 && now >= step2DeadlineAt) {
+                  finishOuter({ vin: '', unreadableVinTag: true, timedOutVinTag: true });
+                  return true;
+                }
+                if (wideBannerCapAt > 0 && now >= wideBannerCapAt) {
+                  finishOuter({
+                    vin: '',
+                    unreadableVinTag: Boolean(confirmedVinTagEvidence),
+                    timedOutVinTag: Boolean(confirmedVinTagEvidence)
+                  });
+                  return true;
+                }
+                return false;
+              };
+
+              if (checkStep2Stop()) {
+                return { vin: '', unreadableVinTag: Boolean(confirmedVinTagEvidence) };
               }
 
               const full = canvases.getFullAccuracySuite();
               const isCrazed = Boolean(full.isCrazedSticker);
+              if (isCrazed && !vinTagIdentified) {
+                markVinTagIdentified();
+              }
               let combinedText = '';
               const recognizedCanvases = new Set();
 
               // Full Pass 2A: Native BarcodeDetector across all full-resolution & zoomed barcode canvases
               if (detector && full.barcodeCanvases) {
                 for (let c = 0; c < full.barcodeCanvases.length; c++) {
+                  if (checkStep2Stop()) break;
                   try {
                     const barcodes = await detector.detect(full.barcodeCanvases[c]);
+                    if (barcodes && barcodes.length > 0 && !vinTagIdentified) {
+                      markVinTagIdentified();
+                    }
                     for (let i = 0; i < (barcodes || []).length; i++) {
                       const rawBc = barcodes[i]?.rawValue;
                       recordBarcodeSerialHint(rawBc);
                       const found = extractVinFromBarcodeValue(rawBc, categoryKey);
                       if (found) {
-                        clearTimeout(timeout);
-                        return resolve({ vin: found, unreadableVinTag: false });
+                        return finishOuter({ vin: found, unreadableVinTag: false });
                       }
                     }
                   } catch (e) {}
@@ -3793,21 +3957,23 @@
               }
 
               // Full Pass 2B: ZXing Multi-Format Barcode Reader fallback on zoomed 1800px barcode canvases
-              if (typeof window !== 'undefined' && window.ZXing && typeof window.ZXing.BrowserMultiFormatReader === 'function') {
+              if (!outerSettled && typeof window !== 'undefined' && window.ZXing && typeof window.ZXing.BrowserMultiFormatReader === 'function') {
                 try {
                   const zxingReader = new window.ZXing.BrowserMultiFormatReader();
                   const zxingTargets = full.zxingCanvases || [];
                   for (let c = 0; c < zxingTargets.length; c++) {
+                    if (checkStep2Stop()) break;
                     try {
                       const dataUrl = zxingTargets[c].toDataURL('image/jpeg', 0.92);
                       const res = await zxingReader.decodeFromImageUrl(dataUrl);
+                      if (outerSettled) break;
                       if (res && res.getText) {
+                        if (!vinTagIdentified) markVinTagIdentified();
                         const rawZx = res.getText();
                         recordBarcodeSerialHint(rawZx);
                         const found = extractVinFromBarcodeValue(rawZx, categoryKey);
                         if (found) {
-                          clearTimeout(timeout);
-                          return resolve({ vin: found, unreadableVinTag: false });
+                          return finishOuter({ vin: found, unreadableVinTag: false });
                         }
                       }
                     } catch (zErr) {}
@@ -3817,45 +3983,52 @@
 
               // Full Pass 2C: Custom multi-scanline Code 39 decoder across all 1800px zoomed & local-contrast barcode crops
               const barcodeFragmentsMap = new Map();
-              for (let c = 0; c < (full.code39Canvases || []).length; c++) {
-                const c39 = scanCanvasForCode39(full.code39Canvases[c], categoryKey);
-                if (c39.fullVin) {
-                  clearTimeout(timeout);
-                  return resolve({ vin: c39.fullVin, unreadableVinTag: false });
-                }
-                for (let f = 0; f < c39.fragments.length; f++) {
-                  const frag = c39.fragments[f];
-                  const prev = barcodeFragmentsMap.get(frag.text);
-                  barcodeFragmentsMap.set(frag.text, {
-                    text: frag.text,
-                    hasStartStar: Boolean(prev?.hasStartStar || frag.hasStartStar),
-                    hasStopStar: Boolean(prev?.hasStopStar || frag.hasStopStar),
-                    hits: (prev?.hits || 0) + (frag.hits || 1)
-                  });
+              if (!outerSettled) {
+                for (let c = 0; c < (full.code39Canvases || []).length; c++) {
+                  if (checkStep2Stop()) break;
+                  const c39 = scanCanvasForCode39(full.code39Canvases[c], categoryKey);
+                  if (c39.fullVin) {
+                    return finishOuter({ vin: c39.fullVin, unreadableVinTag: false });
+                  }
+                  if (c39.fragments && c39.fragments.length > 0 && !vinTagIdentified) {
+                    markVinTagIdentified();
+                  }
+                  for (let f = 0; f < c39.fragments.length; f++) {
+                    const frag = c39.fragments[f];
+                    const prev = barcodeFragmentsMap.get(frag.text);
+                    barcodeFragmentsMap.set(frag.text, {
+                      text: frag.text,
+                      hasStartStar: Boolean(prev?.hasStartStar || frag.hasStartStar),
+                      hasStopStar: Boolean(prev?.hasStopStar || frag.hasStopStar),
+                      hits: (prev?.hits || 0) + (frag.hits || 1)
+                    });
+                  }
                 }
               }
               const barcodeFragments = Array.from(barcodeFragmentsMap.values());
-              const crossStitched = stitchBarcodeFragments(barcodeFragments);
-              if (crossStitched) {
-                clearTimeout(timeout);
-                return resolve({ vin: crossStitched, unreadableVinTag: false });
+              if (!outerSettled) {
+                const crossStitched = stitchBarcodeFragments(barcodeFragments);
+                if (crossStitched) {
+                  return finishOuter({ vin: crossStitched, unreadableVinTag: false });
+                }
               }
 
               const barcodeSerial6Hints = Array.from(barcodeSerial6HintsSet);
 
-              // Full Pass 2D: Full-Resolution Multi-Crop Tesseract.js OCR across ALL zoomed & enhanced canvases (zero bailout)
+              // Full Pass 2D: Full-Resolution Multi-Crop Tesseract.js OCR across ALL zoomed & enhanced canvases (up to 8.0s deadline)
               const allFullAccuracyOcrCrops = full.ocrCanvases || [];
               for (let c = 0; c < allFullAccuracyOcrCrops.length; c++) {
-                if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
-                  clearTimeout(timeout);
-                  return resolve({ vin: '', unreadableVinTag: false });
-                }
+                if (checkStep2Stop()) break;
                 const targetCanvas = allFullAccuracyOcrCrops[c];
                 if (!targetCanvas || recognizedCanvases.has(targetCanvas)) continue;
                 recognizedCanvases.add(targetCanvas);
                 const res = await worker.recognize(targetCanvas);
+                if (outerSettled) break;
                 const text = res?.data?.text || '';
                 if (text) {
+                  if (!vinTagIdentified && doesTextConfirmActualVinTag(text)) {
+                    markVinTagIdentified();
+                  }
                   stickerHeaderContext += '\n' + text;
                   const found = extractVinOrSerialFromOcrText(
                     text,
@@ -3866,8 +4039,7 @@
                     stickerHeaderContext
                   );
                   if (found) {
-                    clearTimeout(timeout);
-                    return resolve({ vin: found, unreadableVinTag: false });
+                    return finishOuter({ vin: found, unreadableVinTag: false });
                   }
                   combinedText += '\n' + text;
                   const combinedFound = extractVinOrSerialFromOcrText(
@@ -3879,13 +4051,15 @@
                     stickerHeaderContext
                   );
                   if (combinedFound) {
-                    clearTimeout(timeout);
-                    return resolve({ vin: combinedFound, unreadableVinTag: false });
+                    return finishOuter({ vin: combinedFound, unreadableVinTag: false });
                   }
                 }
               }
 
-              clearTimeout(timeout);
+              if (outerSettled) {
+                return { vin: '', unreadableVinTag: Boolean(confirmedVinTagEvidence) };
+              }
+
               const finalVin = extractVinOrSerialFromOcrText(
                 combinedText,
                 categoryKey,
@@ -3895,21 +4069,26 @@
                 stickerHeaderContext
               );
               if (finalVin) {
-                return resolve({ vin: finalVin, unreadableVinTag: false });
+                return finishOuter({ vin: finalVin, unreadableVinTag: false });
               }
               const sawStickerContext =
+                confirmedVinTagEvidence ||
                 isCrazed ||
                 barcodeFragments.length > 0 ||
+                doesTextConfirmActualVinTag(combinedText) ||
                 /(?:\bV\.?\s*I\.?\s*N\.?\b|\bN\.?\s*I\.?\s*V\.?\b|IDENTIFICATION|FOREST\s+RIVER,?\s+INC|\bGVWR\b|\bGAWR\b|\bPNBV\b|\bPNBE\b|\bMFD\.?\s+BY\b|\bMFG\.?\s+BY\b|FABRIQUE|MANUFACTURED|CONFORMS\s+TO|\bST2\d\d|\bKPA\b|\bPSI\b)/i.test(
                   combinedText
                 );
-              resolve({ vin: '', unreadableVinTag: Boolean(sawStickerContext) });
+              return finishOuter({ vin: '', unreadableVinTag: Boolean(sawStickerContext) });
             } catch (ocrErr) {
-              clearTimeout(timeout);
-              resolve({ vin: '', unreadableVinTag: quickIsCrazed });
+              return finishOuter({ vin: '', unreadableVinTag: Boolean(confirmedVinTagEvidence) });
             }
-          })
-        );
+          }).then((taskRes) => {
+            if (!outerSettled) {
+              finishOuter(taskRes || { vin: '', unreadableVinTag: Boolean(confirmedVinTagEvidence) });
+            }
+          });
+        });
       } catch (err) {
         console.warn('VIN scan error:', err);
         return { vin: '', unreadableVinTag: false };
@@ -5952,11 +6131,19 @@
       const [manualVinInput, setManualVinInput] = useState('');
       const [vinModalError, setVinModalError] = useState('');
       const [vinPhotoConfirmed, setVinPhotoConfirmed] = useState(false);
+      const [unreadableVinDetected, setUnreadableVinDetected] = useState(false);
       const [isEditingDetectedVin, setIsEditingDetectedVin] = useState(false);
       const [overrideVinInput, setOverrideVinInput] = useState('');
       const activeScanPromisesRef = useRef([]);
       const activeScanCountRef = useRef(0);
       const latestVinRef = useRef('');
+      const stepRef = useRef(step);
+      stepRef.current = step;
+      const uploadingRef = useRef(uploading);
+      uploadingRef.current = uploading;
+      const photosCountRef = useRef(photos.length);
+      photosCountRef.current = photos.length;
+      const hasUnreadableVinPhoto = unreadableVinDetected || photos.some(p => p.unreadableVinTag);
 
       // --- PARTIAL FORM TRACKING (STRICTLY ONLY PAST STEP 2: STEP 3, 4, 5, OR 6) ---
       const formSessionIdRef = useRef('pf-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
@@ -6121,7 +6308,11 @@
 
       const handleInputChange = (field, value) => {
         if (field === 'vinOrSerial') {
-          latestVinRef.current = String(value || '').trim();
+          const trimmed = String(value || '').trim();
+          latestVinRef.current = trimmed;
+          if (trimmed) {
+            setUnreadableVinDetected(false);
+          }
         }
         setFormData(prev => ({ ...prev, [field]: value }));
       };
@@ -6393,15 +6584,20 @@
         });
       };
 
-      const processFiles = async (filesList) => {
+      const processFiles = async (filesList, options = {}) => {
         const files = Array.from(filesList || []).filter(file => 
           file.type.startsWith('image/') || 
           file.type.startsWith('video/') ||
           /\.(mp4|mov|webm|m4v|avi|heic|heif|jpg|jpeg|png|webp)$/i.test(file.name)
         );
         if (files.length === 0) return '';
+        const existingPhotosCount = photosCountRef.current;
         setUploading(true);
+        uploadingRef.current = true;
         let firstDetectedInBatch = '';
+        let activeIdentifiedVinTagCount = 0;
+        let batchManualEntryTriggered = false;
+        let openManualModalAfterBatchUpload = false;
 
         const batchEntries = files.map((file) => {
           const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name);
@@ -6411,35 +6607,68 @@
             mediaId: 'm-' + Math.random().toString(36).substr(2, 9),
             label: file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo'),
             resolvedDetectedVin: '',
-            resolvedUnreadableVinTag: false
+            resolvedUnreadableVinTag: false,
+            isIdentifiedVinTag: false
           };
         });
 
         // Kick off VIN / Serial screening across ALL image files in the batch upfront (instead of waiting behind sequential cloud uploads)
-        // so likely VIN tags jump to the front of the priority queue immediately and abort all remaining photos as soon as a VIN is found!
+        // so likely VIN tags jump to the front of the priority queue immediately and abort all remaining photos as soon as a VIN is found
+        // or once an identified VIN photo fails to resolve with 100% confidence within 8 seconds!
         if (category !== 'container' && !latestVinRef.current) {
           for (let s = 0; s < batchEntries.length; s++) {
             const entry = batchEntries[s];
             if (entry.isVideo) continue;
             activeScanCountRef.current += 1;
             setScanningVin(true);
+            const shouldAbortEntryScan = () =>
+              Boolean(latestVinRef.current || (batchManualEntryTriggered && !entry.isIdentifiedVinTag));
+            const handleEntryVinTagIdentified = () => {
+              if (!entry.isIdentifiedVinTag) {
+                entry.isIdentifiedVinTag = true;
+                activeIdentifiedVinTagCount += 1;
+              }
+            };
             let scanPromise;
-            scanPromise = scanImageFileForVin(entry.file, category, () => Boolean(latestVinRef.current))
+            scanPromise = scanImageFileForVin(entry.file, category, shouldAbortEntryScan, handleEntryVinTagIdentified)
               .then((scanRes) => {
+                if (entry.isIdentifiedVinTag) {
+                  activeIdentifiedVinTagCount = Math.max(0, activeIdentifiedVinTagCount - 1);
+                }
                 const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
                 const unreadableTag = Boolean(typeof scanRes === 'object' && scanRes?.unreadableVinTag && !detected);
                 if (detected) {
                   entry.resolvedDetectedVin = detected;
                   if (!firstDetectedInBatch) firstDetectedInBatch = detected;
+                  setUnreadableVinDetected(false);
                   setPhotos(prev => prev.map(p => (p.id === entry.mediaId ? { ...p, detectedVin: detected, unreadableVinTag: false } : p)));
                   if (!latestVinRef.current) {
                     latestVinRef.current = detected;
                     setVinScanSource('ocr');
                     setFormData(prev => (prev.vinOrSerial && prev.vinOrSerial.trim() ? prev : { ...prev, vinOrSerial: detected }));
                   }
+                  pumpOcrQueue();
+                  setScanningVin(false);
                 } else if (unreadableTag) {
                   entry.resolvedUnreadableVinTag = true;
                   setPhotos(prev => prev.map(p => (p.id === entry.mediaId ? { ...p, unreadableVinTag: true } : p)));
+                  if (!latestVinRef.current) {
+                    setUnreadableVinDetected(true);
+                    if (activeIdentifiedVinTagCount === 0) {
+                      batchManualEntryTriggered = true;
+                      pumpOcrQueue();
+                      setScanningVin(false);
+                      if (!options?.fromVinModal && stepRef.current === 3) {
+                        const projectedPhotoCount = Math.max(photosCountRef.current, existingPhotosCount + batchEntries.length);
+                        if (!uploadingRef.current && photosCountRef.current >= 3) {
+                          setVinModalError('');
+                          setVinModalMode('no_manual');
+                        } else if (projectedPhotoCount >= 3) {
+                          openManualModalAfterBatchUpload = true;
+                        }
+                      }
+                    }
+                  }
                 }
                 return detected || '';
               })
@@ -6455,6 +6684,7 @@
           }
         }
 
+        let addedInBatchCount = 0;
         for (let i = 0; i < batchEntries.length; i++) {
           const entry = batchEntries[i];
           const { file, isVideo, mediaId, label } = entry;
@@ -6473,6 +6703,7 @@
             }
 
             if (cloudUrl) {
+              addedInBatchCount += 1;
               setPhotos(prev => [
                 ...prev,
                 {
@@ -6493,6 +6724,7 @@
               if (isVideo) {
                 const thumbUrl = await extractVideoThumbnail(file);
                 if (thumbUrl) {
+                  addedInBatchCount += 1;
                   setPhotos(prev => [
                     ...prev,
                     {
@@ -6510,6 +6742,7 @@
               } else {
                 const thumbUrl = await compressImageFile(uploadableFile, 480, 0.55);
                 if (thumbUrl) {
+                  addedInBatchCount += 1;
                   setPhotos(prev => [
                     ...prev,
                     {
@@ -6533,7 +6766,18 @@
           }
         }
         setUploading(false);
+        uploadingRef.current = false;
         setUploadStatus('');
+        if (
+          openManualModalAfterBatchUpload &&
+          !options?.fromVinModal &&
+          stepRef.current === 3 &&
+          !latestVinRef.current &&
+          existingPhotosCount + addedInBatchCount >= 3
+        ) {
+          setVinModalError('');
+          setVinModalMode('no_manual');
+        }
         return firstDetectedInBatch;
       };
 
@@ -6576,6 +6820,7 @@
           if (remaining.length === 0) {
             setVinPhotoConfirmed(false);
           }
+          setUnreadableVinDetected(remaining.some(p => p.unreadableVinTag));
           if (removed?.detectedVin && vinScanSource === 'ocr' && latestVinRef.current === removed.detectedVin) {
             const fallbackVin = remaining.map(p => p.detectedVin).find(Boolean) || '';
             latestVinRef.current = fallbackVin;
@@ -6635,7 +6880,6 @@
           return;
         }
 
-        const hasUnreadableVinPhoto = photos.some(p => p.unreadableVinTag);
         if (hasUnreadableVinPhoto) {
           setVinModalError('');
           setVinModalMode('no_manual');
@@ -6656,7 +6900,7 @@
       const handleVinModalPhotoUpload = async (e) => {
         const selected = e.target?.files;
         if (!selected || selected.length === 0) return;
-        const batchDetected = await processFiles(selected);
+        const batchDetected = await processFiles(selected, { fromVinModal: true });
         if (e.target) e.target.value = '';
         let scanDetected = batchDetected || '';
         if (activeScanPromisesRef.current.length > 0) {
@@ -6680,7 +6924,7 @@
           setStep(4);
           scrollToFormTop();
         } else {
-          // If the uploaded VIN sticker could not be read with confidence, request manual VIN entry before Step 4
+          // If the uploaded VIN sticker could not be read with full confidence within 8 seconds, require manual entry before Step 4
           setVinModalError('');
           setVinModalMode('no_manual');
         }
@@ -7678,16 +7922,16 @@
                         <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
                         <span>Scanning uploaded photos for {idMeta.tagLabelLower}...</span>
                       </div>
-                    ) : photos.some(p => p.unreadableVinTag) ? (
+                    ) : hasUnreadableVinPhoto ? (
                       <div className="p-3.5 sm:p-4 rounded-xl bg-amber-950/35 border border-amber-500/40 space-y-3 text-xs">
                         <div className="flex items-start gap-2.5 text-amber-200">
                           <span className="text-amber-400 font-bold text-sm leading-none mt-0.5">⚠️</span>
                           <div className="space-y-1">
                             <p className="font-bold text-amber-200">
-                              We couldn't read the {idMeta.label} from your photo with full confidence.
+                              We detected your {idMeta.tagLabelLower}, but couldn't read the {idMeta.label} with full confidence.
                             </p>
                             <p className="text-neutral-300 leading-relaxed">
-                              Too much of the {idMeta.tagLabelLower} is damaged, faded, or cut off to be certain. Please manually enter your {idMeta.label} below:
+                              To ensure your appraisal is 100% accurate, please manually enter your {idMeta.label} below:
                             </p>
                           </div>
                         </div>
@@ -8223,8 +8467,8 @@
                     <h3 id="vin-tag-modal-title" className="text-base sm:text-lg font-bold text-white leading-snug">
                       {vinModalMode === 'yes_upload'
                         ? `Include a Photo of the ${idMeta.tagLabel}`
-                        : vinModalMode === 'no_manual' && photos.some(p => p.unreadableVinTag)
-                          ? `${idMeta.tagLabel} Not Legible — Please Enter Manually`
+                        : vinModalMode === 'no_manual' && hasUnreadableVinPhoto
+                          ? `Manual ${idMeta.shortLabel} Entry Required`
                           : `Do you have a photo of the ${idMeta.tagLabelLower}?`}
                     </h3>
                     {vinModalMode === 'ask' && (
@@ -8234,8 +8478,8 @@
                     )}
                     {vinModalMode === 'no_manual' && (
                       <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                        {photos.some(p => p.unreadableVinTag)
-                          ? `We detected your ${idMeta.tagLabelLower} photo, but too much of the ${idMeta.label} is damaged or cut off to read with full confidence. Please manually enter it below before continuing to Step 4.`
+                        {hasUnreadableVinPhoto
+                          ? `We detected your ${idMeta.tagLabelLower} photo, but couldn't read the ${idMeta.label} with full confidence. Please manually enter it below before continuing to Step 4.`
                           : `Please manually enter the ${idMeta.label} before continuing to Step 4.`}
                       </p>
                     )}
@@ -8315,11 +8559,11 @@
                         type="button"
                         onClick={() => {
                           setVinModalError('');
-                          setVinModalMode('ask');
+                          setVinModalMode(hasUnreadableVinPhoto ? null : 'ask');
                         }}
                         className="px-3 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
                       >
-                        ← Back
+                        {hasUnreadableVinPhoto ? '← Back to Photos' : '← Back'}
                       </button>
                       <button
                         type="button"
@@ -9004,19 +9248,35 @@
         const existingUnit = (batchUnits || []).find((u) => u.tempId === tempId);
         let batchVinFound = Boolean(existingUnit?.vinOrSerial && existingUnit.vinOrSerial.trim());
         let pendingUnitScans = 0;
+        let activeUnitIdentifiedTags = 0;
+        let unitManualEntryTriggered = false;
 
         if (unitCategory !== 'container' && !batchVinFound) {
           for (let s = 0; s < batchEntries.length; s++) {
             const entry = batchEntries[s];
             if (entry.isVideo) continue;
+            entry.isIdentifiedVinTag = false;
             pendingUnitScans++;
             updateBatchUnit(tempId, { scanningVin: true });
-            scanImageFileForVin(entry.file, unitCategory, () => batchVinFound)
+            const shouldAbortUnitEntry = () =>
+              Boolean(batchVinFound || (unitManualEntryTriggered && !entry.isIdentifiedVinTag));
+            const handleUnitTagIdentified = () => {
+              if (!entry.isIdentifiedVinTag) {
+                entry.isIdentifiedVinTag = true;
+                activeUnitIdentifiedTags += 1;
+              }
+            };
+            scanImageFileForVin(entry.file, unitCategory, shouldAbortUnitEntry, handleUnitTagIdentified)
               .then((scanRes) => {
+                if (entry.isIdentifiedVinTag) {
+                  activeUnitIdentifiedTags = Math.max(0, activeUnitIdentifiedTags - 1);
+                }
                 const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
+                const unreadableTag = Boolean(typeof scanRes === 'object' && scanRes?.unreadableVinTag && !detected);
                 if (detected) {
                   entry.resolvedDetectedVin = detected;
                   batchVinFound = true;
+                  pumpOcrQueue();
                   setBatchUnits((prev) =>
                     prev.map((u) => {
                       if (u.tempId !== tempId) return u;
@@ -9024,16 +9284,26 @@
                         p.id === entry.mediaId ? { ...p, detectedVin: detected } : p
                       );
                       if (u.vinScanSource === 'manual' && u.vinOrSerial && u.vinOrSerial.trim()) {
-                        return { ...u, photos: updatedPhotos };
+                        return { ...u, scanningVin: false, unreadableVinTag: false, photos: updatedPhotos };
                       }
                       return {
                         ...u,
+                        scanningVin: false,
+                        unreadableVinTag: false,
                         vinOrSerial: u.vinOrSerial && u.vinOrSerial.trim() ? u.vinOrSerial : detected,
                         vinScanSource: u.vinOrSerial && u.vinOrSerial.trim() ? u.vinScanSource : 'ocr',
                         photos: updatedPhotos
                       };
                     })
                   );
+                } else if (unreadableTag && !batchVinFound) {
+                  if (activeUnitIdentifiedTags === 0) {
+                    unitManualEntryTriggered = true;
+                    pumpOcrQueue();
+                    updateBatchUnit(tempId, { scanningVin: false, unreadableVinTag: true });
+                  } else {
+                    updateBatchUnit(tempId, { unreadableVinTag: true });
+                  }
                 }
               })
               .catch(() => {})
@@ -10076,7 +10346,7 @@
                       {u.category !== 'container' && (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
                           <div className={usageMeta.show ? 'sm:col-span-2' : 'sm:col-span-3'}>
-                            <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1 flex items-center justify-between">
+                            <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1 flex items-center justify-between gap-2">
                               <span>{idMeta.label}</span>
                               {u.scanningVin && (
                                 <span className="text-emerald-400 text-[10px] font-normal">{idMeta.scanningText}</span>
@@ -10084,13 +10354,20 @@
                               {!u.scanningVin && u.vinScanSource === 'ocr' && u.vinOrSerial && (
                                 <span className="text-emerald-400 text-[10px] font-semibold">✓ Auto-detected from photo (editable)</span>
                               )}
+                              {!u.scanningVin && (!u.vinOrSerial || !u.vinOrSerial.trim()) && u.unreadableVinTag && (
+                                <span className="text-amber-400 text-[10px] font-semibold normal-case">⚠️ Couldn't read with full confidence — please enter manually</span>
+                              )}
                             </label>
                             <input
                               type="text"
                               value={u.vinOrSerial}
-                              onChange={(e) => updateBatchUnit(u.tempId, { vinOrSerial: e.target.value.toUpperCase(), vinScanSource: 'manual' })}
+                              onChange={(e) => updateBatchUnit(u.tempId, { vinOrSerial: e.target.value.toUpperCase(), vinScanSource: 'manual', unreadableVinTag: false })}
                               placeholder={idMeta.placeholder}
-                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white font-mono"
+                              className={`w-full bg-neutral-950 border rounded-xl px-3 py-2 text-white font-mono ${
+                                !u.scanningVin && (!u.vinOrSerial || !u.vinOrSerial.trim()) && u.unreadableVinTag
+                                  ? 'border-amber-500/60 focus:ring-1 focus:ring-amber-400 focus:outline-none'
+                                  : 'border-neutral-800'
+                              }`}
                             />
                           </div>
 
