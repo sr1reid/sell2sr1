@@ -12098,7 +12098,7 @@
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder={activePartnerType ? "Search organization, contact, make/model, VIN, reference #..." : "Search customer, make/model, VIN, reference #, phone..."}
+                  placeholder={activePartnerType ? "Search organization, contact, make/model, VIN..." : "Search customer, make/model, VIN, phone..."}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-lg pl-8 pr-8 py-2 text-white placeholder-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-400"
                 />
                 <span className="absolute left-2.5 top-2.5 text-neutral-500 text-xs">🔍</span>
@@ -12176,43 +12176,22 @@
               </div>
             </div>
 
-            {/* Bottom row: Stage pill tabs + Results counter */}
+            {/* Bottom row: Active / Archived tabs + Results counter */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-800/80">
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => setFilterStage('all')}
                   className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    filterStage === 'all'
+                    filterStage !== 'archived'
                       ? 'bg-neutral-100 text-neutral-950 shadow-sm'
                       : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
                   }`}
                 >
                   All Active ({stageCounts.all || 0})
                 </button>
-                {Object.entries(STAGES).filter(([k]) => k !== 'archived').map(([stageKey, config]) => {
-                  const count = stageCounts[stageKey] || 0;
-                  const isActive = filterStage === stageKey;
-                  const activeClass = config.activeBadge || 'bg-neutral-100 text-neutral-950';
-                  return (
-                    <button
-                      key={stageKey}
-                      type="button"
-                      onClick={() => setFilterStage(stageKey)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                        isActive
-                          ? `${activeClass} shadow-sm`
-                          : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
-                      }`}
-                    >
-                      {config.label} ({count})
-                    </button>
-                  );
-                })}
 
-                <span className="text-neutral-700 hidden sm:inline px-0.5">|</span>
-
-                {/* ARCHIVED STAGE TAB */}
+                {/* ARCHIVED TAB */}
                 <button
                   type="button"
                   onClick={() => setFilterStage('archived')}
@@ -12289,12 +12268,9 @@
                     onClick={() => handleOpenInquiry(item)}
                     className="bg-neutral-900 border border-neutral-800 hover:border-neutral-700 active:border-neutral-600 rounded-2xl p-3.5 space-y-3 shadow-md transition-all cursor-pointer w-full max-w-full overflow-hidden"
                   >
-                    {/* Top Row: Ref #, Date, Intent, Stage */}
+                    {/* Top Row: Date & Unread Chat */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center space-x-2">
-                        <span className="font-mono text-xs font-bold text-neutral-200 bg-neutral-950 px-2 py-0.5 rounded border border-neutral-800">
-                          #{item.referenceId}
-                        </span>
                         <span className="text-[11px] text-neutral-400">
                           {dateInfo.date} • {dateInfo.time}
                         </span>
@@ -12309,9 +12285,6 @@
                             💬 {unitMsgs.length}
                           </span>
                         ) : null}
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${stageConfig.color}`}>
-                          {stageConfig.label}
-                        </span>
                       </div>
                     </div>
 
@@ -12511,12 +12484,6 @@
               <table className="w-full text-left border-collapse min-w-[1080px]">
                 <thead className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur-md text-neutral-400 uppercase font-semibold border-b border-neutral-800 text-[10px] select-none tracking-wider">
                   <tr>
-                    <th onClick={() => handleSort('ref')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[90px]">
-                      <div className="flex items-center space-x-1">
-                        <span>Ref #</span>
-                        {sortField === 'ref' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
-                      </div>
-                    </th>
                     <th onClick={() => handleSort('date')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[110px]">
                       <div className="flex items-center space-x-1">
                         <span>Submitted</span>
@@ -12548,12 +12515,6 @@
                       </div>
                     </th>
                     <th className="p-3.5 min-w-[110px]">Outreach / Chat</th>
-                    <th onClick={() => handleSort('stage')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[115px]">
-                      <div className="flex items-center space-x-1">
-                        <span>Stage</span>
-                        {sortField === 'stage' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
-                      </div>
-                    </th>
                     <th onClick={() => handleSort('offer')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[90px]">
                       <div className="flex items-center space-x-1">
                         <span>Offer</span>
@@ -12566,7 +12527,7 @@
                 <tbody className="divide-y divide-neutral-800 text-xs">
                   {sorted.length === 0 ? (
                     <tr>
-                      <td colSpan="10" className="p-12 text-center text-neutral-400 space-y-3">
+                      <td colSpan="8" className="p-12 text-center text-neutral-400 space-y-3">
                         <p className="text-sm font-semibold text-neutral-300">No units found matching your filters</p>
                         <p className="text-xs text-neutral-500">Try clearing search terms or changing category / location filters</p>
                         {(searchTerm || filterStage !== 'all' || filterPartnerId !== 'all' || filterCategory !== 'all' || filterLocation !== 'all' || filterIntent !== 'all') && (
@@ -12605,13 +12566,6 @@
                           onClick={() => handleOpenInquiry(item)}
                           className="hover:bg-neutral-850/80 cursor-pointer transition-colors group"
                         >
-                          {/* Ref # */}
-                          <td className="p-3.5 font-mono text-xs whitespace-nowrap">
-                            <span className="font-bold text-neutral-200 bg-neutral-950 group-hover:border-neutral-700 px-2 py-1 rounded-md border border-neutral-800 inline-block shadow-sm">
-                              #{item.referenceId}
-                            </span>
-                          </td>
-
                           {/* Submitted */}
                           <td className="p-3.5 whitespace-nowrap">
                             <div className="font-medium text-neutral-200">{dateInfo.date}</div>
@@ -12795,13 +12749,6 @@
                                 </span>
                               )}
                             </div>
-                          </td>
-
-                          {/* Stage */}
-                          <td className="p-3.5 whitespace-nowrap">
-                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold border inline-block ${stageConfig.color}`}>
-                              {stageConfig.label}
-                            </span>
                           </td>
 
                           {/* Offer */}
@@ -13353,9 +13300,6 @@
             <div className="bg-neutral-950 p-4 border-b border-neutral-800 flex items-center justify-between">
               <div>
                 <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                  <span className="font-mono text-neutral-300 font-bold bg-neutral-850 px-2 py-0.5 rounded">
-                    {inquiry.referenceId}
-                  </span>
                   {inquiry.submissionSource === 'dealer' ? (
                     <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-950 border border-blue-700 text-blue-300 flex items-center gap-1">
                       <span>🤝 Dealer Portal</span>
@@ -13472,16 +13416,6 @@
                   </button>
                 )}
 
-                <select
-                  value={currentStage}
-                  onChange={(e) => handleSaveStage(e.target.value)}
-                  className="bg-neutral-850 border border-neutral-750 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white"
-                >
-                  {Object.entries(STAGES).map(([k, v]) => (
-                    <option key={k} value={k}>{v.label}</option>
-                  ))}
-                </select>
-
                 <button
                   onClick={onClose}
                   className="w-7 h-7 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 flex items-center justify-center font-bold"
@@ -13506,7 +13440,6 @@
                       <div className="text-[11px] text-amber-200/80 mt-0.5">
                         {inquiry.archivedAt ? `Archived on ${new Date(inquiry.archivedAt).toLocaleDateString()} at ${new Date(inquiry.archivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Archived'}
                         {inquiry.archivedBy ? ` by ${inquiry.archivedBy}` : ''}.
-                        {inquiry.previousStage ? ` Previous stage was ${STAGES[inquiry.previousStage]?.label || inquiry.previousStage}.` : ''}
                       </div>
                     </div>
                   </div>
