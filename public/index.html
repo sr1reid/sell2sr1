@@ -4463,8 +4463,8 @@
             let resolvedDetectedVin = '';
             let resolvedUnreadableVinTag = false;
 
-            // Start VIN / Serial barcode + OCR scan in parallel on image files (only if a VIN hasn't already been found)
-            if (!isVideo && !latestVinRef.current) {
+            // Start VIN / Serial barcode + OCR scan in parallel on image files (only if not a container and a VIN hasn't already been found)
+            if (!isVideo && category !== 'container' && !latestVinRef.current) {
               activeScanCountRef.current += 1;
               setScanningVin(true);
               let scanPromise;
@@ -4630,6 +4630,13 @@
         }
         if (photos.length < 3) {
           alert('Please upload at least 3 photos of your unit before continuing.');
+          return;
+        }
+
+        // Shipping containers do not require a VIN / Serial number
+        if (category === 'container') {
+          setStep(4);
+          scrollToFormTop();
           return;
         }
 
@@ -4840,7 +4847,7 @@
             make: category === 'container' ? 'Shipping Container' : (formData.make || 'Unit Make'),
             model: category === 'container' ? 'Container' : (formData.model || 'Unit Model'),
             trimOrFloorplan: formData.trimOrFloorplan,
-            vinOrSerial: resolvedVinOrSerial || 'VIN-PENDING',
+            vinOrSerial: resolvedVinOrSerial || (category === 'container' ? 'N/A' : 'VIN-PENDING'),
             mileageOrHours: Number(formData.mileageOrHours) || 0,
             isHours: activeCatConfig.isHours,
             specs: {
@@ -4880,7 +4887,7 @@
               createdAt: new Date().toLocaleTimeString(),
               category: 'general',
               content: category === 'container'
-                ? `New shipping container inquiry submitted (Purchased: ${formData.year}, Box ID: ${resolvedVinOrSerial || 'See Photos'}). Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : `OUTRIGHT SALE${resolvedSalespersonName ? ` (SR1 Team Member: ${resolvedSalespersonName})` : ''}`}. Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
+                ? `New shipping container inquiry submitted (Purchased: ${formData.year}). Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : `OUTRIGHT SALE${resolvedSalespersonName ? ` (SR1 Team Member: ${resolvedSalespersonName})` : ''}`}. Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
                 : `New inquiry submitted for ${formData.year} ${formData.make} ${formData.model}${resolvedVinOrSerial ? ` (VIN/Serial: ${resolvedVinOrSerial})` : ''}. Intent: ${formData.intent === 'trade' ? `TRADE-IN (Salesperson: ${resolvedSalespersonName || 'Unassigned'})` : `OUTRIGHT SALE${resolvedSalespersonName ? ` (SR1 Team Member: ${resolvedSalespersonName})` : ''}`}.${formData.titleStatus === 'financed_money_owed' && formData.lienHolderName ? ` Financed with ${formData.lienHolderName.trim()} (Est. Payoff: $${(Number(formData.estimatedPayoff) || 0).toLocaleString()}).` : ''} Routing to ${locationName}. Notification sent to: ${locationEmails.join(', ')}.`
             }
           ]
@@ -4895,12 +4902,12 @@
         // Send email notification to dealership team and confirmation copy to submitter
         try {
           const unitSummary = category === 'container'
-            ? `Shipping Container - Purchased: ${formData.year} - Box ID: ${resolvedVinOrSerial || 'See Photos'}`
+            ? `Shipping Container - Purchased: ${formData.year}`
             : `${formData.year} ${formData.make} ${formData.model} ${formData.trimOrFloorplan || ''}`;
 
           const appraisalPayload = {
             _subject: category === 'container'
-              ? `[${formData.intent === 'trade' ? 'TRADE-IN' : 'SELL'}] Container Request [${refId}]: ${resolvedVinOrSerial ? `Box #${resolvedVinOrSerial}` : `Purchased ${formData.year}`} (${locationName})`
+              ? `[${formData.intent === 'trade' ? 'TRADE-IN' : 'SELL'}] Container Request [${refId}]: Purchased ${formData.year} (${locationName})`
               : `[${formData.intent === 'trade' ? 'TRADE-IN' : 'SELL'}] Unit Valuation Request [${refId}]: ${formData.year} ${formData.make} ${formData.model} (${locationName})`,
             Reference_ID: refId,
             Closest_SR1_Dealership: locationName,
@@ -5386,7 +5393,7 @@
                     </div>
 
                     {category === 'container' ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 gap-4">
                         {/* Year Purchased */}
                         <div>
                           <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
@@ -5400,24 +5407,6 @@
                             value={formData.year}
                             onChange={(e) => handleInputChange('year', e.target.value)}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                          />
-                        </div>
-
-                        {/* Box Identification Number (Optional) */}
-                        <div>
-                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                            Box Identification Number <span className="text-neutral-500 font-normal normal-case">(Optional)</span>
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Optional — or include a photo in Step 3"
-                            value={formData.vinOrSerial}
-                            onChange={(e) => {
-                              const val = e.target.value.toUpperCase();
-                              handleInputChange('vinOrSerial', val);
-                              setVinScanSource(val.trim() ? 'manual' : '');
-                            }}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm placeholder:font-sans placeholder:text-neutral-600 focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                           />
                         </div>
                       </div>
@@ -5584,9 +5573,11 @@
                         <p className="text-[11px] text-emerald-400 font-medium">
                           Full-quality photos & walkaround videos welcome — no resolution cap
                         </p>
-                        <p className="text-xs text-neutral-300 font-medium pt-0.5">
-                          Please include a photo of the VIN Tag
-                        </p>
+                        {category !== 'container' && (
+                          <p className="text-xs text-neutral-300 font-medium pt-0.5">
+                            Please include a photo of the VIN Tag
+                          </p>
+                        )}
                       </div>
                       
                       <input
@@ -5612,7 +5603,7 @@
                     </div>
 
                     {/* VIN / SERIAL DETECTION STATUS */}
-                    {formData.vinOrSerial && formData.vinOrSerial.trim() ? (
+                    {category !== 'container' && (formData.vinOrSerial && formData.vinOrSerial.trim() ? (
                       <div className="px-3.5 py-2.5 rounded-xl bg-emerald-950/35 border border-emerald-600/40 text-xs space-y-2.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2 text-emerald-300">
@@ -5754,7 +5745,7 @@
                           </button>
                         </div>
                       </div>
-                    ) : null}
+                    ) : null)}
 
                     {photos.length > 0 && (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
@@ -6890,7 +6881,7 @@
           const mediaId = 'pm-' + Math.random().toString(36).substr(2, 9);
           const label = file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo');
 
-          if (!isVideo) {
+          if (!isVideo && unitCategory !== 'container') {
             updateBatchUnit(tempId, { scanningVin: true });
             scanImageFileForVin(file, unitCategory)
               .then(scanRes => {
@@ -6987,9 +6978,9 @@
             const catConfig = CATEGORIES[u.category] || CATEGORIES.rv;
             const nowIso = new Date().toISOString();
             const unitYear = u.year ? String(u.year).trim() : '';
-            const unitMake = (u.make || '').trim() || 'Unspecified Make';
-            const unitModel = (u.model || '').trim() || 'Unit';
-            const cleanVin = (u.vinOrSerial || '').trim().toUpperCase() || 'VIN-PENDING';
+            const unitMake = (u.make || '').trim() || (u.category === 'container' ? 'Shipping Container' : 'Unspecified Make');
+            const unitModel = (u.model || '').trim() || (u.category === 'container' ? 'Container' : 'Unit');
+            const cleanVin = (u.vinOrSerial || '').trim().toUpperCase() || (u.category === 'container' ? 'N/A' : 'VIN-PENDING');
             const initialMsgText = [
               `Submitted via ${portalTitle} by ${activePartner.organizationName} (${activePartner.contactName}).`,
               u.askingPrice ? `Asking / Reserve: $${Number(u.askingPrice).toLocaleString()}.` : '',
@@ -7942,40 +7933,42 @@
                         </div>
                       </div>
 
-                      {/* Row 2: VIN/Serial & Mileage/Hours */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
-                        <div className="sm:col-span-2">
-                          <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1 flex items-center justify-between">
-                            <span>VIN / Serial Number</span>
-                            {u.scanningVin && (
-                              <span className="text-emerald-400 text-[10px] font-normal">Scanning photo for VIN...</span>
-                            )}
-                            {!u.scanningVin && u.vinScanSource === 'ocr' && u.vinOrSerial && (
-                              <span className="text-emerald-400 text-[10px] font-semibold">✓ Auto-detected from photo (editable)</span>
-                            )}
-                          </label>
-                          <input
-                            type="text"
-                            value={u.vinOrSerial}
-                            onChange={(e) => updateBatchUnit(u.tempId, { vinOrSerial: e.target.value.toUpperCase(), vinScanSource: 'manual' })}
-                            placeholder="Enter 17-digit VIN or Serial (or upload VIN photo below)"
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white font-mono"
-                          />
-                        </div>
+                      {/* Row 2: VIN/Serial & Mileage/Hours (Not needed for Containers) */}
+                      {u.category !== 'container' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
+                          <div className="sm:col-span-2">
+                            <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1 flex items-center justify-between">
+                              <span>VIN / Serial Number</span>
+                              {u.scanningVin && (
+                                <span className="text-emerald-400 text-[10px] font-normal">Scanning photo for VIN...</span>
+                              )}
+                              {!u.scanningVin && u.vinScanSource === 'ocr' && u.vinOrSerial && (
+                                <span className="text-emerald-400 text-[10px] font-semibold">✓ Auto-detected from photo (editable)</span>
+                              )}
+                            </label>
+                            <input
+                              type="text"
+                              value={u.vinOrSerial}
+                              onChange={(e) => updateBatchUnit(u.tempId, { vinOrSerial: e.target.value.toUpperCase(), vinScanSource: 'manual' })}
+                              placeholder="Enter 17-digit VIN or Serial (or upload VIN photo below)"
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white font-mono"
+                            />
+                          </div>
 
-                        <div>
-                          <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">
-                            {catConfig.usesHours ? 'Engine / Machine Hours' : 'Mileage (if applicable)'}
-                          </label>
-                          <input
-                            type="number"
-                            value={u.mileageOrHours}
-                            onChange={(e) => updateBatchUnit(u.tempId, { mileageOrHours: e.target.value })}
-                            placeholder=""
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
-                          />
+                          <div>
+                            <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">
+                              {catConfig.usesHours ? 'Engine / Machine Hours' : 'Mileage (if applicable)'}
+                            </label>
+                            <input
+                              type="number"
+                              value={u.mileageOrHours}
+                              onChange={(e) => updateBatchUnit(u.tempId, { mileageOrHours: e.target.value })}
+                              placeholder=""
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
+                            />
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       {/* Row 3: Title Status, Location, SR1 Buyer */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
