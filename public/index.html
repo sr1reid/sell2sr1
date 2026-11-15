@@ -2516,32 +2516,320 @@
       return file._decodedBlobPromise;
     };
 
-    // Shared queued Tesseract.js worker so multiple photos reuse one WASM instance cleanly
-    let sharedTesseractWorkerPromise = null;
-    let tesseractJobChain = Promise.resolve();
+    // Multi-worker Tesseract.js pool (up to 2 parallel WASM workers) + priority queue so likely VIN tags scan first
+    // and non-VIN photos skip in ~150-250ms (or abort in 0ms as soon as any photo finds a VIN)
+    const MAX_OCR_WORKERS = 2;
+    const ocrWorkerSlots = [];
+    const ocrPriorityQueue = [];
+    let ocrSeqCounter = 0;
 
-    const getSharedTesseractWorker = async () => {
-      if (sharedTesseractWorkerPromise) return sharedTesseractWorkerPromise;
+    const createSingleTesseractWorker = async () => {
       if (typeof window === 'undefined') return null;
       for (let tries = 0; tries < 25 && !window.Tesseract; tries++) {
         await new Promise((r) => setTimeout(r, 200));
       }
       if (!window.Tesseract) return null;
-      sharedTesseractWorkerPromise = window.Tesseract.createWorker('eng')
-        .catch((err) => {
-          console.warn('Tesseract worker init error:', err);
-          sharedTesseractWorkerPromise = null;
-          return null;
-        });
-      return sharedTesseractWorkerPromise;
+      try {
+        return await window.Tesseract.createWorker('eng');
+      } catch (err) {
+        console.warn('Tesseract worker init error:', err);
+        return null;
+      }
     };
 
-    // Pre-warm Tesseract worker in background after initial page render
+    const pumpOcrQueue = () => {
+      // Immediately flush any queued tasks whose batch already found a VIN (0ms abort)
+      for (let i = ocrPriorityQueue.length - 1; i >= 0; i--) {
+        const item = ocrPriorityQueue[i];
+        if (typeof item.shouldAbortScan === 'function' && item.shouldAbortScan()) {
+          ocrPriorityQueue.splice(i, 1);
+          item.resolve({ vin: '', unreadableVinTag: false });
+        }
+      }
+      if (ocrPriorityQueue.length === 0) return;
+
+      // Find an idle initialized worker
+      let freeSlot = ocrWorkerSlots.find((s) => !s.busy && s.worker);
+      if (freeSlot) {
+        const nextTask = ocrPriorityQueue.shift();
+        if (!nextTask) return;
+        if (typeof nextTask.shouldAbortScan === 'function' && nextTask.shouldAbortScan()) {
+          nextTask.resolve({ vin: '', unreadableVinTag: false });
+          pumpOcrQueue();
+          return;
+        }
+        freeSlot.busy = true;
+        Promise.resolve()
+          .then(() => nextTask.runFn(freeSlot.worker))
+          .then(
+            (res) => nextTask.resolve(res),
+            () => nextTask.resolve({ vin: '', unreadableVinTag: false })
+          )
+          .finally(() => {
+            freeSlot.busy = false;
+            pumpOcrQueue();
+          });
+        // If more tasks are still waiting and we have room for a 2nd worker, spin it up too
+        if (ocrPriorityQueue.length > 0 && ocrWorkerSlots.length < MAX_OCR_WORKERS) {
+          ensureOcrWorkerCapacity();
+        }
+        return;
+      }
+
+      // Spin up a worker slot if pool has capacity
+      if (ocrWorkerSlots.length < MAX_OCR_WORKERS) {
+        ensureOcrWorkerCapacity();
+      }
+    };
+
+    const ensureOcrWorkerCapacity = () => {
+      if (ocrWorkerSlots.length >= MAX_OCR_WORKERS) return;
+      const slot = { worker: null, busy: true, initPromise: null };
+      ocrWorkerSlots.push(slot);
+      slot.initPromise = createSingleTesseractWorker().then((w) => {
+        if (!w) {
+          const idx = ocrWorkerSlots.indexOf(slot);
+          if (idx !== -1) ocrWorkerSlots.splice(idx, 1);
+          // Resolve remaining queue safely if Tesseract couldn't load at all
+          if (ocrWorkerSlots.length === 0) {
+            while (ocrPriorityQueue.length > 0) {
+              const t = ocrPriorityQueue.shift();
+              t.resolve({ vin: '', unreadableVinTag: Boolean(t.fallbackUnreadable) });
+            }
+          }
+          return null;
+        }
+        slot.worker = w;
+        slot.busy = false;
+        pumpOcrQueue();
+        return w;
+      });
+    };
+
+    const enqueuePrioritizedOcrTask = (priority, shouldAbortScan, fallbackUnreadable, runFn) => {
+      if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
+        return Promise.resolve({ vin: '', unreadableVinTag: false });
+      }
+      return new Promise((resolve) => {
+        const entry = {
+          priority: Number(priority) || 0,
+          seq: ++ocrSeqCounter,
+          shouldAbortScan,
+          fallbackUnreadable: Boolean(fallbackUnreadable),
+          runFn,
+          resolve
+        };
+        // Insert ordered by highest priority first (ties broken FIFO)
+        let inserted = false;
+        for (let i = 0; i < ocrPriorityQueue.length; i++) {
+          if (entry.priority > ocrPriorityQueue[i].priority) {
+            ocrPriorityQueue.splice(i, 0, entry);
+            inserted = true;
+            break;
+          }
+        }
+        if (!inserted) ocrPriorityQueue.push(entry);
+        pumpOcrQueue();
+      });
+    };
+
+    // Limit concurrent full-image decodes during large multi-photo drops so mobile RAM stays smooth
+    const MAX_CONCURRENT_SCAN_DECODES = 3;
+    let activeScanDecodes = 0;
+    const pendingScanDecodeQueue = [];
+    const withScanDecodeSlot = (fn) =>
+      new Promise((resolve, reject) => {
+        const start = () => {
+          activeScanDecodes++;
+          Promise.resolve()
+            .then(fn)
+            .then(resolve, reject)
+            .finally(() => {
+              activeScanDecodes = Math.max(0, activeScanDecodes - 1);
+              if (pendingScanDecodeQueue.length > 0) {
+                const next = pendingScanDecodeQueue.shift();
+                next();
+              }
+            });
+        };
+        if (activeScanDecodes < MAX_CONCURRENT_SCAN_DECODES) {
+          start();
+        } else {
+          pendingScanDecodeQueue.push(start);
+        }
+      });
+
+    // Pre-warm primary Tesseract worker in background after initial page render
     if (typeof window !== 'undefined') {
       setTimeout(() => {
-        if (window.Tesseract) getSharedTesseractWorker();
-      }, 1200);
+        if (window.Tesseract && ocrWorkerSlots.length === 0) ensureOcrWorkerCapacity();
+      }, 1000);
     }
+
+    // Fast natural-scale canvas builder for Stage 0/1 Gate (avoids bloating normal photos up to 1350-1800px)
+    const createQuickGateCanvasFromImage = (img, rx, ry, rw, rh, maxLongSide = 860) => {
+      const natW = img.naturalWidth || img.width || 1200;
+      const natH = img.naturalHeight || img.height || 900;
+      const sx = Math.max(0, Math.round(natW * rx));
+      const sy = Math.max(0, Math.round(natH * ry));
+      const sw = Math.max(1, Math.min(natW - sx, Math.round(natW * rw)));
+      const sh = Math.max(1, Math.min(natH - sy, Math.round(natH * rh)));
+
+      const longSide = Math.max(sw, sh);
+      let scale = 1;
+      if (longSide > maxLongSide) {
+        scale = maxLongSide / longSide;
+      } else if (longSide < 480 && longSide > 80) {
+        scale = Math.min(2.0, 560 / longSide);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(sw * scale));
+      canvas.height = Math.max(1, Math.round(sh * scale));
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    };
+
+    // Stacks a portrait gate image + a 90°-CW rotated center sticker strip into ONE compact canvas
+    // so portrait photos check both upright and vertical stickers in a single ~200ms OCR pass
+    const createPortraitCompositeGateCanvas = (img, maxWidth = 780) => {
+      const topCanvas = createQuickGateCanvasFromImage(img, 0, 0, 1, 1, maxWidth);
+      const stripBase = createQuickGateCanvasFromImage(img, 0.22, 0.12, 0.42, 0.84, maxWidth);
+      const rotW = stripBase.height;
+      const rotH = stripBase.width;
+      const outW = Math.max(topCanvas.width, rotW);
+      const pad = 14;
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = outW;
+      outCanvas.height = topCanvas.height + pad + rotH;
+      const ctx = outCanvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, outCanvas.width, outCanvas.height);
+      ctx.drawImage(topCanvas, 0, 0);
+      ctx.save();
+      ctx.translate(rotW / 2, topCanvas.height + pad + rotH / 2);
+      ctx.rotate(90 * (Math.PI / 180));
+      ctx.drawImage(stripBase, -stripBase.width / 2, -stripBase.height / 2);
+      ctx.restore();
+      return outCanvas;
+    };
+
+    // Pure-JS <3ms visual analyzer: scores how strongly a photo resembles a compliance sticker / VIN plate
+    // and immediately flags blank/blurry/smooth non-text photos so they skip WASM OCR in <5ms
+    const analyzeVisualVinTagSignal = (sourceCanvas) => {
+      if (!sourceCanvas || !sourceCanvas.width || !sourceCanvas.height) {
+        return { hasPlausibleText: false, looksLikeCloseUpLabel: false, priorityScore: 0 };
+      }
+      const sw = sourceCanvas.width;
+      const sh = sourceCanvas.height;
+      const maxSide = 480;
+      const scale = Math.min(1, maxSide / Math.max(sw, sh));
+      const tw = Math.max(32, Math.round(sw * scale));
+      const th = Math.max(32, Math.round(sh * scale));
+
+      let srcData;
+      try {
+        srcData = sourceCanvas.getContext('2d').getImageData(0, 0, sw, sh).data;
+      } catch (e) {
+        return { hasPlausibleText: true, looksLikeCloseUpLabel: false, priorityScore: 20 };
+      }
+
+      const gray = new Uint8Array(tw * th);
+      for (let ty = 0; ty < th; ty++) {
+        const iy = Math.min(sh - 1, (ty / scale) | 0);
+        const srcRow = iy * sw;
+        const dstRow = ty * tw;
+        for (let tx = 0; tx < tw; tx++) {
+          const ix = Math.min(sw - 1, (tx / scale) | 0);
+          const p = (srcRow + ix) << 2;
+          gray[dstRow + tx] = (srcData[p] * 77 + srcData[p + 1] * 150 + srcData[p + 2] * 29) >> 8;
+        }
+      }
+
+      const cell = 16;
+      const cw = Math.max(1, (tw / cell) | 0);
+      const ch = Math.max(1, (th / cell) | 0);
+      const grid = new Uint8Array(cw * ch);
+      let textCells = 0;
+      let barcodeCells = 0;
+      let maxRowRun = 0;
+      let maxColRun = 0;
+
+      for (let cy = 0; cy < ch; cy++) {
+        let run = 0;
+        const y0 = cy * cell;
+        for (let cx = 0; cx < cw; cx++) {
+          const x0 = cx * cell;
+          let lo = 255;
+          let hi = 0;
+          let htrans = 0;
+          let vtrans = 0;
+          for (let y = y0 + 2; y < y0 + cell; y += 2) {
+            const ro = y * tw;
+            let prevH = gray[ro + x0];
+            for (let x = x0 + 2; x < x0 + cell; x += 2) {
+              const g = gray[ro + x];
+              if (g < lo) lo = g;
+              if (g > hi) hi = g;
+              if (Math.abs(g - prevH) >= 28) htrans++;
+              prevH = g;
+              if (Math.abs(g - gray[(y - 2) * tw + x]) >= 28) vtrans++;
+            }
+          }
+          const contrast = hi - lo;
+          if (contrast >= 34 && (htrans >= 5 || vtrans >= 5)) {
+            textCells++;
+            grid[cy * cw + cx] = 1;
+            run++;
+            if (run > maxRowRun) maxRowRun = run;
+            if (contrast >= 40 && htrans >= 14 && htrans > vtrans * 1.8) {
+              barcodeCells++;
+            }
+          } else {
+            run = 0;
+          }
+        }
+      }
+
+      for (let cx = 0; cx < cw; cx++) {
+        let run = 0;
+        for (let cy = 0; cy < ch; cy++) {
+          if (grid[cy * cw + cx]) {
+            run++;
+            if (run > maxColRun) maxColRun = run;
+          } else {
+            run = 0;
+          }
+        }
+      }
+
+      // Measure peak local label density in any 8x5 (or 5x8) cell window so small close-up plates also score high
+      let peakWindowCells = 0;
+      const winW = Math.min(cw, 8);
+      const winH = Math.min(ch, 5);
+      for (let wy = 0; wy <= ch - winH; wy += 2) {
+        for (let wx = 0; wx <= cw - winW; wx += 2) {
+          let sum = 0;
+          for (let dy = 0; dy < winH; dy++) {
+            const ro = (wy + dy) * cw + wx;
+            for (let dx = 0; dx < winW; dx++) sum += grid[ro + dx];
+          }
+          if (sum > peakWindowCells) peakWindowCells = sum;
+        }
+      }
+
+      const totalCells = Math.max(1, cw * ch);
+      const pct = (textCells * 100) / totalCells;
+      const maxRun = Math.max(maxRowRun, maxColRun);
+      const hasPlausibleText = textCells >= 6 && maxRun >= 2;
+      const looksLikeCloseUpLabel = pct >= 28 || peakWindowCells >= 24 || barcodeCells >= 3;
+      const priorityScore = hasPlausibleText
+        ? Math.min(99, Math.round(pct * 0.85 + peakWindowCells * 1.15 + Math.min(28, barcodeCells * 4)))
+        : 0;
+
+      return { hasPlausibleText, looksLikeCloseUpLabel, priorityScore };
+    };
 
     const createCroppedCanvasFromImage = (img, rx, ry, rw, rh, maxWidth = 1800, enhanceContrast = false) => {
       const natW = img.naturalWidth || img.width || 1200;
@@ -2925,39 +3213,65 @@
       return rawImg;
     };
 
-    // Fast pre-screening gate: determines if quick OCR text shows any sign of a VIN tag, compliance sticker, or 17-digit VIN string
+    // Fast pre-screening gate: determines if quick OCR text shows genuine signs of a VIN tag, compliance plate, or VIN/Serial string
+    // Avoids single generic exterior decal words ("TRAILERS", "TIRE", "MODEL", "FOREST RIVER") so normal exterior photos skip immediately
     const doesOcrTextLookLikeVinOrTag = (rawText) => {
       if (!rawText) return false;
       const upper = String(rawText)
         .replace(/(?<=[A-Za-z0-9])[l|!]|[l|!](?=[A-Za-z0-9])/g, '1')
         .toUpperCase();
 
-      // 1. Check for any VIN tag / compliance label / trailer or equipment spec plate keywords
+      // 1A. High-specificity compliance sticker / VIN / Serial plate keywords (1 match confirms)
       if (
-        /(?:V\.?\s*[IJL1]\.?\s*N|N\.?\s*[IJL1]\.?\s*V|VJN|NJV|VEHICLE\s+ID|IDENTIFICATION|GVWR|GAWR|PNBV|PNBE|KPA|PSI|\bLBS?\.?\b|\d+\s*KG\b|COLD|TIRE|RIMS?\b|AXLE|TRAILER|REMORQUE|MFD\b|MFG\b|DATE\s+OF|MANUFACTUR|FABRIQUE|CONFORMS|FEDERAL|SAFETY|MODEL|SERIAL|S\/N|P\.?\s*I\.?\s*N|HULL|FOREST\s+RIVER|TRIPLE\s+CROWN|ST2\d\d|15\s*[X"'])/i.test(
+        /(?:\bV\.?\s*[IJL1]\.?\s*N\.?\b|\bN\.?\s*[IJL1]\.?\s*V\.?\b|\bVJN\b|\bNJV\b|VEHICLE\s+ID|IDENTIFICATION|\bGVWR\b|\bGAWR\b|\bPNBV\b|\bPNBE\b|\bKPA\b|\bPSI\b|\bMFD\.?\s+BY\b|\bMFG\.?\s+BY\b|DATE\s+OF\s+MFG|MANUFACTURED\s+BY|FABRIQUE\s+PAR|CONFORMS\s+TO|MOTOR\s+VEHICLE\s+SAFETY|\bSERIAL\b|\bS\/N\b|\bP\.?\s*I\.?\s*N\.?\b|\bHULL\b|\bST2\d\d|FOREST\s+RIVER,?\s+INC|TIRE\s+AND\s+LOADING)/i.test(
           upper
         )
       ) {
         return true;
       }
 
-      // 2. Check for any standalone or contiguous VIN-like alphanumeric run (8+ chars with letters & digits, or 6+ digits)
+      // 1B. Secondary spec terms: require at least 2 distinct compliance spec indicators together
+      // so a single brand decal ("BIG TEX TRAILERS") never triggers a deep scan
+      let secondarySpecHits = 0;
+      const secondaryPatterns = [
+        /\b\d{3,5}\s*LBS?\.?\b|\bLBS?\.\s+LB\./i,
+        /\b\d{3,5}\s*KG\b/i,
+        /\bEACH\s+AXLE\b|\bCHAQUE\s+ESSIEU\b/i,
+        /\bRIMS?\b|\bJANTE\b/i,
+        /\bCOLD\s+INFL|\bA\s+FROID\b/i,
+        /\bTRA\/REM\b|\bREMORQUE\b/i
+      ];
+      for (let p = 0; p < secondaryPatterns.length; p++) {
+        if (secondaryPatterns[p].test(upper)) {
+          secondarySpecHits++;
+          if (secondarySpecHits >= 2) return true;
+        }
+      }
+
+      // Strip standard US/Canada phone numbers on dealer decals (e.g. "(207) 555-0199" or "18005551234") before alphanumeric run checks
+      const strippedPhones = upper.replace(
+        /(?:\b1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b|\b1?(?:800|888|877|866|855|844|833)\d{7}\b/g,
+        ' '
+      );
+
+      // 2. Check for any standalone or contiguous VIN/Serial-like alphanumeric run (8+ chars with letters & digits, or 7+ contiguous digits)
       // Handles plain 17-digit VIN stickers that have no "VIN" label (e.g. 5WFBU2424PW126186.jpg)
-      const runs = upper.match(/[A-Z0-9]{8,28}/g) || [];
+      const runs = strippedPhones.match(/[A-Z0-9]{8,28}/g) || [];
       for (let i = 0; i < runs.length; i++) {
         const r = runs[i];
         const digits = (r.match(/\d/g) || []).length;
         const letters = (r.match(/[A-Z]/g) || []).length;
-        if ((digits >= 2 && letters >= 1) || digits >= 6) {
+        if (letters === 0 && (r.length === 10 || (r.length === 11 && r[0] === '1'))) continue;
+        if ((digits >= 2 && letters >= 1) || digits >= 7) {
           return true;
         }
       }
 
-      // 3. Check if any single line has 11+ alphanumeric chars with at least 3 digits when spaces/hyphens are removed
-      const lines = upper.split(/\r?\n/);
+      // 3. Check if any single line has 12+ alphanumeric chars with both letters and digits when spaces/hyphens are removed
+      const lines = strippedPhones.split(/\r?\n/);
       for (let l = 0; l < lines.length; l++) {
         const compact = lines[l].replace(/[^A-Z0-9]/g, '');
-        if (compact.length >= 11 && compact.length <= 28) {
+        if (compact.length >= 12 && compact.length <= 28) {
           const digits = (compact.match(/\d/g) || []).length;
           const letters = (compact.match(/[A-Z]/g) || []).length;
           if (digits >= 3 && letters >= 2) {
@@ -2969,183 +3283,204 @@
       return false;
     };
 
-    const loadImageCanvasesForScan = async (file) => {
-      if (!file) return null;
-      const [decodableBlob, irotSteps] = await Promise.all([
-        ensureDecodableImageBlob(file),
-        readHeicIrotSteps(file)
-      ]);
-      if (!decodableBlob) return null;
+    const loadImageCanvasesForScan = (file, shouldAbortScan = null) =>
+      withScanDecodeSlot(async () => {
+        if (!file) return null;
+        if (typeof shouldAbortScan === 'function' && shouldAbortScan()) return null;
+        const [decodableBlob, irotSteps] = await Promise.all([
+          ensureDecodableImageBlob(file),
+          readHeicIrotSteps(file)
+        ]);
+        if (!decodableBlob) return null;
+        if (typeof shouldAbortScan === 'function' && shouldAbortScan()) return null;
 
-      return new Promise((resolve) => {
-        let objectUrl = '';
-        try {
-          objectUrl = URL.createObjectURL(decodableBlob);
-        } catch (e) {
-          return resolve(null);
-        }
-
-        const rawImg = new Image();
-        let settled = false;
-        const finish = (val) => {
-          if (settled) return;
-          settled = true;
-          if (objectUrl) {
-            try { URL.revokeObjectURL(objectUrl); } catch (e) {}
-          }
-          resolve(val);
-        };
-
-        const timer = setTimeout(() => finish(null), 10000);
-
-        rawImg.onload = () => {
-          clearTimeout(timer);
+        return new Promise((resolve) => {
+          let objectUrl = '';
           try {
-            // Ensure upright orientation for portrait HEIC photos (e.g. 590211518R0030952.HEIC, 5JW1U1827T1494127.heic)
-            const img = normalizeHeicOrientationCanvas(rawImg, irotSteps);
-            const natW = img.naturalWidth || img.width || 1200;
-            const natH = img.naturalHeight || img.height || 900;
-            const isWideBanner = natW / Math.max(1, natH) >= 2.2;
-            const isPortrait = natW < natH * 0.95;
-
-            // STAGE 1 FAST GATE CANVASES: Only build lightweight screening canvases upfront so normal unit photos don't pay for 18 heavy crops
-            const gateFullCanvas = createCroppedCanvasFromImage(img, 0, 0, 1, 1, 1350, false);
-            const vinBandCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.88, 0.36, 1800, false);
-            const vinLeftTextCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.58, 0.32, 1600, false);
-            const isCrazedSticker = isSeverelyCrazedStickerCanvas(vinLeftTextCanvas);
-            const inkIsolatedLeftLineErased = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, true);
-            const verticalStickerZoomCW = (isPortrait && !irotSteps)
-              ? createRotatedCropCanvasFromImage(img, 0.34, 0.14, 0.32, 0.82, true, 1600)
-              : null;
-
-            const gateOcrCanvases = isCrazedSticker
-              ? [vinLeftTextCanvas]
-              : isWideBanner
-              ? [gateFullCanvas, inkIsolatedLeftLineErased]
-              : (isPortrait && !irotSteps && verticalStickerZoomCW)
-              ? [verticalStickerZoomCW, gateFullCanvas]
-              : [gateFullCanvas, inkIsolatedLeftLineErased];
-
-            let cachedDeepCanvases = null;
-            const getDeepCanvases = () => {
-              if (cachedDeepCanvases) return cachedDeepCanvases;
-
-              // STAGE 2 DEEP SCAN CANVASES: Built ONLY after Stage 1 confirms this photo looks like a VIN number or VIN tag
-              const fullCanvas = createCroppedCanvasFromImage(img, 0, 0, 1, 1, 2000, false);
-              const strictInkFullCanvas = createInkIsolatedCanvas(fullCanvas, 0.28, false);
-              const inkIsolatedFullCanvas = createInkIsolatedCanvas(fullCanvas, 0.42, false);
-              const vinTopBannerCanvas = createCroppedCanvasFromImage(img, 0.02, 0.05, 0.96, 0.68, 1800, false);
-              const strictInkTopBannerCanvas = createInkIsolatedCanvas(vinTopBannerCanvas, 0.28, false);
-
-              const stickerCenterCanvas = createCroppedCanvasFromImage(img, 0.06, 0.14, 0.88, 0.72, 1800, false);
-              // Bottom compliance band crop captures VINs printed near the bottom of stickers (e.g. 2NEB212B5PN037870, 5JW1U1827T1494127, IMG_1689)
-              const vinBottomBandCanvas = createCroppedCanvasFromImage(img, 0.06, 0.54, 0.84, 0.36, 1800, false);
-              const inkIsolatedBottomBandCanvas = createInkIsolatedCanvas(vinBottomBandCanvas, 0.42, false);
-
-              const inkIsolatedLeftCanvas = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, false);
-              const inkIsolatedCenterCanvas = createInkIsolatedCanvas(stickerCenterCanvas, 0.42, false);
-              const inkIsolatedBandCanvas = createInkIsolatedCanvas(vinBandCanvas, 0.42, true);
-              // Local contrast-normalized crops restore faded thermal print on metallic tags (IMG_2044) & boost barcodes
-              const localContrastLeftCanvas = createLocalContrastCanvas(vinLeftTextCanvas);
-              const localContrastBandCanvas = createLocalContrastCanvas(vinBandCanvas);
-              // Right/middle and left/middle native-res barcode crops cover both right-side (IMG_2270, 5JW) and left-side (IMG_4623, IMG_2044) barcodes
-              const barcodeRightZoomCanvas = createCroppedCanvasFromImage(img, 0.42, 0.32, 0.54, 0.40, 1800, false);
-              const barcodeLeftZoomCanvas = createCroppedCanvasFromImage(img, 0.06, 0.36, 0.56, 0.30, 1800, false);
-              const barcodeLeftContrastCanvas = createLocalContrastCanvas(barcodeLeftZoomCanvas);
-              // Vertical sticker / vertical backup VIN crops rotated 90° CW and 90° CCW (handles 1XNBU0816N2024607 & 2NEB212B5PN037870)
-              const deepVerticalZoomCW = verticalStickerZoomCW || createRotatedCropCanvasFromImage(img, 0.34, 0.14, 0.32, 0.82, true, 1600);
-              const verticalStickerFullCW = createRotatedCropCanvasFromImage(img, 0.20, 0.04, 0.52, 0.92, true, 1600);
-              const verticalStickerFullCCW = createRotatedCropCanvasFromImage(img, 0.20, 0.04, 0.52, 0.92, false, 1600);
-
-              cachedDeepCanvases = {
-                barcodeCanvases: [
-                  barcodeLeftZoomCanvas,
-                  barcodeLeftContrastCanvas,
-                  barcodeRightZoomCanvas,
-                  vinBandCanvas,
-                  stickerCenterCanvas,
-                  fullCanvas,
-                  verticalStickerFullCW
-                ],
-                code39Canvases: [
-                  barcodeLeftContrastCanvas,
-                  barcodeLeftZoomCanvas,
-                  localContrastBandCanvas,
-                  vinBandCanvas,
-                  barcodeRightZoomCanvas
-                ],
-                ocrCanvases: isCrazedSticker
-                  ? [
-                      vinLeftTextCanvas,
-                      stickerCenterCanvas,
-                      fullCanvas
-                    ]
-                  : isWideBanner
-                  ? [
-                      strictInkFullCanvas,
-                      fullCanvas,
-                      strictInkTopBannerCanvas,
-                      vinTopBannerCanvas,
-                      inkIsolatedFullCanvas,
-                      vinBandCanvas,
-                      vinLeftTextCanvas
-                    ]
-                  : isPortrait && !irotSteps
-                  ? [
-                      deepVerticalZoomCW,
-                      verticalStickerFullCW,
-                      inkIsolatedLeftLineErased,
-                      vinLeftTextCanvas,
-                      vinBottomBandCanvas,
-                      inkIsolatedBottomBandCanvas,
-                      inkIsolatedCenterCanvas,
-                      stickerCenterCanvas,
-                      verticalStickerFullCCW,
-                      fullCanvas
-                    ]
-                  : [
-                      inkIsolatedLeftLineErased,
-                      vinLeftTextCanvas,
-                      vinBottomBandCanvas,
-                      inkIsolatedBottomBandCanvas,
-                      deepVerticalZoomCW,
-                      verticalStickerFullCW,
-                      inkIsolatedCenterCanvas,
-                      localContrastLeftCanvas,
-                      vinBandCanvas,
-                      inkIsolatedBandCanvas,
-                      localContrastBandCanvas,
-                      stickerCenterCanvas,
-                      inkIsolatedLeftCanvas,
-                      verticalStickerFullCCW,
-                      fullCanvas
-                    ]
-              };
-              return cachedDeepCanvases;
-            };
-
-            finish({
-              isCrazedSticker,
-              gateBarcodeCanvases: verticalStickerZoomCW
-                ? [vinBandCanvas, gateFullCanvas, verticalStickerZoomCW]
-                : [vinBandCanvas, gateFullCanvas],
-              gateCode39Canvases: [vinBandCanvas, gateFullCanvas],
-              gateOcrCanvases,
-              getDeepCanvases
-            });
-          } catch (err) {
-            finish(null);
+            objectUrl = URL.createObjectURL(decodableBlob);
+          } catch (e) {
+            return resolve(null);
           }
-        };
 
-        rawImg.onerror = () => {
-          clearTimeout(timer);
-          finish(null);
-        };
+          const rawImg = new Image();
+          let settled = false;
+          const finish = (val) => {
+            if (settled) return;
+            settled = true;
+            if (objectUrl) {
+              try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+            }
+            resolve(val);
+          };
 
-        rawImg.src = objectUrl;
+          const timer = setTimeout(() => finish(null), 10000);
+
+          rawImg.onload = () => {
+            clearTimeout(timer);
+            if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
+              return finish(null);
+            }
+            try {
+              // Ensure upright orientation for portrait HEIC photos (e.g. 590211518R0030952.HEIC, 5JW1U1827T1494127.heic)
+              const img = normalizeHeicOrientationCanvas(rawImg, irotSteps);
+              const natW = img.naturalWidth || img.width || 1200;
+              const natH = img.naturalHeight || img.height || 900;
+              const isWideBanner = natW / Math.max(1, natH) >= 2.2;
+              const isPortrait = natW < natH * 0.95;
+
+              // STAGE 0 & 1 ULTRA-LIGHT GATE CANVASES:
+              // Avoid building 1600-2000px crops or JS binary ink masks until a photo actually shows signs of a VIN/tag!
+              const baseGateCanvas = createQuickGateCanvasFromImage(img, 0, 0, 1, 1, 800);
+              const visualSignal = analyzeVisualVinTagSignal(baseGateCanvas);
+              const gateCrazedProbeCanvas = createQuickGateCanvasFromImage(img, 0.06, 0.34, 0.58, 0.32, 600);
+              const isCrazedSticker = isSeverelyCrazedStickerCanvas(gateCrazedProbeCanvas);
+              const gateBandCanvas = visualSignal.hasPlausibleText
+                ? createQuickGateCanvasFromImage(img, 0.05, 0.30, 0.90, 0.44, 1280)
+                : null;
+
+              // Single-pass Stage 1C Gate canvas:
+              // - Close-up label candidates get a crisp 1060px pass so small compliance sticker fonts read cleanly on Pass 1
+              // - Portrait non-HEIC photos stack upright + 90° CW strip into ONE compact canvas (1 WASM call instead of 2)
+              // - Normal exterior/interior unit photos run 1 small 800px pass (~160-240ms) and immediately skip!
+              let primaryGateOcrCanvas = null;
+              if (isCrazedSticker) {
+                primaryGateOcrCanvas = gateCrazedProbeCanvas;
+              } else if (visualSignal.hasPlausibleText) {
+                if (isPortrait && !irotSteps) {
+                  primaryGateOcrCanvas = createPortraitCompositeGateCanvas(
+                    img,
+                    visualSignal.looksLikeCloseUpLabel ? 860 : 740
+                  );
+                } else if (visualSignal.looksLikeCloseUpLabel) {
+                  primaryGateOcrCanvas = createQuickGateCanvasFromImage(img, 0, 0, 1, 1, 1060);
+                } else {
+                  primaryGateOcrCanvas = baseGateCanvas;
+                }
+              }
+
+              let cachedDeepCanvases = null;
+              const getDeepCanvases = () => {
+                if (cachedDeepCanvases) return cachedDeepCanvases;
+
+                // STAGE 2 DEEP SCAN CANVASES: Built ONLY after Stage 0/1 confirms this photo looks like a VIN number or VIN tag
+                const vinBandCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.88, 0.36, 1800, false);
+                const vinLeftTextCanvas = createCroppedCanvasFromImage(img, 0.06, 0.34, 0.58, 0.32, 1600, false);
+                const inkIsolatedLeftLineErased = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, true);
+                const fullCanvas = createCroppedCanvasFromImage(img, 0, 0, 1, 1, 2000, false);
+                const strictInkFullCanvas = createInkIsolatedCanvas(fullCanvas, 0.28, false);
+                const inkIsolatedFullCanvas = createInkIsolatedCanvas(fullCanvas, 0.42, false);
+                const vinTopBannerCanvas = createCroppedCanvasFromImage(img, 0.02, 0.05, 0.96, 0.68, 1800, false);
+                const strictInkTopBannerCanvas = createInkIsolatedCanvas(vinTopBannerCanvas, 0.28, false);
+
+                const stickerCenterCanvas = createCroppedCanvasFromImage(img, 0.06, 0.14, 0.88, 0.72, 1800, false);
+                // Bottom compliance band crop captures VINs printed near the bottom of stickers (e.g. 2NEB212B5PN037870, 5JW1U1827T1494127, IMG_1689)
+                const vinBottomBandCanvas = createCroppedCanvasFromImage(img, 0.06, 0.54, 0.84, 0.36, 1800, false);
+                const inkIsolatedBottomBandCanvas = createInkIsolatedCanvas(vinBottomBandCanvas, 0.42, false);
+
+                const inkIsolatedLeftCanvas = createInkIsolatedCanvas(vinLeftTextCanvas, 0.42, false);
+                const inkIsolatedCenterCanvas = createInkIsolatedCanvas(stickerCenterCanvas, 0.42, false);
+                const inkIsolatedBandCanvas = createInkIsolatedCanvas(vinBandCanvas, 0.42, true);
+                // Local contrast-normalized crops restore faded thermal print on metallic tags (IMG_2044) & boost barcodes
+                const localContrastLeftCanvas = createLocalContrastCanvas(vinLeftTextCanvas);
+                const localContrastBandCanvas = createLocalContrastCanvas(vinBandCanvas);
+                // Right/middle and left/middle native-res barcode crops cover both right-side (IMG_2270, 5JW) and left-side (IMG_4623, IMG_2044) barcodes
+                const barcodeRightZoomCanvas = createCroppedCanvasFromImage(img, 0.42, 0.32, 0.54, 0.40, 1800, false);
+                const barcodeLeftZoomCanvas = createCroppedCanvasFromImage(img, 0.06, 0.36, 0.56, 0.30, 1800, false);
+                const barcodeLeftContrastCanvas = createLocalContrastCanvas(barcodeLeftZoomCanvas);
+                // Vertical sticker / vertical backup VIN crops rotated 90° CW and 90° CCW (handles 1XNBU0816N2024607 & 2NEB212B5PN037870)
+                const deepVerticalZoomCW = createRotatedCropCanvasFromImage(img, 0.34, 0.14, 0.32, 0.82, true, 1600);
+                const verticalStickerFullCW = createRotatedCropCanvasFromImage(img, 0.20, 0.04, 0.52, 0.92, true, 1600);
+                const verticalStickerFullCCW = createRotatedCropCanvasFromImage(img, 0.20, 0.04, 0.52, 0.92, false, 1600);
+
+                cachedDeepCanvases = {
+                  barcodeCanvases: [
+                    barcodeLeftZoomCanvas,
+                    barcodeLeftContrastCanvas,
+                    barcodeRightZoomCanvas,
+                    vinBandCanvas,
+                    stickerCenterCanvas,
+                    fullCanvas,
+                    verticalStickerFullCW
+                  ],
+                  code39Canvases: [
+                    barcodeLeftContrastCanvas,
+                    barcodeLeftZoomCanvas,
+                    localContrastBandCanvas,
+                    vinBandCanvas,
+                    barcodeRightZoomCanvas
+                  ],
+                  ocrCanvases: isCrazedSticker
+                    ? [
+                        vinLeftTextCanvas,
+                        stickerCenterCanvas,
+                        fullCanvas
+                      ]
+                    : isWideBanner
+                    ? [
+                        strictInkFullCanvas,
+                        fullCanvas,
+                        strictInkTopBannerCanvas,
+                        vinTopBannerCanvas,
+                        inkIsolatedFullCanvas,
+                        vinBandCanvas,
+                        vinLeftTextCanvas
+                      ]
+                    : isPortrait && !irotSteps
+                    ? [
+                        deepVerticalZoomCW,
+                        verticalStickerFullCW,
+                        inkIsolatedLeftLineErased,
+                        vinLeftTextCanvas,
+                        vinBottomBandCanvas,
+                        inkIsolatedBottomBandCanvas,
+                        inkIsolatedCenterCanvas,
+                        stickerCenterCanvas,
+                        verticalStickerFullCCW,
+                        fullCanvas
+                      ]
+                    : [
+                        inkIsolatedLeftLineErased,
+                        vinLeftTextCanvas,
+                        vinBottomBandCanvas,
+                        inkIsolatedBottomBandCanvas,
+                        deepVerticalZoomCW,
+                        verticalStickerFullCW,
+                        inkIsolatedCenterCanvas,
+                        localContrastLeftCanvas,
+                        vinBandCanvas,
+                        inkIsolatedBandCanvas,
+                        localContrastBandCanvas,
+                        stickerCenterCanvas,
+                        inkIsolatedLeftCanvas,
+                        verticalStickerFullCCW,
+                        fullCanvas
+                      ]
+                };
+                return cachedDeepCanvases;
+              };
+
+              finish({
+                isCrazedSticker,
+                isWideBanner,
+                visualSignal,
+                gateBarcodeCanvases: gateBandCanvas ? [gateBandCanvas, baseGateCanvas] : [baseGateCanvas],
+                gateCode39Canvases: gateBandCanvas ? [gateBandCanvas] : [],
+                gateOcrCanvases: primaryGateOcrCanvas ? [primaryGateOcrCanvas] : [],
+                getDeepCanvases
+              });
+            } catch (err) {
+              finish(null);
+            }
+          };
+
+          rawImg.onerror = () => {
+            clearTimeout(timer);
+            finish(null);
+          };
+
+          rawImg.src = objectUrl;
+        });
       });
-    };
 
     const scanImageFileForVin = async (file, categoryKey, shouldAbortScan = null) => {
       if (!file) return { vin: '', unreadableVinTag: false };
@@ -3156,13 +3491,22 @@
       }
 
       try {
-        const canvases = await loadImageCanvasesForScan(file);
+        const canvases = await loadImageCanvasesForScan(file, shouldAbortScan);
         if (!canvases) return { vin: '', unreadableVinTag: false };
         if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
           return { vin: '', unreadableVinTag: false };
         }
 
-        // Fast Gate Step 1A: Quick native BarcodeDetector on gate canvases (<25ms)
+        const isCrazed = Boolean(canvases.isCrazedSticker);
+        const isWideBanner = Boolean(canvases.isWideBanner);
+        const visualSignal = canvases.visualSignal || { hasPlausibleText: true, looksLikeCloseUpLabel: false, priorityScore: 20 };
+
+        // Fast Gate Step 0: If pure-JS visual analysis finds zero plausible character-stroke clusters (smooth/blurry/dark photo), skip in <5ms!
+        if (!isCrazed && !isWideBanner && !visualSignal.hasPlausibleText) {
+          return { vin: '', unreadableVinTag: false };
+        }
+
+        // Fast Gate Step 1A: Quick native BarcodeDetector on gate canvases (<20ms)
         let detector = null;
         if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
           try {
@@ -3186,7 +3530,7 @@
           } catch (barcodeErr) {}
         }
 
-        // Fast Gate Step 1B: Quick Code 39 scanline check on gate canvases (<15ms)
+        // Fast Gate Step 1B: Quick Code 39 scanline check on gate band (<15ms)
         const barcodeFragmentsMap = new Map();
         for (let c = 0; c < (canvases.gateCode39Canvases || []).length; c++) {
           const c39 = scanCanvasForCode39(canvases.gateCode39Canvases[c], categoryKey);
@@ -3206,19 +3550,20 @@
         const gateStitched = stitchBarcodeFragments(barcodeFragments);
         if (gateStitched) return { vin: gateStitched, unreadableVinTag: false };
 
-        const isCrazed = Boolean(canvases.isCrazedSticker);
-        // If we already detected barcode fragments or a crazed compliance sticker surface, it's confirmed as a VIN tag
-        let confirmedVinOrTag = isCrazed || barcodeFragments.length > 0;
+        // Confirmed VIN tag upfront if barcode fragments, crazed sticker surface, or cropped wide VIN banner
+        let confirmedVinOrTag = isCrazed || isWideBanner || barcodeFragments.length > 0;
+        const queuePriority = confirmedVinOrTag
+          ? 100
+          : (visualSignal.priorityScore || 0);
 
-        // Stage 1C (Fast OCR Gate) -> Stage 2 (Full Deep Scan ONLY if photo clearly looks like a VIN number or VIN tag)
-        const runOcr = () =>
+        // Stage 1C (Single-Pass Fast OCR Gate) -> Stage 2 (Full Deep Scan ONLY if photo clearly looks like a VIN number or VIN tag)
+        return await enqueuePrioritizedOcrTask(queuePriority, shouldAbortScan, isCrazed, (worker) =>
           new Promise(async (resolve) => {
             if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
               return resolve({ vin: '', unreadableVinTag: false });
             }
-            const timeout = setTimeout(() => resolve({ vin: '', unreadableVinTag: isCrazed }), 28000);
+            const timeout = setTimeout(() => resolve({ vin: '', unreadableVinTag: isCrazed }), 25000);
             try {
-              const worker = await getSharedTesseractWorker();
               if (!worker) {
                 clearTimeout(timeout);
                 return resolve({ vin: '', unreadableVinTag: isCrazed });
@@ -3227,7 +3572,7 @@
               let combinedText = '';
               const recognizedCanvases = new Set();
 
-              // STAGE 1C: Fast Pre-Screening OCR Gate (1-2 lightweight crops)
+              // STAGE 1C: Single-Pass Fast Pre-Screening OCR Gate (~160-260ms on non-VIN photos)
               if (!confirmedVinOrTag) {
                 const gateCrops = canvases.gateOcrCanvases || [];
                 for (let g = 0; g < gateCrops.length; g++) {
@@ -3259,7 +3604,7 @@
                   }
                 }
 
-                // If Stage 1 Gate determines this photo is NOT a VIN number or VIN tag (e.g. normal RV/trailer/tractor photo), exit immediately!
+                // Immediately skip this photo if Stage 1 Gate found no VIN/Serial or compliance-tag signal!
                 if (!confirmedVinOrTag) {
                   clearTimeout(timeout);
                   return resolve({ vin: '', unreadableVinTag: false });
@@ -3267,7 +3612,7 @@
               }
 
               // STAGE 2: Photo is confirmed to look like a VIN number or VIN tag!
-              // Now build the full suite of deep-scan canvases and run all established barcode + multi-crop OCR steps.
+              // Build the deep-scan canvases lazily and run barcode + multi-crop OCR steps.
               const deep = canvases.getDeepCanvases();
 
               // Deep Pass 2A: Native BarcodeDetector on zoomed left/right/contrast barcode crops
@@ -3340,7 +3685,8 @@
                 }
               }
 
-              // Deep Pass 2D: Full Multi-Crop Tesseract.js OCR across all enhanced canvases
+              // Deep Pass 2D: Full Multi-Crop Tesseract.js OCR across enhanced canvases (with fast bailout if false-promoted decal)
+              let deepCropsRun = 0;
               for (let c = 0; c < (deep.ocrCanvases || []).length; c++) {
                 if (typeof shouldAbortScan === 'function' && shouldAbortScan()) {
                   clearTimeout(timeout);
@@ -3349,6 +3695,7 @@
                 const targetCanvas = deep.ocrCanvases[c];
                 if (!targetCanvas || recognizedCanvases.has(targetCanvas)) continue;
                 recognizedCanvases.add(targetCanvas);
+                deepCropsRun++;
                 const res = await worker.recognize(targetCanvas);
                 const text = res?.data?.text || '';
                 if (text) {
@@ -3364,6 +3711,18 @@
                     return resolve({ vin: combinedFound, unreadableVinTag: false });
                   }
                 }
+
+                // Safety bailout: if a photo had no barcode/crazing/banner and after Gate + 2 zoomed deep crops still has
+                // zero genuine compliance-tag keywords and zero 13+ char VIN-like strings, bail out instead of running 12 more passes
+                if (deepCropsRun === 2 && !isCrazed && !isWideBanner && barcodeFragments.length === 0) {
+                  const hasStrongTagProof =
+                    /(?:\bV\.?\s*[IJL1]\.?\s*N\.?\b|\bN\.?\s*[IJL1]\.?\s*V\.?\b|\bVJN\b|\bNJV\b|IDENTIFICATION|\bGVWR\b|\bGAWR\b|\bPNBV\b|\bPNBE\b|\bKPA\b|\bPSI\b|\bMFD\b|\bMFG\b|CONFORMS\s+TO|\bSERIAL\b|\bS\/N\b|\bST2\d\d|[A-Z0-9]{13,22})/i.test(
+                      combinedText
+                    );
+                  if (!hasStrongTagProof) {
+                    break;
+                  }
+                }
               }
 
               clearTimeout(timeout);
@@ -3374,7 +3733,7 @@
               const sawStickerContext =
                 isCrazed ||
                 barcodeFragments.length > 0 ||
-                /\b(V\.?\s*I\.?\s*N|N\.?\s*I\.?\s*V|IDENTIFICATION|FOREST\s+RIVER|GVWR|GAWR|PNBV|MFD\s+BY|MFG\s+BY|FABRIQUE|MANUFACTURED|CONFORMS\s+TO|TRAILER|REMORQUE|ST2\d\d|KPA|PSI)\b/i.test(
+                /(?:\bV\.?\s*I\.?\s*N\.?\b|\bN\.?\s*I\.?\s*V\.?\b|IDENTIFICATION|FOREST\s+RIVER,?\s+INC|\bGVWR\b|\bGAWR\b|\bPNBV\b|\bPNBE\b|\bMFD\.?\s+BY\b|\bMFG\.?\s+BY\b|FABRIQUE\s+PAR|MANUFACTURED\s+BY|CONFORMS\s+TO|\bST2\d\d|\bKPA\b|\bPSI\b)/i.test(
                   combinedText
                 );
               resolve({ vin: '', unreadableVinTag: Boolean(sawStickerContext) });
@@ -3382,11 +3741,8 @@
               clearTimeout(timeout);
               resolve({ vin: '', unreadableVinTag: isCrazed });
             }
-          });
-
-        const nextJob = tesseractJobChain.then(runOcr, runOcr);
-        tesseractJobChain = nextJob.then(() => {}, () => {});
-        return await nextJob;
+          })
+        );
       } catch (err) {
         console.warn('VIN scan error:', err);
         return { vin: '', unreadableVinTag: false };
@@ -5880,50 +6236,63 @@
         setUploading(true);
         let firstDetectedInBatch = '';
 
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          try {
-            setUploadStatus(`Uploading file ${i + 1} of ${files.length}...`);
-            const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name);
-            const mediaId = 'm-' + Math.random().toString(36).substr(2, 9);
-            const label = file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo');
-            let resolvedDetectedVin = '';
-            let resolvedUnreadableVinTag = false;
+        const batchEntries = files.map((file) => {
+          const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name);
+          return {
+            file,
+            isVideo,
+            mediaId: 'm-' + Math.random().toString(36).substr(2, 9),
+            label: file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo'),
+            resolvedDetectedVin: '',
+            resolvedUnreadableVinTag: false
+          };
+        });
 
-            // Start VIN / Serial barcode + OCR scan in parallel on image files (only if not a container and a VIN hasn't already been found)
-            if (!isVideo && category !== 'container' && !latestVinRef.current) {
-              activeScanCountRef.current += 1;
-              setScanningVin(true);
-              let scanPromise;
-              scanPromise = scanImageFileForVin(file, category, () => Boolean(latestVinRef.current))
-                .then((scanRes) => {
-                  const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
-                  const unreadableTag = Boolean(typeof scanRes === 'object' && scanRes?.unreadableVinTag && !detected);
-                  if (detected) {
-                    resolvedDetectedVin = detected;
-                    if (!firstDetectedInBatch) firstDetectedInBatch = detected;
-                    setPhotos(prev => prev.map(p => (p.id === mediaId ? { ...p, detectedVin: detected, unreadableVinTag: false } : p)));
-                    if (!latestVinRef.current) {
-                      latestVinRef.current = detected;
-                      setVinScanSource('ocr');
-                      setFormData(prev => (prev.vinOrSerial && prev.vinOrSerial.trim() ? prev : { ...prev, vinOrSerial: detected }));
-                    }
-                  } else if (unreadableTag) {
-                    resolvedUnreadableVinTag = true;
-                    setPhotos(prev => prev.map(p => (p.id === mediaId ? { ...p, unreadableVinTag: true } : p)));
+        // Kick off VIN / Serial screening across ALL image files in the batch upfront (instead of waiting behind sequential cloud uploads)
+        // so likely VIN tags jump to the front of the priority queue immediately and abort all remaining photos as soon as a VIN is found!
+        if (category !== 'container' && !latestVinRef.current) {
+          for (let s = 0; s < batchEntries.length; s++) {
+            const entry = batchEntries[s];
+            if (entry.isVideo) continue;
+            activeScanCountRef.current += 1;
+            setScanningVin(true);
+            let scanPromise;
+            scanPromise = scanImageFileForVin(entry.file, category, () => Boolean(latestVinRef.current))
+              .then((scanRes) => {
+                const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
+                const unreadableTag = Boolean(typeof scanRes === 'object' && scanRes?.unreadableVinTag && !detected);
+                if (detected) {
+                  entry.resolvedDetectedVin = detected;
+                  if (!firstDetectedInBatch) firstDetectedInBatch = detected;
+                  setPhotos(prev => prev.map(p => (p.id === entry.mediaId ? { ...p, detectedVin: detected, unreadableVinTag: false } : p)));
+                  if (!latestVinRef.current) {
+                    latestVinRef.current = detected;
+                    setVinScanSource('ocr');
+                    setFormData(prev => (prev.vinOrSerial && prev.vinOrSerial.trim() ? prev : { ...prev, vinOrSerial: detected }));
                   }
-                  return detected || '';
-                })
-                .catch(() => '')
-                .finally(() => {
-                  activeScanPromisesRef.current = activeScanPromisesRef.current.filter(pr => pr !== scanPromise);
-                  activeScanCountRef.current = Math.max(0, activeScanCountRef.current - 1);
-                  if (activeScanCountRef.current === 0) {
-                    setScanningVin(false);
-                  }
-                });
-              activeScanPromisesRef.current.push(scanPromise);
-            }
+                } else if (unreadableTag) {
+                  entry.resolvedUnreadableVinTag = true;
+                  setPhotos(prev => prev.map(p => (p.id === entry.mediaId ? { ...p, unreadableVinTag: true } : p)));
+                }
+                return detected || '';
+              })
+              .catch(() => '')
+              .finally(() => {
+                activeScanPromisesRef.current = activeScanPromisesRef.current.filter(pr => pr !== scanPromise);
+                activeScanCountRef.current = Math.max(0, activeScanCountRef.current - 1);
+                if (activeScanCountRef.current === 0) {
+                  setScanningVin(false);
+                }
+              });
+            activeScanPromisesRef.current.push(scanPromise);
+          }
+        }
+
+        for (let i = 0; i < batchEntries.length; i++) {
+          const entry = batchEntries[i];
+          const { file, isVideo, mediaId, label } = entry;
+          try {
+            setUploadStatus(`Uploading file ${i + 1} of ${batchEntries.length}...`);
 
             // 1. Ensure HEIC/HEIF images are converted to browser-compatible JPEG before upload & thumbnail display
             const uploadableFile = !isVideo ? (await ensureDecodableImageBlob(file)) || file : file;
@@ -5947,8 +6316,8 @@
                   fileSize: uploadableFile.size || file.size,
                   fileType: uploadableFile.type || file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
                   label: label,
-                  detectedVin: resolvedDetectedVin || '',
-                  unreadableVinTag: resolvedUnreadableVinTag,
+                  detectedVin: entry.resolvedDetectedVin || '',
+                  unreadableVinTag: entry.resolvedUnreadableVinTag,
                   uploadedAt: new Date().toISOString()
                 }
               ]);
@@ -5984,8 +6353,8 @@
                       fileSize: file.size,
                       fileType: 'image/jpeg',
                       label: label,
-                      detectedVin: resolvedDetectedVin || '',
-                      unreadableVinTag: resolvedUnreadableVinTag,
+                      detectedVin: entry.resolvedDetectedVin || '',
+                      unreadableVinTag: entry.resolvedUnreadableVinTag,
                       uploadedAt: new Date().toISOString()
                     }
                   ]);
@@ -8453,41 +8822,66 @@
 
         updateBatchUnit(tempId, { uploadingPhotos: true });
 
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
+        const batchEntries = files.map((file) => {
           const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name);
-          const mediaId = 'pm-' + Math.random().toString(36).substr(2, 9);
-          const label = file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo');
+          return {
+            file,
+            isVideo,
+            mediaId: 'pm-' + Math.random().toString(36).substr(2, 9),
+            label: file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo'),
+            resolvedDetectedVin: ''
+          };
+        });
 
-          if (!isVideo && unitCategory !== 'container') {
+        // Kick off VIN screening across all image files in parallel upfront and abort remaining photos once a VIN is found
+        const existingUnit = (batchUnits || []).find((u) => u.tempId === tempId);
+        let batchVinFound = Boolean(existingUnit?.vinOrSerial && existingUnit.vinOrSerial.trim());
+        let pendingUnitScans = 0;
+
+        if (unitCategory !== 'container' && !batchVinFound) {
+          for (let s = 0; s < batchEntries.length; s++) {
+            const entry = batchEntries[s];
+            if (entry.isVideo) continue;
+            pendingUnitScans++;
             updateBatchUnit(tempId, { scanningVin: true });
-            scanImageFileForVin(file, unitCategory)
-              .then(scanRes => {
+            scanImageFileForVin(entry.file, unitCategory, () => batchVinFound)
+              .then((scanRes) => {
                 const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
                 if (detected) {
-                  setBatchUnits(prev => prev.map(u => {
-                    if (u.tempId !== tempId) return u;
-                    const updatedPhotos = (u.photos || []).map(p => (p.id === mediaId ? { ...p, detectedVin: detected } : p));
-                    if (u.vinScanSource === 'manual' && u.vinOrSerial && u.vinOrSerial.trim()) {
-                      return { ...u, photos: updatedPhotos, scanningVin: false };
-                    }
-                    return {
-                      ...u,
-                      vinOrSerial: u.vinOrSerial && u.vinOrSerial.trim() ? u.vinOrSerial : detected,
-                      vinScanSource: u.vinOrSerial && u.vinOrSerial.trim() ? u.vinScanSource : 'ocr',
-                      photos: updatedPhotos,
-                      scanningVin: false
-                    };
-                  }));
-                } else {
-                  updateBatchUnit(tempId, { scanningVin: false });
+                  entry.resolvedDetectedVin = detected;
+                  batchVinFound = true;
+                  setBatchUnits((prev) =>
+                    prev.map((u) => {
+                      if (u.tempId !== tempId) return u;
+                      const updatedPhotos = (u.photos || []).map((p) =>
+                        p.id === entry.mediaId ? { ...p, detectedVin: detected } : p
+                      );
+                      if (u.vinScanSource === 'manual' && u.vinOrSerial && u.vinOrSerial.trim()) {
+                        return { ...u, photos: updatedPhotos };
+                      }
+                      return {
+                        ...u,
+                        vinOrSerial: u.vinOrSerial && u.vinOrSerial.trim() ? u.vinOrSerial : detected,
+                        vinScanSource: u.vinOrSerial && u.vinOrSerial.trim() ? u.vinScanSource : 'ocr',
+                        photos: updatedPhotos
+                      };
+                    })
+                  );
                 }
               })
-              .catch(() => {
-                updateBatchUnit(tempId, { scanningVin: false });
+              .catch(() => {})
+              .finally(() => {
+                pendingUnitScans = Math.max(0, pendingUnitScans - 1);
+                if (pendingUnitScans === 0) {
+                  updateBatchUnit(tempId, { scanningVin: false });
+                }
               });
           }
+        }
 
+        for (let i = 0; i < batchEntries.length; i++) {
+          const entry = batchEntries[i];
+          const { file, isVideo, mediaId, label } = entry;
           try {
             const uploadableFile = !isVideo ? (await ensureDecodableImageBlob(file)) || file : file;
             let cloudUrl = null;
@@ -8520,6 +8914,7 @@
                       fileSize: uploadableFile.size || file.size,
                       fileType: uploadableFile.type || file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
                       label,
+                      detectedVin: entry.resolvedDetectedVin || '',
                       uploadedAt: new Date().toISOString()
                     }
                   ]
