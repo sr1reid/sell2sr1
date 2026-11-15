@@ -5797,7 +5797,7 @@
       if (submittedInquiry) {
         return (
           <div className="py-16 max-w-2xl mx-auto px-4 text-center space-y-8">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8 sm:p-10 space-y-6 shadow-2xl">
+            <div className="bg-neutral-900 border-2 border-white rounded-3xl p-8 sm:p-10 space-y-6 shadow-2xl">
               <div className="w-16 h-16 bg-neutral-800 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-neutral-700 text-3xl font-black shadow-inner">
                 ✓
               </div>
@@ -5909,7 +5909,7 @@
             </div>
 
             {/* NEUTRAL STEPPER */}
-            <div id="sell-form-card" className="bg-neutral-900 border border-neutral-800 rounded-xl p-2.5 sm:p-3 md:p-3.5 mb-8">
+            <div id="sell-form-card" className="bg-neutral-900 border-2 border-white rounded-xl p-2.5 sm:p-3 md:p-3.5 mb-8 shadow-xl">
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 sm:gap-1.5 text-center text-[10px] sm:text-xs font-semibold">
                 <div className={`py-2 md:py-2.5 px-1 rounded-lg transition-all ${step >= 1 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
                   <span>1. Deal Type</span>
@@ -5933,7 +5933,7 @@
             </div>
 
             {/* INTAKE CARD */}
-            <form onSubmit={handleSubmit} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 sm:p-8 lg:p-10 space-y-8">
+            <form onSubmit={handleSubmit} className="bg-neutral-900 border-2 border-white rounded-2xl p-6 sm:p-8 lg:p-10 space-y-8 shadow-2xl">
               
               {/* --- STEP 1: DEAL TYPE & CATEGORY SELECTION (NO ICONS) --- */}
               {step === 1 && (
