@@ -6099,9 +6099,9 @@
             email: formData.email || 'client@example.com',
             phone: formData.phone || '(207) 555-0199',
             preferredContact: formData.preferredContact,
-            city: formData.city || 'Manchester',
-            state: formData.state || 'ME',
-            zipCode: formData.zipCode || '04351'
+            city: formData.city || '',
+            state: formData.state || '',
+            zipCode: formData.zipCode || ''
           },
           unit: {
             category,
@@ -12999,11 +12999,6 @@
                           {/* Store Location */}
                           <td className="p-3.5 text-neutral-300 text-xs">
                             <div className="font-medium">{getLocationName(item.preferredLocation)}</div>
-                            {item.customer?.city && (
-                              <div className="text-[10px] text-neutral-500 mt-0.5">
-                                {item.customer.city}, {item.customer.state}
-                              </div>
-                            )}
                           </td>
 
                           {/* Status, Unit Chat & Seen By */}
