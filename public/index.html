@@ -7899,24 +7899,6 @@
             ctaUrl: 'https://selltosr1.com/?view=portal'
           });
 
-          // Dispatch confirmation email to Partner
-          if (activePartner.email && activePartner.email.includes('@')) {
-            dispatchPartnerEmailNotification({
-              recipients: [activePartner.email],
-              partnerType: portalType,
-              subject: `We Received Your ${batchUnits.length} Submitted Unit(s) - SR1 Companies`,
-              heading: `${batchUnits.length} Unit(s) Received for SR1 Valuation`,
-              partnerOrgName: activePartner.organizationName,
-              partnerContactName: activePartner.contactName,
-              partnerEmail: activePartner.email,
-              partnerPhone: activePartner.phone,
-              extraRows: submittedSummaryRows,
-              messageText: `Thank you! Our purchasing team has been notified and is reviewing your submitted unit(s). You can view real-time status updates, offers, and chat with our buyers inside your portal.`,
-              ctaLabel: `Open ${isBankPortal ? 'Bank / Repo' : 'Dealer'} Portal →`,
-              ctaUrl: `https://selltosr1.com/?view=${isBankPortal ? 'bank' : 'dealer'}`
-            });
-          }
-
           setBatchUnits([createBlankBatchUnit('rv', portalType)]);
           setActiveTab('hub');
           setBannerNotice(`✓ Successfully submitted ${batchUnits.length} unit(s) to SR1! Track offers and chat with our purchasing desk below.`);
