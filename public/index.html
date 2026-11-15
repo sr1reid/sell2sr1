@@ -5033,6 +5033,7 @@
       const latestPartialPayloadRef = useRef(null);
 
       const activeCatConfig = CATEGORIES[category] || CATEGORIES.rv;
+      const idMeta = getPartnerPortalIdFieldMeta(category);
 
       const buildPartialFormSnapshot = (overrideStep) => {
         const effectiveStep = overrideStep || step;
@@ -5720,7 +5721,7 @@
           setVinModalError(
             category === 'container'
               ? 'Please enter the Box Identification Number before continuing to Step 4.'
-              : 'Please enter the VIN or Serial Number before continuing to Step 4.'
+              : `Please enter the ${idMeta.label} before continuing to Step 4.`
           );
           return;
         }
@@ -5838,7 +5839,7 @@
             make: category === 'container' ? 'Shipping Container' : (formData.make || 'Unit Make'),
             model: category === 'container' ? 'Container' : (formData.model || 'Unit Model'),
             trimOrFloorplan: formData.trimOrFloorplan,
-            vinOrSerial: resolvedVinOrSerial || (category === 'container' ? 'N/A' : 'VIN-PENDING'),
+            vinOrSerial: resolvedVinOrSerial || (category === 'container' ? 'N/A' : idMeta.defaultPending),
             mileageOrHours: Number(formData.mileageOrHours) || 0,
             isHours: activeCatConfig.isHours,
             specs: {
@@ -6569,7 +6570,7 @@
                         </p>
                         {category !== 'container' && (
                           <p className="text-xs text-neutral-300 font-medium pt-0.5">
-                            Please include a photo of the VIN Tag
+                            Please include a photo of the {idMeta.tagLabel}
                           </p>
                         )}
                       </div>
@@ -6604,8 +6605,8 @@
                             <span className="font-bold">✓</span>
                             <span>
                               {vinScanSource === 'ocr'
-                                ? 'VIN / Serial detected from photo & added to unit details:'
-                                : 'VIN / Serial saved to unit details:'}{' '}
+                                ? `${idMeta.label} detected from photo & added to unit details:`
+                                : `${idMeta.label} saved to unit details:`}{' '}
                               <strong className="font-mono text-white tracking-wide">{formData.vinOrSerial}</strong>
                             </span>
                           </div>
@@ -6644,7 +6645,7 @@
                                     setIsEditingDetectedVin(false);
                                   }
                                 }}
-                                placeholder={category === 'container' ? 'Enter Box Identification Number' : 'Enter 17-digit VIN or Serial Number'}
+                                placeholder={idMeta.manualPlaceholder}
                                 autoFocus
                                 className="w-full bg-neutral-950 border border-neutral-700 rounded-xl pl-3.5 pr-8 py-2 text-white font-mono text-sm placeholder:font-sans placeholder:text-neutral-500 focus:ring-1 focus:ring-emerald-400 focus:outline-none"
                               />
@@ -6671,7 +6672,7 @@
                                 }}
                                 className="flex-1 sm:flex-none px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs rounded-xl transition-all whitespace-nowrap"
                               >
-                                Save VIN
+                                {idMeta.saveBtnText}
                               </button>
                               <button
                                 type="button"
@@ -6687,7 +6688,7 @@
                     ) : scanningVin ? (
                       <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-300">
                         <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                        <span>Scanning uploaded photos for VIN / Serial tag...</span>
+                        <span>Scanning uploaded photos for {idMeta.tagLabelLower}...</span>
                       </div>
                     ) : photos.some(p => p.unreadableVinTag) ? (
                       <div className="p-3.5 sm:p-4 rounded-xl bg-amber-950/35 border border-amber-500/40 space-y-3 text-xs">
@@ -6695,10 +6696,10 @@
                           <span className="text-amber-400 font-bold text-sm leading-none mt-0.5">⚠️</span>
                           <div className="space-y-1">
                             <p className="font-bold text-amber-200">
-                              We couldn't read the {category === 'container' ? 'Box Identification Number' : 'VIN / Serial Number'} from your photo with full confidence.
+                              We couldn't read the {idMeta.label} from your photo with full confidence.
                             </p>
                             <p className="text-neutral-300 leading-relaxed">
-                              Too much of the VIN sticker is damaged, faded, or cut off to be certain. Please manually enter your {category === 'container' ? 'Box Identification Number' : 'VIN or Serial Number'} below:
+                              Too much of the {idMeta.tagLabelLower} is damaged, faded, or cut off to be certain. Please manually enter your {idMeta.label} below:
                             </p>
                           </div>
                         </div>
@@ -6721,7 +6722,7 @@
                                 }
                               }
                             }}
-                            placeholder={category === 'container' ? 'Enter Box Identification Number' : 'Enter 17-digit VIN or Serial Number'}
+                            placeholder={idMeta.manualPlaceholder}
                             className="flex-1 bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2 text-white font-mono text-sm placeholder:font-sans placeholder:text-neutral-500 focus:ring-1 focus:ring-amber-400 focus:outline-none"
                           />
                           <button
@@ -6766,11 +6767,11 @@
                                 <img src={p.thumbUrl || p.url} alt={p.label} className="w-full h-full object-cover" />
                                 {p.detectedVin ? (
                                   <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-emerald-600/95 text-[9px] font-bold text-white rounded shadow">
-                                    VIN TAG
+                                    {idMeta.badgeText}
                                   </span>
                                 ) : p.unreadableVinTag ? (
                                   <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-amber-600/95 text-[9px] font-bold text-white rounded shadow">
-                                    ENTER VIN MANUALLY
+                                    {idMeta.manualBadgeText}
                                   </span>
                                 ) : null}
                               </div>
@@ -6817,7 +6818,7 @@
                       {uploading
                         ? 'Uploading Media...'
                         : checkingVinBeforeNext
-                        ? 'Scanning Photos for VIN...'
+                        ? `Scanning Photos for ${idMeta.shortLabel}...`
                         : 'Continue to Condition →'}
                     </button>
                   </div>
@@ -7134,7 +7135,7 @@
                     <p>• Request Type: {formData.intent === 'trade' ? `Trade-In ${formData.workingWithSalesperson === 'yes' && formData.salespersonName ? `(Salesperson: ${formData.salespersonName})` : ''}` : `Outright Sale to SR1 ${formData.workingWithSalesperson === 'yes' && formData.salespersonName ? `(SR1 Team Member: ${formData.salespersonName})` : ''}`}</p>
                     <p>• {category === 'container' ? `Purchased: ${formData.year} | Box ID: ${formData.vinOrSerial || 'Pending'}` : `${formData.year} ${formData.make} ${formData.model}`}</p>
                     {category !== 'container' && formData.vinOrSerial && formData.vinOrSerial.trim() && (
-                      <p>• VIN / Serial: <span className="font-mono text-neutral-200">{formData.vinOrSerial}</span></p>
+                      <p>• {idMeta.label}: <span className="font-mono text-neutral-200">{formData.vinOrSerial}</span></p>
                     )}
                     <p>• Category: {activeCatConfig.label}</p>
                     <p>• Photos: {photos.length} attached</p>
@@ -7196,7 +7197,7 @@
             </form>
           </div>
 
-          {/* VIN TAG CHECK POP-UP MODAL (STEP 3 -> STEP 4) */}
+          {/* VIN / SERIAL TAG CHECK POP-UP MODAL (STEP 3 -> STEP 4) */}
           {vinModalMode && (
             <div
               role="dialog"
@@ -7209,26 +7210,26 @@
                   <div>
                     <h3 id="vin-tag-modal-title" className="text-base sm:text-lg font-bold text-white leading-snug">
                       {vinModalMode === 'yes_upload'
-                        ? 'Include a Photo of the VIN Tag'
+                        ? `Include a Photo of the ${idMeta.tagLabel}`
                         : vinModalMode === 'no_manual' && photos.some(p => p.unreadableVinTag)
-                          ? 'VIN Tag Not Legible — Please Enter Manually'
-                          : 'Do you have a photo of the VIN tag?'}
+                          ? `${idMeta.tagLabel} Not Legible — Please Enter Manually`
+                          : `Do you have a photo of the ${idMeta.tagLabelLower}?`}
                     </h3>
                     {vinModalMode === 'ask' && (
                       <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                        We didn't automatically detect a VIN or Serial Number in your uploaded photos.
+                        We didn't automatically detect a {idMeta.label} in your uploaded photos.
                       </p>
                     )}
                     {vinModalMode === 'no_manual' && (
                       <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
                         {photos.some(p => p.unreadableVinTag)
-                          ? `We detected your VIN tag photo, but too much of the ${category === 'container' ? 'Box Identification Number' : 'VIN / Serial Number'} is damaged or cut off to read with full confidence. Please manually enter it below before continuing to Step 4.`
-                          : `Please manually enter the ${category === 'container' ? 'Box Identification Number' : 'VIN or Serial Number'} before continuing to Step 4.`}
+                          ? `We detected your ${idMeta.tagLabelLower} photo, but too much of the ${idMeta.label} is damaged or cut off to read with full confidence. Please manually enter it below before continuing to Step 4.`
+                          : `Please manually enter the ${idMeta.label} before continuing to Step 4.`}
                       </p>
                     )}
                     {vinModalMode === 'yes_upload' && (
                       <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                        Upload a clear close-up photo of the VIN tag now, or enter it manually if the tag is too damaged to scan.
+                        Upload a clear close-up photo of the {idMeta.tagLabelLower} now, or enter it manually if the tag is too damaged to scan.
                       </p>
                     )}
                   </div>
@@ -7272,7 +7273,7 @@
                   <div className="space-y-4">
                     <div>
                       <label htmlFor="manual-vin-modal-input" className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                        {category === 'container' ? 'Box Identification Number *' : 'VIN / Serial Number *'}
+                        {idMeta.label} *
                       </label>
                       <input
                         id="manual-vin-modal-input"
@@ -7289,7 +7290,7 @@
                             handleSaveManualVinAndContinue();
                           }
                         }}
-                        placeholder={category === 'container' ? 'Enter Box Identification Number' : 'Enter VIN or Serial Number'}
+                        placeholder={idMeta.manualPlaceholder}
                         className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm placeholder:font-sans placeholder:text-neutral-600 focus:ring-1 focus:ring-neutral-300 focus:outline-none"
                       />
                       {vinModalError && (
@@ -7338,8 +7339,8 @@
                       }`}
                     >
                       {uploading || checkingVinBeforeNext
-                        ? 'Uploading & Scanning VIN Tag...'
-                        : '📷 Upload Photo of VIN Tag'}
+                        ? `Uploading & Scanning ${idMeta.tagLabel}...`
+                        : `📷 Upload Photo of ${idMeta.tagLabel}`}
                     </label>
 
                     <button
@@ -7351,7 +7352,7 @@
                       }}
                       className="w-full px-4 py-2.5 bg-neutral-800/80 hover:bg-neutral-800 text-neutral-200 font-semibold text-xs rounded-xl border border-neutral-700 transition-all"
                     >
-                      Already Included in Uploaded Photos — Enter VIN Manually →
+                      Already Included in Uploaded Photos — Enter {idMeta.shortLabel} Manually →
                     </button>
 
                     <div className="pt-1">
@@ -7596,10 +7597,15 @@
         return {
           label: 'Serial Number',
           shortLabel: 'Serial Number',
+          tagLabel: 'Serial Number Tag',
+          tagLabelLower: 'Serial Number tag',
           placeholder: 'Enter Serial Number (or upload Serial Number photo below)',
+          manualPlaceholder: 'Enter Serial Number',
           scanningText: 'Scanning photo for Serial Number...',
           photoHint: 'Include a photo of the Serial Number tag to automatically scan & populate the Serial Number.',
           badgeText: 'SERIAL TAG',
+          manualBadgeText: 'ENTER SERIAL MANUALLY',
+          saveBtnText: 'Save Serial Number',
           defaultPending: 'SERIAL-PENDING'
         };
       }
@@ -7607,20 +7613,46 @@
         return {
           label: 'VIN Number',
           shortLabel: 'VIN Number',
+          tagLabel: 'VIN Tag',
+          tagLabelLower: 'VIN tag',
           placeholder: 'Enter VIN Number (or upload VIN photo below)',
+          manualPlaceholder: 'Enter VIN Number',
           scanningText: 'Scanning photo for VIN Number...',
           photoHint: 'Include a photo of the VIN tag to automatically scan & populate the VIN Number.',
           badgeText: 'VIN TAG',
+          manualBadgeText: 'ENTER VIN MANUALLY',
+          saveBtnText: 'Save VIN Number',
           defaultPending: 'VIN-PENDING'
+        };
+      }
+      if (category === 'boat_pwc') {
+        return {
+          label: 'HIN / Serial Number',
+          shortLabel: 'HIN / Serial Number',
+          tagLabel: 'HIN / Serial Tag',
+          tagLabelLower: 'HIN / Serial Number tag',
+          placeholder: 'Enter HIN / Serial Number (or upload photo below)',
+          manualPlaceholder: 'Enter HIN / Serial Number',
+          scanningText: 'Scanning photo for HIN / Serial Number...',
+          photoHint: 'Include a photo of the HIN / Serial Number tag to automatically scan & populate.',
+          badgeText: 'HIN / SERIAL TAG',
+          manualBadgeText: 'ENTER HIN / SERIAL MANUALLY',
+          saveBtnText: 'Save HIN / Serial Number',
+          defaultPending: 'HIN-PENDING'
         };
       }
       return {
         label: 'VIN / Serial Number',
-        shortLabel: 'VIN / Serial',
+        shortLabel: 'VIN / Serial Number',
+        tagLabel: 'VIN / Serial Tag',
+        tagLabelLower: 'VIN / Serial tag',
         placeholder: 'Enter VIN or Serial Number',
+        manualPlaceholder: 'Enter VIN or Serial Number',
         scanningText: 'Scanning photo...',
         photoHint: 'Include a photo of the identification tag to automatically scan & populate.',
-        badgeText: 'ID TAG',
+        badgeText: 'VIN / SERIAL TAG',
+        manualBadgeText: 'ENTER MANUALLY',
+        saveBtnText: 'Save VIN / Serial',
         defaultPending: 'VIN-PENDING'
       };
     }
