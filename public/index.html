@@ -4040,6 +4040,7 @@
       };
 
       const [siteAnalytics, setSiteAnalytics] = useState(() => cachedAnalyticsState);
+      const [legalModalTab, setLegalModalTab] = useState(null); // 'privacy' | 'terms' | null
 
       useEffect(() => {
         const listener = (next) => setSiteAnalytics(next);
@@ -4459,6 +4460,7 @@
                 key={sellFlowKey}
                 onSubmit={handleNewInquiry} 
                 emailRoutingConfig={emailRoutingConfig}
+                onOpenLegalModal={(tab) => setLegalModalTab(tab)}
                 onGoToContact={() => {
                   setCurrentView('contact');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4683,9 +4685,13 @@
                     Contact Us
                   </button>
                   <span>•</span>
-                  <span onClick={() => recordWebsiteLinkClick('footer_terms')} className="hover:text-neutral-200 cursor-pointer">Terms</span>
+                  <button type="button" onClick={() => { recordWebsiteLinkClick('footer_terms'); setLegalModalTab('terms'); }} className="hover:text-neutral-200 underline-offset-4 hover:underline cursor-pointer">
+                    Terms
+                  </button>
                   <span>•</span>
-                  <span onClick={() => recordWebsiteLinkClick('footer_privacy')} className="hover:text-neutral-200 cursor-pointer">Privacy</span>
+                  <button type="button" onClick={() => { recordWebsiteLinkClick('footer_privacy'); setLegalModalTab('privacy'); }} className="hover:text-neutral-200 underline-offset-4 hover:underline cursor-pointer">
+                    Privacy
+                  </button>
                   <span>•</span>
                   <button 
                     onClick={() => { recordWebsiteLinkClick('footer_staff_login'); setCurrentView('portal'); window.scrollTo(0, 0); }} 
@@ -4706,6 +4712,238 @@
             </div>
           </footer>
 
+          {legalModalTab && (
+            <LegalPolicyModal
+              activeTab={legalModalTab}
+              onSelectTab={(tab) => setLegalModalTab(tab)}
+              onClose={() => setLegalModalTab(null)}
+            />
+          )}
+
+        </div>
+      );
+    }
+
+    // ==========================================
+    // LEGAL POLICY MODAL (PRIVACY POLICY & TERMS OF USE)
+    // ==========================================
+    function LegalPolicyModal({ activeTab, onSelectTab, onClose }) {
+      useEffect(() => {
+        const handleKeyDown = (e) => {
+          if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+      }, [onClose]);
+
+      const isPrivacy = activeTab !== 'terms';
+
+      return (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={isPrivacy ? 'SR1 Companies Privacy Policy' : 'SR1 Companies Terms of Use'}
+          onClick={onClose}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-neutral-900 border-2 border-white rounded-2xl w-full max-w-3xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden text-neutral-200"
+          >
+            {/* Modal Header & Tab Switcher */}
+            <div className="p-4 sm:p-6 border-b border-neutral-800 bg-neutral-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                  SR1 Companies • selltosr1.com
+                </span>
+                <h2 className="text-lg sm:text-xl font-black text-white mt-0.5">
+                  {isPrivacy ? 'Privacy Policy & Cookie Notice' : 'Terms of Use'}
+                </h2>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex items-center bg-neutral-900 p-1 rounded-xl border border-neutral-800 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => onSelectTab('privacy')}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                      isPrivacy ? 'bg-neutral-100 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    Privacy Policy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSelectTab('terms')}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                      !isPrivacy ? 'bg-neutral-100 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    Terms of Use
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close modal"
+                  className="w-8 h-8 rounded-lg bg-neutral-850 hover:bg-neutral-800 border border-neutral-750 text-neutral-300 hover:text-white flex items-center justify-center font-bold text-sm cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Policy Body */}
+            <div className="p-5 sm:p-7 overflow-y-auto space-y-5 text-xs sm:text-sm text-neutral-300 leading-relaxed">
+              {isPrivacy ? (
+                <>
+                  <p className="text-xs text-neutral-400">
+                    <strong>Effective Date:</strong> January 1, 2026 &nbsp;|&nbsp; <strong>Entity:</strong> SR1 Companies (<span className="text-neutral-200">selltosr1.com</span>)
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">1. Overview & Scope</h3>
+                    <p>
+                      SR1 Companies ("SR1," "we," "us," or "our") operates <strong className="text-white">selltosr1.com</strong> as our official purchasing, trade-in appraisal, Dealer Portal, and Bank &amp; Credit Union Portal platform across Maine, New Hampshire, and New England. This Privacy Policy explains what information we collect, how we use and protect it, and your choices regarding your information.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">2. Information We Collect</h3>
+                    <ul className="list-disc pl-5 space-y-1.5 text-neutral-300">
+                      <li>
+                        <strong className="text-white">Unit &amp; Valuation Information:</strong> Product category, model year, make, model, trim/floorplan, VIN, Serial Number, HIN, or Box ID, mileage or hours, physical condition disclosures, title status, lienholder/payoff estimates, and asking/reserve prices.
+                      </li>
+                      <li>
+                        <strong className="text-white">Photos, Videos &amp; Automated VIN/Serial Scanning:</strong> When you upload photos or videos of your unit, our platform processes those images to assist our appraisal team and uses optical character recognition (OCR) and barcode scanning to help read VIN or serial number plates.
+                      </li>
+                      <li>
+                        <strong className="text-white">Contact &amp; Partner Account Information:</strong> Your name, dealership or financial institution name, email address, phone number, city, state, preferred SR1 location, and portal chat messages.
+                      </li>
+                      <li>
+                        <strong className="text-white">In-Progress Form Entries &amp; Website Activity:</strong> To improve our platform, prevent lost progress, and assist visitors who begin an appraisal request, we record form progress once unit details are entered, as well as first-party website navigation, device type, and link interactions.
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">3. How We Use Your Information</h3>
+                    <p>We use the information collected on <strong className="text-white">selltosr1.com</strong> to:</p>
+                    <ul className="list-disc pl-5 space-y-1 text-neutral-300">
+                      <li>Evaluate your unit, research market comparables, and prepare cash purchase or trade-in offers.</li>
+                      <li>Route your inquiry to the appropriate SR1 dealership location, buyer, or salesperson.</li>
+                      <li>Contact you via phone call, SMS text message, email, or portal chat regarding your submission, valuation questions, lien payoffs, title processing, and pickup or drop-off logistics.</li>
+                      <li>Maintain and improve the functionality, security, and usability of our website and partner portals.</li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">4. Cookies &amp; First-Party Browser Storage</h3>
+                    <p>
+                      We use first-party browser storage (<code className="text-neutral-200 bg-neutral-950 px-1.5 py-0.5 rounded">localStorage</code> and <code className="text-neutral-200 bg-neutral-950 px-1.5 py-0.5 rounded">sessionStorage</code>) and essential functional cookies to keep portal users signed in, preserve form progress, and measure first-party site and link activity. <strong className="text-white">We do not sell or rent your personal information to third-party data brokers or external telemarketers.</strong>
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">5. Phone, SMS Text Messaging &amp; Email Consent</h3>
+                    <p>
+                      By providing your phone number and email address and submitting an inquiry, you consent to receive calls, SMS text messages, and emails from SR1 Companies and its affiliated dealerships regarding your appraisal request, trade options, and related dealership updates. Message and data rates may apply. Message frequency varies. You may opt out of SMS messages at any time by replying <strong className="text-white">STOP</strong>, or unsubscribe from marketing emails using the link provided or by contacting us directly.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">6. Information Sharing &amp; Security</h3>
+                    <p>
+                      Your information is shared only among SR1 Companies' affiliated dealerships (including SR1 RV, SR1 Trailers, SR1 Equipment, SR1 Powersports, SR1 Containers, and SR1 Docks) and trusted operational service providers (such as cloud hosting and email/communications delivery) strictly to process your valuation and communicate with you.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">7. Your Privacy Rights &amp; Contact Information</h3>
+                    <p>
+                      Residents of Maine, New Hampshire, and other US states may request access to, correction of, or deletion of personal information they have submitted to us. To submit a privacy question or request, please contact our Appraisal Desk at{' '}
+                      <a href="mailto:appraisals@sr1companies.com" className="text-white font-semibold underline underline-offset-2">
+                        appraisals@sr1companies.com
+                      </a>.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-neutral-400">
+                    <strong>Effective Date:</strong> January 1, 2026 &nbsp;|&nbsp; <strong>Entity:</strong> SR1 Companies (<span className="text-neutral-200">selltosr1.com</span>)
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">1. Acceptance of Terms</h3>
+                    <p>
+                      By accessing or submitting a unit through <strong className="text-white">selltosr1.com</strong> (including the retail intake flow, Dealer Portal, or Bank &amp; Credit Union Portal), you agree to these Terms of Use and our Privacy Policy.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">2. Appraisal Valuations &amp; Physical Inspection</h3>
+                    <p>
+                      All valuations, preliminary estimates, and purchase or trade-in offers communicated by SR1 Companies are conditioned upon the accuracy and completeness of the information, VIN/serial numbers, mileage/hours, condition notes, and photos you submit. Final purchase or trade-in settlement is subject to physical in-person inspection of the unit and verification of marketable title and exact lien payoff amounts at the time of delivery or pickup.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">3. Ownership, Title &amp; Condition Representations</h3>
+                    <p>
+                      By submitting a unit for valuation, you represent and warrant that: (a) you are the lawful owner of the unit or an authorized representative of the dealership, bank, or credit union holding legal authority to sell or trade the unit; (b) all disclosed lienholder and payoff details are accurate to the best of your knowledge; and (c) you have disclosed any known structural, mechanical, water, frame, or title defects (such as salvage, rebuilt, or flood history).
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">4. Wholesale &amp; Dealership Purchasing Nature</h3>
+                    <p>
+                      You acknowledge that SR1 Companies is a retail and wholesale dealership group purchasing units for reconditioning and resale. Accordingly, offers made through <strong className="text-white">selltosr1.com</strong> reflect wholesale acquisition values rather than private-party retail prices, in exchange for a fast, professional purchase, direct lien payoff handling, and convenient pickup or drop-off logistics.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">5. Dealer Portal &amp; Bank / Credit Union Portal Accounts</h3>
+                    <p>
+                      Dealers, banks, and credit unions registered in our Partner Portals are responsible for safeguarding their login credentials and ensuring that all individuals submitting units or communicating on behalf of their organization are duly authorized.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">6. Communications &amp; Electronic Consent</h3>
+                    <p>
+                      By submitting an inquiry or creating a portal account, you consent to receive electronic, phone, and SMS text communications from SR1 Companies regarding your submission, offers, and transaction logistics as described in our Privacy Policy.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm sm:text-base font-bold text-white">7. Limitation of Liability &amp; Governing Law</h3>
+                    <p>
+                      <strong className="text-white">selltosr1.com</strong> is provided on an "as-is" and "as-available" basis. Neither party is obligated to complete a sale or purchase until final transaction and title documents are executed. These Terms are governed by the laws of the State of Maine and the State of New Hampshire. Questions may be directed to{' '}
+                      <a href="mailto:appraisals@sr1companies.com" className="text-white font-semibold underline underline-offset-2">
+                        appraisals@sr1companies.com
+                      </a>.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 sm:px-6 border-t border-neutral-800 bg-neutral-950 flex items-center justify-between">
+              <span className="text-[11px] text-neutral-400">
+                Questions? Email <a href="mailto:appraisals@sr1companies.com" className="text-neutral-200 underline">appraisals@sr1companies.com</a>
+              </span>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       );
     }
@@ -4713,7 +4951,7 @@
     // ==========================================
     // 1. CUSTOMER SELL INTAKE FLOW (NO ICONS, NEUTRAL THEME)
     // ==========================================
-    function CustomerSellFlow({ onSubmit, onGoToContact, emailRoutingConfig }) {
+    function CustomerSellFlow({ onSubmit, onGoToContact, onOpenLegalModal, emailRoutingConfig }) {
       const [step, setStep] = useState(() => {
         try {
           const params = new URLSearchParams(window.location.search);
@@ -6902,7 +7140,34 @@
                     <p>• Photos: {photos.length} attached</p>
                   </div>
 
-                  <div className="pt-4 flex items-center justify-between">
+                  {/* Short Step 6 Legal & Outreach Disclosure Line */}
+                  <p className="text-[11px] text-neutral-400 text-center leading-relaxed pt-1">
+                    By submitting, you agree to our{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        recordWebsiteLinkClick('footer_terms');
+                        if (onOpenLegalModal) onOpenLegalModal('terms');
+                      }}
+                      className="text-neutral-200 hover:text-white font-semibold underline underline-offset-2 cursor-pointer"
+                    >
+                      Terms of Use
+                    </button>{' '}
+                    and{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        recordWebsiteLinkClick('footer_privacy');
+                        if (onOpenLegalModal) onOpenLegalModal('privacy');
+                      }}
+                      className="text-neutral-200 hover:text-white font-semibold underline underline-offset-2 cursor-pointer"
+                    >
+                      Privacy Policy
+                    </button>{' '}
+                    and consent to be contacted by SR1 Companies via call, text message, or email regarding your inquiry.
+                  </p>
+
+                  <div className="pt-2 flex items-center justify-between">
                     <button
                       type="button"
                       onClick={() => {
