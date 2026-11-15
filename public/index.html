@@ -3541,10 +3541,66 @@
         unreadUnitForStaff: Number(inq.unreadUnitForStaff) || 0,
         unreadUnitForPartner: Number(inq.unreadUnitForPartner) || 0,
         outreach: (inq.outreach && typeof inq.outreach === 'object') ? {
-          reachedOut: !!inq.outreach.reachedOut,
+          reachedOut: !!(inq.outreach.reachedOut || inq.outreach.status),
+          status: inq.outreach.status || (inq.outreach.reachedOut ? 'contacted' : null),
           staffName: inq.outreach.staffName || '',
           reachedOutAt: inq.outreach.reachedOutAt || null
-        } : { reachedOut: false, staffName: '', reachedOutAt: null }
+        } : { reachedOut: false, status: null, staffName: '', reachedOutAt: null }
+      };
+    }
+
+    const STAFF_DEAL_STATUSES = [
+      {
+        id: 'contacted',
+        label: 'Contacted',
+        shortIcon: '✓',
+        badgeClass: 'bg-sky-950/80 border-sky-700/80 text-sky-300',
+        activeBtnClass: 'bg-sky-500/20 border-sky-400 text-sky-200 ring-1 ring-sky-400/50',
+        mobileTextClass: 'text-sky-400'
+      },
+      {
+        id: 'deal_pending',
+        label: 'Deal Pending',
+        shortIcon: '⏳',
+        badgeClass: 'bg-amber-950/80 border-amber-700/80 text-amber-300',
+        activeBtnClass: 'bg-amber-500/20 border-amber-400 text-amber-200 ring-1 ring-amber-400/50',
+        mobileTextClass: 'text-amber-300'
+      },
+      {
+        id: 'deal_complete',
+        label: 'Deal Complete',
+        shortIcon: '✅',
+        badgeClass: 'bg-emerald-950/80 border-emerald-700/80 text-emerald-300',
+        activeBtnClass: 'bg-emerald-500/20 border-emerald-400 text-emerald-200 ring-1 ring-emerald-400/50',
+        mobileTextClass: 'text-emerald-400'
+      },
+      {
+        id: 'deal_lost',
+        label: 'Deal Lost',
+        shortIcon: '✕',
+        badgeClass: 'bg-rose-950/80 border-rose-700/80 text-rose-300',
+        activeBtnClass: 'bg-rose-500/20 border-rose-400 text-rose-200 ring-1 ring-rose-400/50',
+        mobileTextClass: 'text-rose-400'
+      }
+    ];
+
+    function getInquiryDealStatusMeta(item) {
+      const rawStatus = item?.outreach?.status || (item?.outreach?.reachedOut ? 'contacted' : null);
+      const found = STAFF_DEAL_STATUSES.find(s => s.id === rawStatus);
+      const staffName = (item?.outreach?.staffName || '').trim();
+      if (!found) {
+        return {
+          id: null,
+          label: 'Needs Outreach',
+          shortIcon: '⏳',
+          staffName: '',
+          badgeClass: 'bg-amber-950/60 border-amber-800/60 text-amber-300',
+          mobileTextClass: 'text-amber-400'
+        };
+      }
+      return {
+        ...found,
+        staffName
       };
     }
 
@@ -12409,16 +12465,22 @@
                     {/* Bottom Row: Outreach, Seen By & Offer Info */}
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-850 text-xs">
                       <div className="flex flex-wrap items-center gap-2">
-                        {item.outreach?.reachedOut ? (
-                          <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1">
-                            <span>✓</span>
-                            <span>{item.outreach.staffName || 'Contacted'}</span>
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-semibold text-amber-400">
-                            ⏳ Needs Outreach
-                          </span>
-                        )}
+                        {(() => {
+                          const statusMeta = getInquiryDealStatusMeta(item);
+                          return statusMeta.id ? (
+                            <span className={`text-[10px] font-semibold ${statusMeta.mobileTextClass} flex items-center gap-1`}>
+                              <span>{statusMeta.shortIcon}</span>
+                              <span>
+                                {statusMeta.label}
+                                {statusMeta.staffName ? ` • ${statusMeta.staffName}` : ''}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-amber-400">
+                              ⏳ Needs Outreach
+                            </span>
+                          );
+                        })()}
 
                         <span className="text-neutral-600">•</span>
 
@@ -12532,7 +12594,7 @@
                         {sortField === 'location' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
                       </div>
                     </th>
-                    <th className="p-3.5 min-w-[110px]">Outreach / Chat</th>
+                    <th className="p-3.5 min-w-[130px]">Status / Chat</th>
                     <th onClick={() => handleSort('offer')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[105px]">
                       <div className="flex items-center space-x-1">
                         <span>Initial Offer</span>
@@ -12728,9 +12790,25 @@
                             )}
                           </td>
 
-                          {/* Outreach, Unit Chat & Seen By */}
+                          {/* Status, Unit Chat & Seen By */}
                           <td className="p-3.5 whitespace-nowrap">
                             <div className="flex flex-col items-start gap-1">
+                              {(() => {
+                                const statusMeta = getInquiryDealStatusMeta(item);
+                                return statusMeta.id ? (
+                                  <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded text-[10px] font-semibold border shadow-sm ${statusMeta.badgeClass}`}>
+                                    <span>{statusMeta.shortIcon}</span>
+                                    <span>
+                                      {statusMeta.label}
+                                      {statusMeta.staffName ? ` • ${statusMeta.staffName}` : ''}
+                                    </span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950/60 border border-amber-800/60 text-amber-300">
+                                    <span>⏳ Needs Outreach</span>
+                                  </span>
+                                );
+                              })()}
                               {unreadUnit > 0 ? (
                                 <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded text-[10px] font-black bg-red-500 text-white shadow-sm animate-pulse">
                                   <span>💬 {unreadUnit} New Unit Chat</span>
@@ -12739,16 +12817,7 @@
                                 <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded text-[10px] font-semibold bg-blue-950/80 border border-blue-800/80 text-blue-300">
                                   <span>💬 {unitMsgs.length} {unitMsgs.length === 1 ? 'Message' : 'Messages'}</span>
                                 </span>
-                              ) : item.outreach?.reachedOut ? (
-                                <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 shadow-sm">
-                                  <span>✓</span>
-                                  <span>{item.outreach.staffName || 'Contacted'}</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950/60 border border-amber-800/60 text-amber-300">
-                                  <span>⏳ Needs Outreach</span>
-                                </span>
-                              )}
+                              ) : null}
                               {seenList.length > 0 ? (
                                 <span
                                   className="inline-flex items-center gap-1 text-[10px] text-neutral-400 font-medium"
@@ -13076,12 +13145,22 @@
       }, [isLightboxOpen, safeMediaIndex, mediaItems.length]);
 
       const [outreachStaffName, setOutreachStaffName] = useState(inquiry.outreach?.staffName || staffUser?.name || '');
-      const [reachedOut, setReachedOut] = useState(inquiry.outreach?.reachedOut || false);
+      const [dealStatus, setDealStatus] = useState(
+        inquiry.outreach?.status || (inquiry.outreach?.reachedOut ? 'contacted' : null)
+      );
       const [reachedOutAt, setReachedOutAt] = useState(inquiry.outreach?.reachedOutAt || null);
       const seenByList = useMemo(() => {
         const list = Array.isArray(inquiry.seenBy) ? [...inquiry.seenBy] : [];
         return list.sort((a, b) => new Date(b.lastSeenAt || b.seenAt || 0).getTime() - new Date(a.lastSeenAt || a.seenAt || 0).getTime());
       }, [inquiry.seenBy]);
+
+      useEffect(() => {
+        setDealStatus(inquiry.outreach?.status || (inquiry.outreach?.reachedOut ? 'contacted' : null));
+        setReachedOutAt(inquiry.outreach?.reachedOutAt || null);
+        if (inquiry.outreach?.staffName) {
+          setOutreachStaffName(inquiry.outreach.staffName);
+        }
+      }, [inquiry?.id, inquiry?.outreach?.status, inquiry?.outreach?.reachedOut, inquiry?.outreach?.reachedOutAt, inquiry?.outreach?.staffName]);
 
       // Market Comps Live Search State
       const defaultCompsQuery = [inquiry.unit.year, inquiry.unit.make, inquiry.unit.model].filter(Boolean).join(' ');
@@ -13090,34 +13169,41 @@
       const parsedOfferAmount = Number(offerAmount) || 0;
       const netEquity = Math.max(0, parsedOfferAmount - (inquiry.financials.estimatedPayoff || 0));
 
-      const handleToggleOutreach = (checked) => {
-        if (checked && !outreachStaffName.trim()) {
-          alert('Please enter your staff name before checking off that you reached out.');
+      const handleSelectDealStatus = (statusId) => {
+        const nextStatus = dealStatus === statusId ? null : statusId;
+        const effectiveStaffName = (outreachStaffName.trim() || staffUser?.name || '').trim();
+        if (nextStatus && !effectiveStaffName) {
+          alert('Please enter your staff name before recording a status.');
           return;
         }
         const now = new Date().toLocaleString();
-        setReachedOut(checked);
-        setReachedOutAt(checked ? now : null);
+        setDealStatus(nextStatus);
+        setReachedOutAt(nextStatus ? now : null);
+        if (nextStatus && !outreachStaffName.trim() && effectiveStaffName) {
+          setOutreachStaffName(effectiveStaffName);
+        }
 
+        const statusObj = STAFF_DEAL_STATUSES.find(s => s.id === nextStatus);
         const newOutreach = {
-          reachedOut: checked,
-          staffName: checked ? outreachStaffName.trim() : '',
-          reachedOutAt: checked ? now : null
+          reachedOut: Boolean(nextStatus),
+          status: nextStatus,
+          staffName: nextStatus ? effectiveStaffName : '',
+          reachedOutAt: nextStatus ? now : null
         };
 
         const updated = {
           ...inquiry,
           outreach: newOutreach,
           updatedAt: new Date().toISOString(),
-          notes: checked ? [
+          notes: nextStatus ? [
             ...inquiry.notes,
             {
               id: 'n-outreach-' + Date.now(),
-              authorName: outreachStaffName.trim(),
+              authorName: effectiveStaffName,
               authorRole: 'Staff Member',
               createdAt: new Date().toLocaleTimeString(),
               category: 'call_log',
-              content: `Staff member ${outreachStaffName.trim()} confirmed direct outreach to client (${inquiry.customer.phone} / ${inquiry.customer.email}).`
+              content: `Staff member ${effectiveStaffName} updated deal status to "${statusObj?.label || nextStatus}".`
             }
           ] : inquiry.notes
         };
@@ -13127,11 +13213,13 @@
 
       const handleSaveStaffName = (name) => {
         setOutreachStaffName(name);
-        if (reachedOut) {
+        if (dealStatus) {
           onUpdateInquiry({
             ...inquiry,
             outreach: {
               ...inquiry.outreach,
+              reachedOut: true,
+              status: dealStatus,
               staffName: name.trim()
             },
             updatedAt: new Date().toISOString()
@@ -13809,30 +13897,33 @@
                 )}
               </div>
 
-              {/* STAFF CLIENT OUTREACH CHECK-OFF */}
+              {/* STAFF CLIENT OUTREACH & DEAL STATUS */}
               <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center space-x-2">
-                    <span className="text-[11px] font-bold uppercase text-neutral-300">Staff Client Outreach</span>
-                    {reachedOut ? (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 border border-emerald-700 text-emerald-300">
-                        ✓ Reached Out
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 border border-amber-800 text-amber-300">
-                        ⏳ Pending Outreach
-                      </span>
-                    )}
+                    <span className="text-[11px] font-bold uppercase text-neutral-300">Client Outreach &amp; Deal Status</span>
+                    {(() => {
+                      const activeMeta = STAFF_DEAL_STATUSES.find(s => s.id === dealStatus);
+                      return activeMeta ? (
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${activeMeta.badgeClass}`}>
+                          {activeMeta.shortIcon} {activeMeta.label}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 border border-amber-800 text-amber-300">
+                          ⏳ Pending Outreach
+                        </span>
+                      );
+                    })()}
                   </div>
                   {reachedOutAt && (
                     <span className="text-[10px] text-neutral-400">
-                      Logged on {reachedOutAt}
+                      Updated {reachedOutAt}
                     </span>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center pt-1">
-                  <div>
+                <div className="space-y-3 pt-1">
+                  <div className="max-w-xs">
                     <label className="text-neutral-400 text-[10px] block mb-1">Staff Member Name *</label>
                     <input
                       type="text"
@@ -13843,18 +13934,30 @@
                     />
                   </div>
 
-                  <div className="pt-2 sm:pt-4">
-                    <label className="flex items-center space-x-2.5 cursor-pointer bg-neutral-900 p-2.5 rounded-lg border border-neutral-750 hover:border-neutral-600 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={reachedOut}
-                        onChange={(e) => handleToggleOutreach(e.target.checked)}
-                        className="w-4 h-4 rounded border-neutral-700 text-neutral-100 bg-neutral-950 focus:ring-0 cursor-pointer"
-                      />
-                      <span className="text-xs font-semibold text-neutral-200 select-none">
-                        This client has been contacted
-                      </span>
+                  <div>
+                    <label className="text-neutral-400 text-[10px] block mb-1.5">
+                      Select Status <span className="text-neutral-500">(click active status again to clear)</span>
                     </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {STAFF_DEAL_STATUSES.map(st => {
+                        const isSelected = dealStatus === st.id;
+                        return (
+                          <button
+                            key={st.id}
+                            type="button"
+                            onClick={() => handleSelectDealStatus(st.id)}
+                            className={`px-3 py-2.5 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                              isSelected
+                                ? st.activeBtnClass
+                                : 'bg-neutral-900 hover:bg-neutral-800 border-neutral-750 text-neutral-300 hover:text-white'
+                            }`}
+                          >
+                            <span>{st.shortIcon}</span>
+                            <span>{st.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
