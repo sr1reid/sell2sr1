@@ -3502,7 +3502,8 @@
           preferredContact: customer.preferredContact || 'phone',
           city: customer.city || '',
           state: customer.state || '',
-          zipCode: customer.zipCode || ''
+          zipCode: customer.zipCode || '',
+          zipVerified: !!customer.zipVerified
         },
         unit: {
           category: unit.category || 'other',
@@ -3780,6 +3781,93 @@
         'caribou_me': 'SR1 Caribou, ME'
       };
       return legacyMap[locId] || locId;
+    }
+
+    const ZIP_CITY_STATE_CACHE = (() => {
+      try {
+        const raw = localStorage.getItem('sell2sr1_zip_cache_v1');
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        return {};
+      }
+    })();
+
+    async function lookupZipCityState(rawZip) {
+      const clean = String(rawZip || '').replace(/\D/g, '').slice(0, 5);
+      if (clean.length !== 5) return null;
+      if (ZIP_CITY_STATE_CACHE[clean]) {
+        return ZIP_CITY_STATE_CACHE[clean];
+      }
+      try {
+        const res = await fetch(`https://api.zippopotam.us/us/${clean}`);
+        if (res.ok) {
+          const data = await res.json();
+          const place = Array.isArray(data?.places) && data.places[0] ? data.places[0] : null;
+          if (place && place['place name'] && place['state abbreviation']) {
+            const entry = {
+              zip: clean,
+              city: place['place name'],
+              state: place['state abbreviation']
+            };
+            ZIP_CITY_STATE_CACHE[clean] = entry;
+            try {
+              localStorage.setItem('sell2sr1_zip_cache_v1', JSON.stringify(ZIP_CITY_STATE_CACHE));
+            } catch (e) {}
+            return entry;
+          }
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    function hasGenuineCustomerZip(customer) {
+      if (!customer) return false;
+      if (customer.zipVerified) return true;
+      const cleanZip = String(customer.zipCode || '').replace(/\D/g, '').slice(0, 5);
+      if (cleanZip.length !== 5) return false;
+      // Ignore legacy hardcoded fallback ("Manchester, ME 04351") on pre-zip inquiries
+      if (cleanZip === '04351' && customer.city === 'Manchester' && customer.state === 'ME' && !customer.zipVerified) {
+        return false;
+      }
+      return true;
+    }
+
+    function CustomerZipLocation({ customer, prefix = '', showZip = false, className = '' }) {
+      const isGenuine = hasGenuineCustomerZip(customer);
+      const cleanZip = isGenuine ? String(customer?.zipCode || '').replace(/\D/g, '').slice(0, 5) : '';
+      const initialCity = isGenuine ? (customer?.city || ZIP_CITY_STATE_CACHE[cleanZip]?.city || '') : '';
+      const initialState = isGenuine ? (customer?.state || ZIP_CITY_STATE_CACHE[cleanZip]?.state || '') : '';
+      const [resolved, setResolved] = useState({ city: initialCity, state: initialState });
+
+      useEffect(() => {
+        if (!isGenuine || !cleanZip) {
+          setResolved({ city: '', state: '' });
+          return;
+        }
+        if (customer?.city && customer?.state) {
+          setResolved({ city: customer.city, state: customer.state });
+          return;
+        }
+        let cancelled = false;
+        lookupZipCityState(cleanZip).then(res => {
+          if (!cancelled && res) {
+            setResolved({ city: res.city, state: res.state });
+          }
+        });
+        return () => { cancelled = true; };
+      }, [isGenuine, cleanZip, customer?.city, customer?.state]);
+
+      if (!isGenuine) return null;
+      const label = (resolved.city && resolved.state)
+        ? `${resolved.city}, ${resolved.state}${showZip && cleanZip ? ` (${cleanZip})` : ''}`
+        : (cleanZip ? `Zip: ${cleanZip}` : '');
+      if (!label) return null;
+
+      return (
+        <span className={className} title={cleanZip ? `Customer Zip Code: ${cleanZip}` : undefined}>
+          {prefix}{label}
+        </span>
+      );
     }
 
     function formatInquiryDate(dateStr) {
@@ -5274,7 +5362,7 @@
         consentOptIn: false,
         resaleAcknowledgement: false,
         city: '',
-        state: 'ME',
+        state: '',
         zipCode: ''
       });
 
@@ -5305,6 +5393,30 @@
 
       const activeCatConfig = CATEGORIES[category] || CATEGORIES.rv;
       const idMeta = getPartnerPortalIdFieldMeta(category);
+
+      // Automatically resolve City & State when customer enters a 5-digit Zip Code on Step 6
+      useEffect(() => {
+        const cleanZip = String(formData.zipCode || '').replace(/\D/g, '').slice(0, 5);
+        if (cleanZip.length !== 5) {
+          if (formData.city || formData.state) {
+            setFormData(prev => ({ ...prev, city: '', state: '' }));
+          }
+          return;
+        }
+        let cancelled = false;
+        lookupZipCityState(cleanZip).then(res => {
+          if (!cancelled && res && res.city && res.state) {
+            setFormData(prev => ({
+              ...prev,
+              city: res.city,
+              state: res.state
+            }));
+          }
+        });
+        return () => {
+          cancelled = true;
+        };
+      }, [formData.zipCode]);
 
       const buildPartialFormSnapshot = (overrideStep) => {
         const effectiveStep = overrideStep || step;
@@ -6043,6 +6155,11 @@
             return;
           }
         }
+        const cleanZip = String(formData.zipCode || '').replace(/\D/g, '').slice(0, 5);
+        if (cleanZip.length !== 5) {
+          alert('Please enter your 5-digit Zip Code.');
+          return;
+        }
         if (!formData.preferredLocation) {
           alert(formData.intent === 'trade'
             ? 'Please select your closest SR1 dealership that sells this type of unit (even if the trade is with another segment).'
@@ -6057,6 +6174,17 @@
           alert('Please check the Resale Acknowledgement box to proceed with your valuation.');
           return;
         }
+
+        let resolvedCity = (formData.city || '').trim();
+        let resolvedState = (formData.state || '').trim();
+        if (!resolvedCity || !resolvedState) {
+          const zipLookup = await lookupZipCityState(cleanZip);
+          if (zipLookup) {
+            resolvedCity = zipLookup.city || '';
+            resolvedState = zipLookup.state || '';
+          }
+        }
+
         const refId = String(Math.floor(1000 + Math.random() * 9000));
         const locationName = (LOCATIONS.find(l => l.id === formData.preferredLocation)?.name) || formData.preferredLocation || 'SR1 Dealership';
         const baseLocationEmails = getDynamicNotificationEmailsForLocation(formData.preferredLocation, emailRoutingConfig);
@@ -6099,9 +6227,10 @@
             email: formData.email || 'client@example.com',
             phone: formData.phone || '(207) 555-0199',
             preferredContact: formData.preferredContact,
-            city: formData.city || '',
-            state: formData.state || '',
-            zipCode: formData.zipCode || ''
+            city: resolvedCity,
+            state: resolvedState,
+            zipCode: cleanZip,
+            zipVerified: true
           },
           unit: {
             category,
@@ -7320,6 +7449,30 @@
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                       />
                     </div>
+                  </div>
+
+                  {/* Your Zip Code */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold uppercase text-neutral-300">Your Zip Code *</label>
+                      {formData.city && formData.state && (
+                        <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1">
+                          <span>📍</span>
+                          <span>{formData.city}, {formData.state}</span>
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]{5}"
+                      maxLength={5}
+                      required
+                      value={formData.zipCode}
+                      onChange={(e) => handleInputChange('zipCode', e.target.value.replace(/\D/g, '').slice(0, 5))}
+                      placeholder="e.g. 04351"
+                      className="w-full sm:max-w-xs bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-base sm:text-sm font-mono focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                    />
                   </div>
 
                   {/* Closest Dealership Selection */}
@@ -12666,6 +12819,11 @@
                         </div>
                         <div className="text-[10px] text-neutral-400 truncate">
                           📍 {getLocationName(item.preferredLocation)}
+                          <CustomerZipLocation
+                            customer={item.customer}
+                            prefix=" • Client: "
+                            className="text-neutral-300 font-medium"
+                          />
                         </div>
                       </div>
 
@@ -12999,6 +13157,11 @@
                           {/* Store Location */}
                           <td className="p-3.5 text-neutral-300 text-xs">
                             <div className="font-medium">{getLocationName(item.preferredLocation)}</div>
+                            <CustomerZipLocation
+                              customer={item.customer}
+                              prefix="Client: "
+                              className="block text-[10px] text-neutral-400 mt-0.5"
+                            />
                           </td>
 
                           {/* Status, Unit Chat & Seen By */}
@@ -13647,6 +13810,12 @@
                       {inquiry.partnerOrgName ? `${inquiry.partnerOrgName} (${inquiry.partnerContactName || inquiry.customer.firstName})` : `${inquiry.customer.firstName} ${inquiry.customer.lastName}`}
                     </strong>
                   </span>
+                  <CustomerZipLocation
+                    customer={inquiry.customer}
+                    prefix="📍 "
+                    showZip={true}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-neutral-850 border border-neutral-750 text-neutral-200 font-semibold rounded-md text-[11px]"
+                  />
                   {inquiry.customer.phone && (
                     <>
                       <a
