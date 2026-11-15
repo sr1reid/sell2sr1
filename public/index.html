@@ -445,6 +445,414 @@
       }
     }
 
+    // --- SUPER ADMIN WEBSITE TRAFFIC & PARTIAL FORM TRACKING (PAST STEP 2 ONLY) ---
+    const STEP_NAME_MAP = {
+      1: 'Step 1: Category & Intent',
+      2: 'Step 2: Unit Details',
+      3: 'Step 3: Photos',
+      4: 'Step 4: Condition',
+      5: 'Step 5: Ownership',
+      6: 'Step 6: Contact & Location'
+    };
+
+    function getLocalDateKey(d = new Date()) {
+      try {
+        const yr = d.getFullYear();
+        const mo = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${yr}-${mo}-${day}`;
+      } catch (e) {
+        return new Date().toISOString().slice(0, 10);
+      }
+    }
+
+    function getVisitorDeviceInfo() {
+      const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+      const isIPhone = /iPhone/i.test(ua);
+      const isIPad = /iPad/i.test(ua);
+      const isAndroid = /Android/i.test(ua);
+      const isMobile = isIPhone || isIPad || isAndroid || /Mobile/i.test(ua);
+      let deviceLabel = 'Desktop Browser';
+      if (isIPhone) deviceLabel = 'iPhone (iOS)';
+      else if (isIPad) deviceLabel = 'iPad (iOS)';
+      else if (isAndroid) deviceLabel = 'Android Mobile';
+      else if (/Macintosh|Mac OS X/i.test(ua)) deviceLabel = 'Mac Desktop';
+      else if (/Windows/i.test(ua)) deviceLabel = 'Windows Desktop';
+      return { isMobile, deviceLabel };
+    }
+
+    function createEmptyAnalyticsState() {
+      return {
+        totalVisits: 0,
+        mobileVisits: 0,
+        desktopVisits: 0,
+        reachedStep3Count: 0,
+        completedCount: 0,
+        dailyStats: {}, // { 'YYYY-MM-DD': { visits, mobile, desktop, reachedStep3, completed } }
+        partialForms: [], // Only forms that made it past Step 2 (maxStepReached >= 3) and were not completed
+        recentVisitors: [], // Rolling list of recent visitor sessions
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    let cachedAnalyticsState = (() => {
+      try {
+        const raw = localStorage.getItem('sell2sr1_superadmin_analytics_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            return { ...createEmptyAnalyticsState(), ...parsed };
+          }
+        }
+      } catch (e) {}
+      return createEmptyAnalyticsState();
+    })();
+
+    const analyticsListeners = new Set();
+    function notifyAnalyticsListeners(nextState) {
+      cachedAnalyticsState = nextState;
+      try {
+        localStorage.setItem('sell2sr1_superadmin_analytics_v1', JSON.stringify(nextState));
+      } catch (e) {}
+      analyticsListeners.forEach(fn => {
+        try { fn(nextState); } catch (e) {}
+      });
+    }
+
+    function mergeAnalyticsStates(localState, remoteState) {
+      const a = localState || createEmptyAnalyticsState();
+      const b = remoteState || createEmptyAnalyticsState();
+      const mergedDaily = { ...(a.dailyStats || {}) };
+      Object.entries(b.dailyStats || {}).forEach(([day, bDay]) => {
+        const aDay = mergedDaily[day] || { visits: 0, mobile: 0, desktop: 0, reachedStep3: 0, completed: 0 };
+        mergedDaily[day] = {
+          visits: Math.max(Number(aDay.visits) || 0, Number(bDay.visits) || 0),
+          mobile: Math.max(Number(aDay.mobile) || 0, Number(bDay.mobile) || 0),
+          desktop: Math.max(Number(aDay.desktop) || 0, Number(bDay.desktop) || 0),
+          reachedStep3: Math.max(Number(aDay.reachedStep3) || 0, Number(bDay.reachedStep3) || 0),
+          completed: Math.max(Number(aDay.completed) || 0, Number(bDay.completed) || 0)
+        };
+      });
+
+      // Keep recent 45 days of dailyStats
+      const sortedDays = Object.keys(mergedDaily).sort().slice(-45);
+      const trimmedDaily = {};
+      sortedDays.forEach(d => { trimmedDaily[d] = mergedDaily[d]; });
+
+      // Merge partialForms by sessionId (only keeping forms with maxStepReached >= 3 and not deleted/completed)
+      const deletedSet = new Set([
+        ...(Array.isArray(a.deletedSessionIds) ? a.deletedSessionIds : []),
+        ...(Array.isArray(b.deletedSessionIds) ? b.deletedSessionIds : [])
+      ]);
+      const bySession = new Map();
+      [...(Array.isArray(b.partialForms) ? b.partialForms : []), ...(Array.isArray(a.partialForms) ? a.partialForms : [])].forEach(pf => {
+        if (!pf || !pf.sessionId) return;
+        if (deletedSet.has(pf.sessionId)) return;
+        if ((Number(pf.maxStepReached) || 0) < 3) return; // Strictly only document what makes it past Step 2
+        const existing = bySession.get(pf.sessionId);
+        if (!existing) {
+          bySession.set(pf.sessionId, pf);
+        } else {
+          const existingTime = new Date(existing.updatedAt || existing.startedAt || 0).getTime();
+          const candidateTime = new Date(pf.updatedAt || pf.startedAt || 0).getTime();
+          const winner = candidateTime >= existingTime ? pf : existing;
+          const loser = candidateTime >= existingTime ? existing : pf;
+          bySession.set(pf.sessionId, {
+            ...loser,
+            ...winner,
+            maxStepReached: Math.max(Number(existing.maxStepReached) || 3, Number(pf.maxStepReached) || 3),
+            completed: Boolean(existing.completed || pf.completed)
+          });
+        }
+      });
+
+      const mergedPartialForms = Array.from(bySession.values())
+        .filter(pf => !pf.completed && (Number(pf.maxStepReached) || 0) >= 3)
+        .sort((x, y) => new Date(y.updatedAt || y.startedAt || 0).getTime() - new Date(x.updatedAt || x.startedAt || 0).getTime())
+        .slice(0, 150);
+
+      // Merge recentVisitors by visitorSessionId
+      const byVisitor = new Map();
+      [...(Array.isArray(b.recentVisitors) ? b.recentVisitors : []), ...(Array.isArray(a.recentVisitors) ? a.recentVisitors : [])].forEach(v => {
+        if (!v || !v.sessionId) return;
+        const ex = byVisitor.get(v.sessionId);
+        if (!ex || new Date(v.lastSeenAt || 0).getTime() >= new Date(ex.lastSeenAt || 0).getTime()) {
+          byVisitor.set(v.sessionId, {
+            ...(ex || {}),
+            ...v,
+            maxStepReached: Math.max(Number(ex?.maxStepReached) || 1, Number(v.maxStepReached) || 1),
+            completed: Boolean(ex?.completed || v.completed)
+          });
+        }
+      });
+      const mergedRecentVisitors = Array.from(byVisitor.values())
+        .sort((x, y) => new Date(y.lastSeenAt || y.startedAt || 0).getTime() - new Date(x.lastSeenAt || x.startedAt || 0).getTime())
+        .slice(0, 80);
+
+      return {
+        totalVisits: Math.max(Number(a.totalVisits) || 0, Number(b.totalVisits) || 0),
+        mobileVisits: Math.max(Number(a.mobileVisits) || 0, Number(b.mobileVisits) || 0),
+        desktopVisits: Math.max(Number(a.desktopVisits) || 0, Number(b.desktopVisits) || 0),
+        reachedStep3Count: Math.max(Number(a.reachedStep3Count) || 0, Number(b.reachedStep3Count) || 0),
+        completedCount: Math.max(Number(a.completedCount) || 0, Number(b.completedCount) || 0),
+        dailyStats: trimmedDaily,
+        partialForms: mergedPartialForms,
+        recentVisitors: mergedRecentVisitors,
+        deletedSessionIds: Array.from(deletedSet).slice(-200),
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    async function fetchSiteAnalyticsFromCloudRest() {
+      try {
+        const url = `${FS_REST_BASE}/_analytics_superadmin?key=${FS_API_KEY}`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const doc = await res.json();
+        if (!doc || !doc.fields) return null;
+        if (doc.fields.analyticsJson && doc.fields.analyticsJson.stringValue) {
+          const parsed = JSON.parse(doc.fields.analyticsJson.stringValue);
+          const merged = mergeAnalyticsStates(cachedAnalyticsState, parsed);
+          notifyAnalyticsListeners(merged);
+          return merged;
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function saveSiteAnalyticsToCloudRest(nextAnalytics, useKeepalive = false) {
+      try {
+        const payloadStr = JSON.stringify(nextAnalytics);
+        const body = {
+          fields: {
+            id: { stringValue: '_analytics_superadmin' },
+            isAnalyticsDoc: { booleanValue: true },
+            updatedAt: { stringValue: new Date().toISOString() },
+            analyticsJson: { stringValue: payloadStr }
+          }
+        };
+        const url = `${FS_REST_BASE}/_analytics_superadmin?key=${FS_API_KEY}`;
+        const fetchOpts = {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        };
+        if (useKeepalive) {
+          fetchOpts.keepalive = true;
+        }
+        const res = await fetch(url, fetchOpts);
+        if (db && !useKeepalive) {
+          try {
+            db.collection('inquiries').doc('_analytics_superadmin').set({
+              id: '_analytics_superadmin',
+              isAnalyticsDoc: true,
+              updatedAt: new Date().toISOString(),
+              analyticsJson: payloadStr
+            }).catch(() => {});
+          } catch (e) {}
+        }
+        return res.ok;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function recordWebsiteVisitSession(entryView = 'sell') {
+      try {
+        if (entryView === 'portal') return; // Do not count internal staff portal views as public website traffic
+        let visitorSessionId = '';
+        try {
+          visitorSessionId = sessionStorage.getItem('sell2sr1_visitor_session_id') || '';
+        } catch (e) {}
+        if (visitorSessionId) return; // Already counted this browser session
+
+        visitorSessionId = 'vis-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+        try {
+          sessionStorage.setItem('sell2sr1_visitor_session_id', visitorSessionId);
+        } catch (e) {}
+
+        const remote = await fetchSiteAnalyticsFromCloudRest();
+        const base = mergeAnalyticsStates(cachedAnalyticsState, remote || {});
+        const { isMobile, deviceLabel } = getVisitorDeviceInfo();
+        const todayKey = getLocalDateKey();
+        const nowIso = new Date().toISOString();
+        const dayEntry = base.dailyStats[todayKey] || { visits: 0, mobile: 0, desktop: 0, reachedStep3: 0, completed: 0 };
+
+        const updated = {
+          ...base,
+          totalVisits: (Number(base.totalVisits) || 0) + 1,
+          mobileVisits: (Number(base.mobileVisits) || 0) + (isMobile ? 1 : 0),
+          desktopVisits: (Number(base.desktopVisits) || 0) + (isMobile ? 0 : 1),
+          dailyStats: {
+            ...base.dailyStats,
+            [todayKey]: {
+              ...dayEntry,
+              visits: (Number(dayEntry.visits) || 0) + 1,
+              mobile: (Number(dayEntry.mobile) || 0) + (isMobile ? 1 : 0),
+              desktop: (Number(dayEntry.desktop) || 0) + (isMobile ? 0 : 1)
+            }
+          },
+          recentVisitors: [
+            {
+              sessionId: visitorSessionId,
+              startedAt: nowIso,
+              lastSeenAt: nowIso,
+              device: deviceLabel,
+              isMobile,
+              entryView,
+              maxStepReached: 1,
+              completed: false
+            },
+            ...(base.recentVisitors || []).filter(v => v.sessionId !== visitorSessionId)
+          ].slice(0, 80),
+          updatedAt: nowIso
+        };
+
+        notifyAnalyticsListeners(updated);
+        await saveSiteAnalyticsToCloudRest(updated, false);
+      } catch (e) {
+        console.warn('Traffic session log notice:', e);
+      }
+    }
+
+    async function upsertPartialFormInCloud(partialEntry, { incrementStep3Funnel = false, useKeepalive = false } = {}) {
+      if (!partialEntry || !partialEntry.sessionId) return;
+      // STRICT RULE: Only document what makes it past Step 2 (i.e. Step 3, 4, 5, or 6)
+      if ((Number(partialEntry.maxStepReached) || 0) < 3) return;
+
+      try {
+        let base = cachedAnalyticsState;
+        if (!useKeepalive) {
+          const remote = await fetchSiteAnalyticsFromCloudRest();
+          if (remote) base = mergeAnalyticsStates(cachedAnalyticsState, remote);
+        }
+
+        const todayKey = getLocalDateKey();
+        const dayEntry = base.dailyStats[todayKey] || { visits: 0, mobile: 0, desktop: 0, reachedStep3: 0, completed: 0 };
+        const nowIso = new Date().toISOString();
+
+        let visitorSessionId = '';
+        try { visitorSessionId = sessionStorage.getItem('sell2sr1_visitor_session_id') || ''; } catch (e) {}
+
+        const updatedPartialForms = [
+          { ...partialEntry, updatedAt: nowIso },
+          ...(base.partialForms || []).filter(p => p && p.sessionId !== partialEntry.sessionId)
+        ].slice(0, 150);
+
+        const updatedVisitors = (base.recentVisitors || []).map(v => {
+          if (visitorSessionId && v.sessionId === visitorSessionId) {
+            return {
+              ...v,
+              lastSeenAt: nowIso,
+              maxStepReached: Math.max(Number(v.maxStepReached) || 1, Number(partialEntry.maxStepReached) || 3),
+              categoryLabel: partialEntry.categoryLabel || v.categoryLabel,
+              unitSummary: [partialEntry.unit?.year, partialEntry.unit?.make, partialEntry.unit?.model].filter(Boolean).join(' ')
+            };
+          }
+          return v;
+        });
+
+        const updated = {
+          ...base,
+          reachedStep3Count: (Number(base.reachedStep3Count) || 0) + (incrementStep3Funnel ? 1 : 0),
+          dailyStats: incrementStep3Funnel
+            ? {
+                ...base.dailyStats,
+                [todayKey]: {
+                  ...dayEntry,
+                  reachedStep3: (Number(dayEntry.reachedStep3) || 0) + 1
+                }
+              }
+            : base.dailyStats,
+          partialForms: updatedPartialForms,
+          recentVisitors: updatedVisitors,
+          updatedAt: nowIso
+        };
+
+        notifyAnalyticsListeners(updated);
+        await saveSiteAnalyticsToCloudRest(updated, useKeepalive);
+      } catch (e) {
+        console.warn('Partial form sync notice:', e);
+      }
+    }
+
+    async function markPartialFormCompletedInCloud(sessionId, referenceId) {
+      try {
+        const remote = await fetchSiteAnalyticsFromCloudRest();
+        const base = mergeAnalyticsStates(cachedAnalyticsState, remote || {});
+        const todayKey = getLocalDateKey();
+        const dayEntry = base.dailyStats[todayKey] || { visits: 0, mobile: 0, desktop: 0, reachedStep3: 0, completed: 0 };
+        const nowIso = new Date().toISOString();
+        let visitorSessionId = '';
+        try { visitorSessionId = sessionStorage.getItem('sell2sr1_visitor_session_id') || ''; } catch (e) {}
+
+        const deletedIds = Array.from(new Set([...(base.deletedSessionIds || []), sessionId])).slice(-200);
+        const updated = {
+          ...base,
+          completedCount: (Number(base.completedCount) || 0) + 1,
+          dailyStats: {
+            ...base.dailyStats,
+            [todayKey]: {
+              ...dayEntry,
+              completed: (Number(dayEntry.completed) || 0) + 1
+            }
+          },
+          partialForms: (base.partialForms || []).filter(p => p && p.sessionId !== sessionId),
+          deletedSessionIds: deletedIds,
+          recentVisitors: (base.recentVisitors || []).map(v => {
+            if (visitorSessionId && v.sessionId === visitorSessionId) {
+              return { ...v, lastSeenAt: nowIso, maxStepReached: 6, completed: true, referenceId };
+            }
+            return v;
+          }),
+          updatedAt: nowIso
+        };
+
+        notifyAnalyticsListeners(updated);
+        await saveSiteAnalyticsToCloudRest(updated, false);
+      } catch (e) {
+        console.warn('Complete partial form sync notice:', e);
+      }
+    }
+
+    async function deletePartialFormFromCloud(sessionId) {
+      if (!sessionId) return;
+      try {
+        const remote = await fetchSiteAnalyticsFromCloudRest();
+        const base = mergeAnalyticsStates(cachedAnalyticsState, remote || {});
+        const deletedIds = Array.from(new Set([...(base.deletedSessionIds || []), sessionId])).slice(-200);
+        const updated = {
+          ...base,
+          partialForms: (base.partialForms || []).filter(p => p && p.sessionId !== sessionId),
+          deletedSessionIds: deletedIds,
+          updatedAt: new Date().toISOString()
+        };
+        notifyAnalyticsListeners(updated);
+        await saveSiteAnalyticsToCloudRest(updated, false);
+      } catch (e) {
+        console.warn('Delete partial form error:', e);
+      }
+    }
+
+    async function clearAllPartialFormsInCloud() {
+      try {
+        const remote = await fetchSiteAnalyticsFromCloudRest();
+        const base = mergeAnalyticsStates(cachedAnalyticsState, remote || {});
+        const allIds = (base.partialForms || []).map(p => p.sessionId).filter(Boolean);
+        const deletedIds = Array.from(new Set([...(base.deletedSessionIds || []), ...allIds])).slice(-200);
+        const updated = {
+          ...base,
+          partialForms: [],
+          deletedSessionIds: deletedIds,
+          updatedAt: new Date().toISOString()
+        };
+        notifyAnalyticsListeners(updated);
+        await saveSiteAnalyticsToCloudRest(updated, false);
+      } catch (e) {}
+    }
+
     // --- PARTNER PORTAL (DEALERS & BANKS / CREDIT UNIONS) CLOUD SYNC & EMAIL DISPATCH ---
     function normalizePartner(p) {
       if (!p || typeof p !== 'object') return null;
@@ -3442,6 +3850,20 @@
         }
       };
 
+      const [siteAnalytics, setSiteAnalytics] = useState(() => cachedAnalyticsState);
+
+      useEffect(() => {
+        const listener = (next) => setSiteAnalytics(next);
+        analyticsListeners.add(listener);
+        return () => analyticsListeners.delete(listener);
+      }, []);
+
+      useEffect(() => {
+        if (currentView && currentView !== 'portal') {
+          recordWebsiteVisitSession(currentView);
+        }
+      }, [currentView]);
+
       const goToHome = () => {
         setCurrentView('sell');
         setSelectedInquiryId(null);
@@ -3528,6 +3950,7 @@
             mergePartners(pList);
           }
         });
+        fetchSiteAnalyticsFromCloudRest();
 
         // 2. Real-time Firebase SDK subscription
         let unsubscribe = null;
@@ -3538,7 +3961,21 @@
               const cloudPartners = [];
               snapshot.forEach((doc) => {
                 const data = doc.data();
-                if (data && (data.isPartnerDoc || String(doc.id || '').startsWith('_partner_'))) {
+                if (!data) return;
+                if (doc.id === '_analytics_superadmin' || data.isAnalyticsDoc) {
+                  if (data.analyticsJson) {
+                    try {
+                      const parsed = JSON.parse(data.analyticsJson);
+                      const merged = mergeAnalyticsStates(cachedAnalyticsState, parsed);
+                      notifyAnalyticsListeners(merged);
+                    } catch (e) {}
+                  }
+                  return;
+                }
+                if (doc.id === '_config_email_routing' || data.isConfigDoc) {
+                  return;
+                }
+                if (data.isPartnerDoc || String(doc.id || '').startsWith('_partner_')) {
                   cloudPartners.push(data);
                 } else {
                   cloudInquiries.push(data);
@@ -3570,6 +4007,7 @@
               mergePartners(pList);
             }
           });
+          fetchSiteAnalyticsFromCloudRest();
         }, 4000);
 
         return () => {
@@ -3870,6 +4308,7 @@
               ) : (
                 <StaffPortalView 
                   inquiries={inquiries}
+                  onSubmitInquiry={handleNewInquiry}
                   onUpdateInquiry={handleUpdateInquiry}
                   onDeleteInquiry={handleDeleteInquiry}
                   selectedInquiryId={selectedInquiryId}
@@ -3881,6 +4320,7 @@
                   onSaveEmailRoutingConfig={handleSaveEmailRoutingConfig}
                   partners={partners}
                   onSavePartner={handleSavePartner}
+                  siteAnalytics={siteAnalytics}
                 />
               )
             )}
@@ -4155,7 +4595,129 @@
       const activeScanCountRef = useRef(0);
       const latestVinRef = useRef('');
 
+      // --- PARTIAL FORM TRACKING (STRICTLY ONLY PAST STEP 2: STEP 3, 4, 5, OR 6) ---
+      const formSessionIdRef = useRef('pf-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
+      const formStartedAtRef = useRef(new Date().toISOString());
+      const maxStepReachedRef = useRef(step);
+      const countedStep3FunnelRef = useRef(false);
+      const isSubmittedRef = useRef(false);
+      const latestPartialPayloadRef = useRef(null);
+
       const activeCatConfig = CATEGORIES[category] || CATEGORIES.rv;
+
+      const buildPartialFormSnapshot = (overrideStep) => {
+        const effectiveStep = overrideStep || step;
+        const maxStep = Math.max(maxStepReachedRef.current || 1, effectiveStep);
+        if (maxStep < 3) return null; // Strictly only document what makes it past Step 2
+        const { isMobile, deviceLabel } = getVisitorDeviceInfo();
+        const resolvedVin = (formData.vinOrSerial || latestVinRef.current || '').trim();
+        return {
+          sessionId: formSessionIdRef.current,
+          startedAt: formStartedAtRef.current,
+          updatedAt: new Date().toISOString(),
+          currentStep: effectiveStep,
+          maxStepReached: maxStep,
+          lastStepName: STEP_NAME_MAP[maxStep] || `Step ${maxStep}`,
+          device: deviceLabel,
+          isMobile,
+          intent: formData.intent || 'sell',
+          workingWithSalesperson: formData.workingWithSalesperson || 'no',
+          salespersonName: formData.salespersonName || '',
+          category,
+          categoryLabel: activeCatConfig.label,
+          unit: {
+            year: formData.year || '',
+            make: category === 'container' ? 'Shipping Container' : (formData.make || ''),
+            model: category === 'container' ? 'Container' : (formData.model || ''),
+            mileageOrHours: formData.mileageOrHours || '',
+            isHours: !!activeCatConfig.isHours,
+            vinOrSerial: resolvedVin,
+            conditionNotes: (formData.conditionNotes || '').trim()
+          },
+          financials: {
+            titleStatus: formData.titleStatus || '',
+            lienHolderName: (formData.lienHolderName || '').trim(),
+            estimatedPayoff: formData.estimatedPayoff || ''
+          },
+          customer: {
+            firstName: (formData.firstName || '').trim(),
+            lastName: (formData.lastName || '').trim(),
+            email: (formData.email || '').trim(),
+            phone: (formData.phone || '').trim(),
+            preferredContact: formData.preferredContact || 'text',
+            city: (formData.city || '').trim(),
+            state: (formData.state || '').trim(),
+            zipCode: (formData.zipCode || '').trim()
+          },
+          preferredLocation: formData.preferredLocation || '',
+          photosCount: photos.length,
+          photos: photos
+            .filter(p => p && typeof (p.url || p.thumbUrl) === 'string' && (p.url || p.thumbUrl).startsWith('http'))
+            .slice(0, 6)
+            .map(p => ({
+              id: p.id,
+              label: p.label || 'Uploaded Media',
+              url: p.url || p.thumbUrl,
+              thumbUrl: p.thumbUrl || p.url,
+              isVideo: !!p.isVideo
+            }))
+        };
+      };
+
+      // Keep latest snapshot ref updated and sync whenever step >= 3
+      useEffect(() => {
+        if (isSubmittedRef.current || submittedInquiry) return;
+        if (step > maxStepReachedRef.current) {
+          maxStepReachedRef.current = step;
+        }
+        if (maxStepReachedRef.current < 3) return; // Do not document Step 1 or Step 2
+
+        const snapshot = buildPartialFormSnapshot(step);
+        latestPartialPayloadRef.current = snapshot;
+        if (!snapshot) return;
+
+        const firstTimePastStep2 = !countedStep3FunnelRef.current;
+        if (firstTimePastStep2) {
+          countedStep3FunnelRef.current = true;
+          upsertPartialFormInCloud(snapshot, { incrementStep3Funnel: true, useKeepalive: false });
+          return;
+        }
+
+        const timer = setTimeout(() => {
+          if (!isSubmittedRef.current && latestPartialPayloadRef.current) {
+            upsertPartialFormInCloud(latestPartialPayloadRef.current, { incrementStep3Funnel: false, useKeepalive: false });
+          }
+        }, 700);
+
+        return () => clearTimeout(timer);
+      }, [step, category, formData, photos, submittedInquiry]);
+
+      // Immediate keepalive flush if the user closes the tab or switches away after passing Step 2
+      useEffect(() => {
+        const flushOnLeave = () => {
+          if (isSubmittedRef.current || maxStepReachedRef.current < 3) return;
+          const snap = latestPartialPayloadRef.current;
+          if (snap) {
+            upsertPartialFormInCloud(
+              { ...snap, closedBrowserAt: new Date().toISOString() },
+              { incrementStep3Funnel: false, useKeepalive: true }
+            );
+          }
+        };
+        const onVisChange = () => {
+          if (document.visibilityState === 'hidden') {
+            flushOnLeave();
+          }
+        };
+        window.addEventListener('pagehide', flushOnLeave);
+        window.addEventListener('beforeunload', flushOnLeave);
+        document.addEventListener('visibilitychange', onVisChange);
+        return () => {
+          window.removeEventListener('pagehide', flushOnLeave);
+          window.removeEventListener('beforeunload', flushOnLeave);
+          document.removeEventListener('visibilitychange', onVisChange);
+        };
+      }, []);
 
       const handleCategorySelect = (catKey) => {
         setCategory(catKey);
@@ -4892,6 +5454,9 @@
             }
           ]
         };
+
+        isSubmittedRef.current = true;
+        markPartialFormCompletedInCloud(formSessionIdRef.current, refId);
 
         await onSubmit(newInquiry);
         setSubmittedInquiry(newInquiry);
@@ -8912,14 +9477,962 @@
       );
     }
 
-    function StaffPortalView({ inquiries, partners = [], onSavePartner, onUpdateInquiry, onDeleteInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onSyncSamplesToCloud, emailRoutingConfig, onSaveEmailRoutingConfig }) {
+    function SuperAdminAnalyticsView({ siteAnalytics, staffUser, onBackToInquiries, onConvertPartialToInquiry }) {
+      const [subView, setSubView] = useState('partials'); // 'partials' | 'traffic'
+      const [stepFilter, setStepFilter] = useState('all'); // 'all' | 3 | 4 | 5 | 6
+      const [categoryFilter, setCategoryFilter] = useState('all');
+      const [searchQuery, setSearchQuery] = useState('');
+      const [selectedPartial, setSelectedPartial] = useState(null);
+      const [refreshing, setRefreshing] = useState(false);
+      const [toastMsg, setToastMsg] = useState('');
+
+      if (!isSuperAdmin(staffUser)) {
+        return (
+          <div className="py-16 max-w-lg mx-auto text-center space-y-4">
+            <div className="w-16 h-16 bg-neutral-900 border border-neutral-800 rounded-full flex items-center justify-center mx-auto text-2xl shadow-inner">
+              🔒
+            </div>
+            <h2 className="text-xl font-bold text-white">Access Restricted to Super Admin</h2>
+            <p className="text-xs text-neutral-400 max-w-sm mx-auto leading-relaxed">
+              Only authorized administrator <strong className="text-white">reid@sr1companies.com</strong> has permission to view website traffic analytics and incomplete form submissions.
+            </p>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={onBackToInquiries}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+              >
+                ← Return to Inquiries Workspace
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      const showToast = (msg) => {
+        setToastMsg(msg);
+        setTimeout(() => setToastMsg(''), 4000);
+      };
+
+      const handleManualRefresh = async () => {
+        setRefreshing(true);
+        await fetchSiteAnalyticsFromCloudRest();
+        setRefreshing(false);
+        showToast('✓ Synced latest website traffic & partial forms from Cloud Firestore.');
+      };
+
+      const data = siteAnalytics || createEmptyAnalyticsState();
+
+      // Strictly only show partial forms that made it past Step 2 (maxStepReached >= 3) and are not completed
+      const partialFormsList = useMemo(() => {
+        return (Array.isArray(data.partialForms) ? data.partialForms : [])
+          .filter(pf => pf && !pf.completed && (Number(pf.maxStepReached) || 0) >= 3)
+          .sort((a, b) => new Date(b.updatedAt || b.startedAt || 0).getTime() - new Date(a.updatedAt || a.startedAt || 0).getTime());
+      }, [data.partialForms]);
+
+      const stepDropOffCounts = useMemo(() => {
+        const counts = { all: partialFormsList.length, 3: 0, 4: 0, 5: 0, 6: 0 };
+        partialFormsList.forEach(pf => {
+          const st = Math.min(6, Math.max(3, Number(pf.maxStepReached) || 3));
+          counts[st] = (counts[st] || 0) + 1;
+        });
+        return counts;
+      }, [partialFormsList]);
+
+      const filteredPartials = useMemo(() => {
+        return partialFormsList.filter(pf => {
+          const maxSt = Math.min(6, Math.max(3, Number(pf.maxStepReached) || 3));
+          if (stepFilter !== 'all' && maxSt !== Number(stepFilter)) return false;
+          if (categoryFilter !== 'all' && pf.category !== categoryFilter) return false;
+          if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase().trim();
+            const unitStr = `${pf.unit?.year || ''} ${pf.unit?.make || ''} ${pf.unit?.model || ''} ${pf.categoryLabel || ''}`.toLowerCase();
+            const vinStr = String(pf.unit?.vinOrSerial || '').toLowerCase();
+            const custStr = `${pf.customer?.firstName || ''} ${pf.customer?.lastName || ''} ${pf.customer?.email || ''} ${pf.customer?.phone || ''} ${pf.customer?.city || ''}`.toLowerCase();
+            const notesStr = String(pf.unit?.conditionNotes || '').toLowerCase();
+            const spStr = String(pf.salespersonName || '').toLowerCase();
+            return unitStr.includes(q) || vinStr.includes(q) || custStr.includes(q) || notesStr.includes(q) || spStr.includes(q);
+          }
+          return true;
+        });
+      }, [partialFormsList, stepFilter, categoryFilter, searchQuery]);
+
+      // Traffic summary metrics
+      const trafficSummary = useMemo(() => {
+        const todayKey = getLocalDateKey();
+        const dailyObj = data.dailyStats || {};
+        const todayEntry = dailyObj[todayKey] || { visits: 0, mobile: 0, desktop: 0, reachedStep3: 0, completed: 0 };
+
+        // Last 7 days & Last 14 days rows
+        const daysList = [];
+        let last7Visits = 0;
+        let last7Step3 = 0;
+        let last7Completed = 0;
+
+        for (let i = 0; i < 14; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const k = getLocalDateKey(d);
+          const row = dailyObj[k] || { visits: 0, mobile: 0, desktop: 0, reachedStep3: 0, completed: 0 };
+          if (i < 7) {
+            last7Visits += Number(row.visits) || 0;
+            last7Step3 += Number(row.reachedStep3) || 0;
+            last7Completed += Number(row.completed) || 0;
+          }
+          daysList.push({
+            dateKey: k,
+            label: i === 0 ? 'Today' : i === 1 ? 'Yesterday' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' }),
+            visits: Number(row.visits) || 0,
+            mobile: Number(row.mobile) || 0,
+            desktop: Number(row.desktop) || 0,
+            reachedStep3: Number(row.reachedStep3) || 0,
+            completed: Number(row.completed) || 0
+          });
+        }
+
+        const totalVisits = Math.max(Number(data.totalVisits) || 0, last7Visits);
+        const mobileVisits = Number(data.mobileVisits) || 0;
+        const desktopVisits = Number(data.desktopVisits) || 0;
+        const mobilePct = totalVisits > 0 ? Math.round((mobileVisits / totalVisits) * 100) : 0;
+
+        return {
+          totalVisits,
+          todayVisits: Number(todayEntry.visits) || 0,
+          last7Visits,
+          mobileVisits,
+          desktopVisits,
+          mobilePct,
+          reachedStep3Count: Math.max(Number(data.reachedStep3Count) || 0, partialFormsList.length + (Number(data.completedCount) || 0)),
+          completedCount: Number(data.completedCount) || 0,
+          daysList
+        };
+      }, [data, partialFormsList.length]);
+
+      const handleDeletePartial = async (pf) => {
+        if (!pf || !pf.sessionId) return;
+        const unitDesc = [pf.unit?.year, pf.unit?.make, pf.unit?.model].filter(Boolean).join(' ') || pf.categoryLabel || 'Partial Form';
+        if (!window.confirm(`Remove this incomplete form (${unitDesc} — stopped at Step ${pf.maxStepReached} of 6)?`)) return;
+        await deletePartialFormFromCloud(pf.sessionId);
+        if (selectedPartial?.sessionId === pf.sessionId) setSelectedPartial(null);
+        showToast('Removed partial form entry.');
+      };
+
+      const handleConvertPartial = async (pf) => {
+        if (!pf || !onConvertPartialToInquiry) return;
+        const unitDesc = [pf.unit?.year, pf.unit?.make, pf.unit?.model].filter(Boolean).join(' ') || pf.categoryLabel || 'Unit';
+        if (!window.confirm(`Convert this partial form (${unitDesc}) into an active inquiry in the Consumer Inquiries pipeline?`)) return;
+
+        const refId = String(Math.floor(1000 + Math.random() * 9000));
+        const nowIso = new Date().toISOString();
+        const newInquiry = {
+          id: 'inq-' + Date.now(),
+          referenceId: refId,
+          createdAt: pf.startedAt || nowIso,
+          updatedAt: nowIso,
+          stage: 'new',
+          preferredLocation: pf.preferredLocation || 'pickup_requested',
+          intent: pf.intent || 'sell',
+          workingWithSalesperson: pf.workingWithSalesperson || 'no',
+          salespersonName: pf.salespersonName || '',
+          assignedStaffName: pf.salespersonName || 'Appraisal Desk Queue',
+          customer: {
+            firstName: pf.customer?.firstName || 'Partial Form',
+            lastName: pf.customer?.lastName || `(Stopped at Step ${pf.maxStepReached})`,
+            email: pf.customer?.email || 'No email entered yet',
+            phone: pf.customer?.phone || 'No phone entered yet',
+            preferredContact: pf.customer?.preferredContact || 'text',
+            city: pf.customer?.city || '',
+            state: pf.customer?.state || 'ME',
+            zipCode: pf.customer?.zipCode || ''
+          },
+          unit: {
+            category: pf.category || 'rv',
+            subcategory: pf.categoryLabel || 'Unit',
+            year: Number(pf.unit?.year) || 2022,
+            make: pf.unit?.make || 'Unknown Make',
+            model: pf.unit?.model || 'Unknown Model',
+            trimOrFloorplan: '',
+            vinOrSerial: pf.unit?.vinOrSerial || (pf.category === 'container' ? 'N/A' : 'VIN-PENDING'),
+            mileageOrHours: Number(pf.unit?.mileageOrHours) || 0,
+            isHours: !!pf.unit?.isHours,
+            specs: {},
+            condition: 'Good',
+            conditionNotes: pf.unit?.conditionNotes || `Converted from incomplete form (visitor stopped at ${STEP_NAME_MAP[pf.maxStepReached] || `Step ${pf.maxStepReached}`}).`,
+            tireOrTrackCondition: 'good',
+            knownIssuesOrDamage: ''
+          },
+          financials: {
+            titleStatus: pf.financials?.titleStatus || 'Not specified',
+            lienHolderName: pf.financials?.lienHolderName || '',
+            estimatedPayoff: Number(pf.financials?.estimatedPayoff) || 0,
+            askingPrice: 0
+          },
+          photos: Array.isArray(pf.photos) && pf.photos.length > 0 ? pf.photos : [],
+          offers: [],
+          notes: [
+            {
+              id: 'n-conv-' + Date.now(),
+              authorName: 'Super Admin',
+              authorRole: 'Partial Form Recovery',
+              createdAt: new Date().toLocaleTimeString(),
+              category: 'general',
+              content: `Converted from partial form session (${pf.device || 'Web'}). Visitor reached ${STEP_NAME_MAP[pf.maxStepReached] || `Step ${pf.maxStepReached}`} before leaving.`
+            }
+          ]
+        };
+
+        await onConvertPartialToInquiry(newInquiry);
+        await deletePartialFormFromCloud(pf.sessionId);
+        setSelectedPartial(null);
+        showToast(`✓ Converted to Inquiry #${refId} in Consumer Inquiries!`);
+      };
+
+      const getStepBadgeStyle = (stepNum) => {
+        switch (Number(stepNum)) {
+          case 3:
+            return 'bg-amber-950/80 border-amber-700/80 text-amber-300';
+          case 4:
+            return 'bg-orange-950/80 border-orange-700/80 text-orange-300';
+          case 5:
+            return 'bg-purple-950/80 border-purple-700/80 text-purple-300';
+          case 6:
+            return 'bg-rose-950/80 border-rose-700/80 text-rose-300';
+          default:
+            return 'bg-neutral-800 border-neutral-700 text-neutral-300';
+        }
+      };
+
+      return (
+        <div className="space-y-5">
+          {toastMsg && (
+            <div className="fixed bottom-6 right-6 z-50 max-w-md bg-neutral-900 border border-amber-500/60 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3">
+              <span className="text-amber-400 text-lg">📊</span>
+              <div className="text-xs font-semibold leading-relaxed">{toastMsg}</div>
+            </div>
+          )}
+
+          {/* SUPER ADMIN HEADER BAR */}
+          <div className="bg-neutral-900 border border-neutral-800 p-4 sm:p-5 rounded-2xl space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                    Super Admin Analytics
+                  </span>
+                  <span className="text-[11px] text-neutral-400">
+                    Exclusive to <strong className="text-white">reid@sr1companies.com</strong>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/80 border border-emerald-800 text-emerald-300">
+                    Rule Active: Only Documenting Forms Past Step 2 (Step 3+)
+                  </span>
+                </div>
+                <h2 className="text-lg sm:text-xl font-bold text-white">
+                  Website Traffic &amp; Incomplete Forms Tracker
+                </h2>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Monitor live website visits, conversion funnel performance, and every form that makes it past Step 2 (Steps 3–6) without completing submission.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center p-1 bg-neutral-950 border border-neutral-800 rounded-xl gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setSubView('partials')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      subView === 'partials' ? 'bg-amber-400 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    <span>📝</span>
+                    <span>Incomplete Forms (Past Step 2)</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                      subView === 'partials' ? 'bg-neutral-950/20 text-neutral-950' : 'bg-neutral-800 text-amber-300'
+                    }`}>
+                      {partialFormsList.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSubView('traffic')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      subView === 'traffic' ? 'bg-amber-400 text-neutral-950 shadow-sm' : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    <span>📈</span>
+                    <span>Website Traffic Log</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleManualRefresh}
+                  disabled={refreshing}
+                  className="px-3 py-2 bg-neutral-850 hover:bg-neutral-800 text-neutral-200 rounded-xl text-xs font-semibold border border-neutral-750 cursor-pointer"
+                >
+                  {refreshing ? 'Syncing...' : '↻ Refresh'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onBackToInquiries}
+                  className="px-3 py-2 bg-neutral-850 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded-xl text-xs font-semibold border border-neutral-750 cursor-pointer"
+                >
+                  ← Inquiries Pipeline
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* TOP KPI STRIP */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Website Visits</span>
+                <span className="text-xs text-emerald-400 font-bold">{trafficSummary.todayVisits} today</span>
+              </div>
+              <div className="text-2xl font-black text-white font-mono">
+                {trafficSummary.totalVisits.toLocaleString()}
+              </div>
+              <div className="text-[11px] text-neutral-400">
+                Last 7 days: <strong className="text-neutral-200">{trafficSummary.last7Visits.toLocaleString()}</strong> • {trafficSummary.mobilePct}% Mobile
+              </div>
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Made It Past Step 2</span>
+                <span className="text-[10px] font-semibold text-blue-300">Reached Step 3+</span>
+              </div>
+              <div className="text-2xl font-black text-blue-300 font-mono">
+                {trafficSummary.reachedStep3Count.toLocaleString()}
+              </div>
+              <div className="text-[11px] text-neutral-400">
+                Entered unit details &amp; reached Photos (Step 3+)
+              </div>
+            </div>
+
+            <div className="bg-neutral-900 border border-amber-500/40 rounded-2xl p-4 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">Incomplete (Past Step 2)</span>
+                <span className="text-[10px] font-bold text-amber-400">Steps 3–6 Drop-Off</span>
+              </div>
+              <div className="text-2xl font-black text-amber-300 font-mono">
+                {partialFormsList.length.toLocaleString()}
+              </div>
+              <div className="text-[11px] text-neutral-400">
+                Partially filled forms that did not submit Step 6
+              </div>
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Completed Forms</span>
+                <span className="text-[10px] font-semibold text-emerald-400">Submitted Step 6</span>
+              </div>
+              <div className="text-2xl font-black text-emerald-400 font-mono">
+                {trafficSummary.completedCount.toLocaleString()}
+              </div>
+              <div className="text-[11px] text-neutral-400">
+                Full valuation requests delivered to SR1
+              </div>
+            </div>
+          </div>
+
+          {subView === 'partials' ? (
+            <div className="space-y-4">
+              {/* DROP-OFF STEP FUNNEL FILTER CARDS (STEPS 3, 4, 5, 6) */}
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-neutral-200">
+                      Where Visitors Stopped (Past Step 2 Only)
+                    </h3>
+                    <p className="text-[11px] text-neutral-400">
+                      Click any step below to filter incomplete forms by the furthest step the visitor reached before closing their browser.
+                    </p>
+                  </div>
+                  {partialFormsList.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('Clear all recorded incomplete forms?')) {
+                          clearAllPartialFormsInCloud();
+                          showToast('Cleared all incomplete forms.');
+                        }
+                      }}
+                      className="self-start sm:self-auto px-2.5 py-1 rounded-lg bg-neutral-950 hover:bg-rose-950/60 text-neutral-400 hover:text-rose-300 border border-neutral-800 text-[11px] font-semibold cursor-pointer"
+                    >
+                      Clear All Incomplete Forms
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+                  {[
+                    { id: 'all', title: 'All Incomplete (Step 3+)', sub: 'Every partial form past Step 2', count: stepDropOffCounts.all },
+                    { id: 3, title: 'Stopped at Step 3', sub: 'Photos & VIN Screen', count: stepDropOffCounts[3] },
+                    { id: 4, title: 'Stopped at Step 4', sub: 'Condition Notes Screen', count: stepDropOffCounts[4] },
+                    { id: 5, title: 'Stopped at Step 5', sub: 'Ownership & Title Screen', count: stepDropOffCounts[5] },
+                    { id: 6, title: 'Stopped at Step 6', sub: 'Contact & Store Screen', count: stepDropOffCounts[6] }
+                  ].map(card => {
+                    const active = String(stepFilter) === String(card.id);
+                    return (
+                      <button
+                        key={card.id}
+                        type="button"
+                        onClick={() => setStepFilter(card.id)}
+                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                          active
+                            ? 'bg-neutral-100 text-neutral-950 border-white shadow-md'
+                            : 'bg-neutral-950/80 hover:bg-neutral-950 text-neutral-200 border-neutral-800'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className={`text-[11px] font-extrabold ${active ? 'text-neutral-950' : 'text-white'}`}>
+                            {card.title}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-black ${
+                            active ? 'bg-neutral-950 text-amber-300' : 'bg-neutral-900 text-amber-300 border border-neutral-800'
+                          }`}>
+                            {card.count}
+                          </span>
+                        </div>
+                        <div className={`text-[10px] mt-1 ${active ? 'text-neutral-700 font-medium' : 'text-neutral-400'}`}>
+                          {card.sub}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Category + Search Filter Row */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-2 border-t border-neutral-850 text-xs">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-neutral-400 font-semibold mr-1">Category:</span>
+                    <button
+                      type="button"
+                      onClick={() => setCategoryFilter('all')}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer ${
+                        categoryFilter === 'all' ? 'bg-amber-400 text-neutral-950 font-bold' : 'bg-neutral-950 text-neutral-400 hover:text-white border border-neutral-800'
+                      }`}
+                    >
+                      All Categories
+                    </button>
+                    {Object.entries(CATEGORIES).map(([catKey, catCfg]) => (
+                      <button
+                        key={catKey}
+                        type="button"
+                        onClick={() => setCategoryFilter(catKey)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer ${
+                          categoryFilter === catKey ? 'bg-amber-400 text-neutral-950 font-bold' : 'bg-neutral-950 text-neutral-400 hover:text-white border border-neutral-800'
+                        }`}
+                      >
+                        {catCfg.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="w-full sm:w-72 relative">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search make, model, VIN, name, phone..."
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-600"
+                    />
+                    <span className="absolute left-2.5 top-2 text-neutral-500 text-xs">🔍</span>
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2 top-1.5 text-neutral-400 hover:text-white text-xs cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* PARTIAL FORMS LIST */}
+              {filteredPartials.length === 0 ? (
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-10 text-center space-y-2">
+                  <div className="text-2xl">📋</div>
+                  <h3 className="text-sm sm:text-base font-bold text-white">
+                    No incomplete forms past Step 2 match your current filter
+                  </h3>
+                  <p className="text-xs text-neutral-400 max-w-md mx-auto leading-relaxed">
+                    Whenever a visitor fills out Step 1 &amp; Step 2 and advances to Step 3 (Photos) or beyond without submitting Step 6, their partial form will appear here automatically.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredPartials.map(pf => {
+                    const lastActiveInfo = formatInquiryDate(pf.updatedAt || pf.startedAt);
+                    const ageMs = Date.now() - new Date(pf.updatedAt || pf.startedAt || 0).getTime();
+                    const isCurrentlyActive = !pf.closedBrowserAt && ageMs < 2 * 60 * 1000;
+                    const maxStep = Math.min(6, Math.max(3, Number(pf.maxStepReached) || 3));
+                    const unitTitle = [pf.unit?.year, pf.unit?.make, pf.unit?.model].filter(Boolean).join(' ') || pf.categoryLabel || 'Unit';
+                    const hasContact = Boolean(pf.customer?.firstName || pf.customer?.lastName || pf.customer?.phone || pf.customer?.email);
+
+                    return (
+                      <div
+                        key={pf.sessionId}
+                        onClick={() => setSelectedPartial(pf)}
+                        className="bg-neutral-900 border border-neutral-800 hover:border-neutral-700 rounded-2xl p-4 sm:p-5 transition-all cursor-pointer space-y-3"
+                      >
+                        {/* Top Bar: Step Stopped Badge + Active/Abandoned Status + Timestamp + Actions */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-neutral-850">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border ${getStepBadgeStyle(maxStep)}`}>
+                              Stopped at {STEP_NAME_MAP[maxStep] || `Step ${maxStep}`} (Step {maxStep} of 6)
+                            </span>
+
+                            {isCurrentlyActive ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950/90 border border-emerald-700 text-emerald-300">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                                <span>Currently on Step {pf.currentStep || maxStep}</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-neutral-950 border border-neutral-800 text-neutral-400">
+                                <span>Left / Closed Browser</span>
+                              </span>
+                            )}
+
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-950 border border-neutral-800 text-neutral-300">
+                              {pf.device || 'Web Browser'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-[11px] text-neutral-400">
+                              Last activity: <strong className="text-neutral-200">{lastActiveInfo.date} at {lastActiveInfo.time}</strong>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPartial(pf);
+                              }}
+                              className="px-3 py-1 rounded-lg bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-[11px] cursor-pointer"
+                            >
+                              View Partial Data →
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeletePartial(pf);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-neutral-950 hover:bg-rose-950 text-neutral-400 hover:text-rose-300 border border-neutral-800 text-[11px] cursor-pointer"
+                              title="Delete partial form"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Middle Grid: All Captured Details From Steps 1 through Max Step */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                          {/* Col 1: Unit & Step 1/2 Info */}
+                          <div className="bg-neutral-950/80 border border-neutral-850 rounded-xl p-3 space-y-1">
+                            <div className="text-[10px] font-bold uppercase text-neutral-500">Step 1 &amp; 2: Unit Details</div>
+                            <div className="font-extrabold text-white text-sm">{unitTitle}</div>
+                            <div className="text-[11px] text-neutral-300">
+                              {pf.categoryLabel || 'Unit'} •{' '}
+                              <span className={pf.intent === 'trade' ? 'text-amber-300 font-semibold' : 'text-emerald-300 font-semibold'}>
+                                {pf.intent === 'trade' ? 'Trade-In' : 'Sell Outright'}
+                              </span>
+                            </div>
+                            {pf.unit?.mileageOrHours ? (
+                              <div className="text-[11px] text-neutral-400">
+                                {pf.unit.isHours ? 'Hours' : 'Mileage'}: <strong className="text-neutral-200">{Number(pf.unit.mileageOrHours).toLocaleString()}</strong>
+                              </div>
+                            ) : null}
+                            {pf.workingWithSalesperson === 'yes' && pf.salespersonName && (
+                              <div className="text-[11px] text-amber-300">
+                                SR1 Rep: <strong>{pf.salespersonName}</strong>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Col 2: Step 3 Photos & VIN */}
+                          <div className="bg-neutral-950/80 border border-neutral-850 rounded-xl p-3 space-y-1.5">
+                            <div className="text-[10px] font-bold uppercase text-neutral-500">Step 3: Photos &amp; VIN</div>
+                            <div className="text-[11px] text-neutral-200 font-semibold">
+                              📷 {Number(pf.photosCount) || 0} photo(s) uploaded
+                            </div>
+                            {pf.unit?.vinOrSerial ? (
+                              <div className="text-[11px] text-emerald-300 font-mono truncate">
+                                VIN: {pf.unit.vinOrSerial}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-neutral-500">
+                                {pf.category === 'container' ? 'Container (No VIN required)' : 'No VIN captured before leaving'}
+                              </div>
+                            )}
+                            {Array.isArray(pf.photos) && pf.photos.length > 0 && (
+                              <div className="flex items-center gap-1.5 pt-1">
+                                {pf.photos.slice(0, 4).map((p, i) => (
+                                  <img
+                                    key={p.id || i}
+                                    src={p.thumbUrl || p.url}
+                                    alt=""
+                                    className="w-9 h-9 rounded object-cover border border-neutral-800"
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Col 3: Step 4 Condition & Step 5 Ownership */}
+                          <div className="bg-neutral-950/80 border border-neutral-850 rounded-xl p-3 space-y-1">
+                            <div className="text-[10px] font-bold uppercase text-neutral-500">Step 4 &amp; 5: Condition &amp; Title</div>
+                            {pf.unit?.conditionNotes ? (
+                              <p className="text-[11px] text-neutral-200 line-clamp-2">
+                                "{pf.unit.conditionNotes}"
+                              </p>
+                            ) : (
+                              <p className="text-[11px] text-neutral-500 italic">No condition notes entered</p>
+                            )}
+                            {pf.financials?.titleStatus ? (
+                              <div className="text-[11px] text-neutral-300 pt-0.5">
+                                Title: <strong className="text-white">{pf.financials.titleStatus}</strong>
+                                {pf.financials.lienHolderName ? ` (${pf.financials.lienHolderName})` : ''}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-neutral-500">Title status not selected yet</div>
+                            )}
+                          </div>
+
+                          {/* Col 4: Step 6 Contact & Location (If Reached Step 6) */}
+                          <div className="bg-neutral-950/80 border border-neutral-850 rounded-xl p-3 space-y-1">
+                            <div className="text-[10px] font-bold uppercase text-neutral-500">Step 6: Partial Contact Info</div>
+                            {hasContact ? (
+                              <div className="space-y-0.5 text-[11px]">
+                                {(pf.customer?.firstName || pf.customer?.lastName) && (
+                                  <div className="font-bold text-white">
+                                    {[pf.customer?.firstName, pf.customer?.lastName].filter(Boolean).join(' ')}
+                                  </div>
+                                )}
+                                {pf.customer?.phone && <div className="text-emerald-300 font-mono">{pf.customer.phone}</div>}
+                                {pf.customer?.email && <div className="text-neutral-300 truncate">{pf.customer.email}</div>}
+                                {pf.customer?.city && <div className="text-neutral-400">{pf.customer.city}, {pf.customer.state}</div>}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-neutral-500 italic">
+                                Stopped before entering contact details on Step 6
+                              </div>
+                            )}
+                            {pf.preferredLocation && (
+                              <div className="text-[10px] text-neutral-400 pt-0.5">
+                                Store: {getLocationName(pf.preferredLocation)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* WEBSITE TRAFFIC LOG SUB-VIEW */
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* Left 7 cols: 14-Day Daily Website Traffic & Funnel Table */}
+              <div className="lg:col-span-7 bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
+                <div className="p-4 bg-neutral-950 border-b border-neutral-800">
+                  <h3 className="text-sm font-bold text-white">Daily Website Traffic &amp; Conversion Funnel (Last 14 Days)</h3>
+                  <p className="text-[11px] text-neutral-400">
+                    Tracks unique browser sessions visiting selltosr1.com, how many pass Step 2 (into Step 3+), and how many complete Step 6.
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="bg-neutral-950/70 text-neutral-400 uppercase text-[10px] border-b border-neutral-800">
+                      <tr>
+                        <th className="p-3">Date</th>
+                        <th className="p-3">Total Visits</th>
+                        <th className="p-3">Mobile / Desktop</th>
+                        <th className="p-3">Passed Step 2 (Step 3+)</th>
+                        <th className="p-3">Completed (Step 6)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-800/80">
+                      {trafficSummary.daysList.map(day => (
+                        <tr key={day.dateKey} className="hover:bg-neutral-850/50">
+                          <td className="p-3 font-semibold text-white whitespace-nowrap">
+                            {day.label}
+                            <span className="block text-[10px] text-neutral-500 font-mono">{day.dateKey}</span>
+                          </td>
+                          <td className="p-3 font-mono font-bold text-white">{day.visits}</td>
+                          <td className="p-3 text-neutral-300">
+                            <span className="text-xs">📱 {day.mobile}</span>
+                            <span className="text-neutral-600 mx-1.5">•</span>
+                            <span className="text-xs">💻 {day.desktop}</span>
+                          </td>
+                          <td className="p-3 font-mono text-blue-300 font-bold">{day.reachedStep3}</td>
+                          <td className="p-3 font-mono text-emerald-400 font-bold">{day.completed}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Right 5 cols: Recent Visitor Sessions Feed */}
+              <div className="lg:col-span-5 bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden flex flex-col max-h-[640px]">
+                <div className="p-4 bg-neutral-950 border-b border-neutral-800">
+                  <h3 className="text-sm font-bold text-white">Recent Website Visitor Sessions</h3>
+                  <p className="text-[11px] text-neutral-400">
+                    Real-time stream of visitors landing on selltosr1.com and the furthest step reached.
+                  </p>
+                </div>
+                <div className="flex-1 overflow-y-auto divide-y divide-neutral-800/80">
+                  {(Array.isArray(data.recentVisitors) ? data.recentVisitors : []).length === 0 ? (
+                    <div className="p-8 text-center text-xs text-neutral-500">
+                      No recent visitor sessions logged yet.
+                    </div>
+                  ) : (
+                    (data.recentVisitors || []).map(v => {
+                      const tInfo = formatInquiryDate(v.lastSeenAt || v.startedAt);
+                      return (
+                        <div key={v.sessionId} className="p-3.5 flex items-center justify-between gap-3 text-xs">
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-white flex items-center gap-2">
+                              <span>{v.isMobile ? '📱' : '💻'} {v.device || 'Visitor'}</span>
+                              {v.completed ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                                  ✓ Completed #{v.referenceId || ''}
+                                </span>
+                              ) : (Number(v.maxStepReached) || 1) >= 3 ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800">
+                                  Reached Step {v.maxStepReached}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] text-neutral-400 bg-neutral-950 border border-neutral-800">
+                                  Browsing (Step {v.maxStepReached || 1})
+                                </span>
+                              )}
+                            </div>
+                            {v.unitSummary && (
+                              <div className="text-[11px] text-neutral-300">{v.unitSummary}</div>
+                            )}
+                          </div>
+                          <div className="text-right text-[11px] text-neutral-400 whitespace-nowrap">
+                            <div>{tInfo.date}</div>
+                            <div className="text-[10px] text-neutral-500">{tInfo.time}</div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* PARTIAL FORM FULL INSPECTION MODAL */}
+          {selectedPartial && (
+            <div
+              onClick={() => setSelectedPartial(null)}
+              className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="bg-neutral-900 border border-neutral-750 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl text-xs"
+              >
+                <div className="p-4 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border ${getStepBadgeStyle(selectedPartial.maxStepReached)}`}>
+                      Stopped at {STEP_NAME_MAP[selectedPartial.maxStepReached] || `Step ${selectedPartial.maxStepReached}`}
+                    </span>
+                    <h3 className="text-sm sm:text-base font-extrabold text-white">
+                      {[selectedPartial.unit?.year, selectedPartial.unit?.make, selectedPartial.unit?.model].filter(Boolean).join(' ') || selectedPartial.categoryLabel || 'Incomplete Form'}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPartial(null)}
+                    className="w-8 h-8 rounded-lg bg-neutral-850 hover:bg-neutral-750 text-neutral-300 hover:text-white font-bold cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+                  {/* Step Progression Visual Bar */}
+                  <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5 space-y-2">
+                    <div className="text-[10px] font-bold uppercase text-neutral-400">
+                      Visitor Step Progression (Steps 1 – 6)
+                    </div>
+                    <div className="grid grid-cols-6 gap-1.5 text-[10px]">
+                      {[1, 2, 3, 4, 5, 6].map(st => {
+                        const reached = st <= (Number(selectedPartial.maxStepReached) || 3);
+                        const isStopPoint = st === (Number(selectedPartial.maxStepReached) || 3);
+                        return (
+                          <div
+                            key={st}
+                            className={`p-2 rounded-lg border text-center font-bold ${
+                              isStopPoint
+                                ? 'bg-amber-400/20 border-amber-400 text-amber-300'
+                                : reached
+                                ? 'bg-emerald-950/50 border-emerald-800/70 text-emerald-300'
+                                : 'bg-neutral-900 border-neutral-850 text-neutral-600'
+                            }`}
+                          >
+                            <div>Step {st}</div>
+                            <div className="text-[9px] font-normal truncate">
+                              {isStopPoint ? 'Stopped Here' : reached ? '✓ Completed' : 'Not Reached'}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Captured Details Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5 space-y-2">
+                      <div className="text-[10px] font-bold uppercase text-neutral-400">Step 1 &amp; Step 2: Unit Information</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-neutral-500 text-[10px] block">Category</span>
+                          <span className="text-white font-semibold">{selectedPartial.categoryLabel || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-neutral-500 text-[10px] block">Intent</span>
+                          <span className="text-white font-semibold">{selectedPartial.intent === 'trade' ? 'Trade-In' : 'Sell Outright'}</span>
+                        </div>
+                        <div>
+                          <span className="text-neutral-500 text-[10px] block">Year / Make / Model</span>
+                          <span className="text-white font-semibold">
+                            {[selectedPartial.unit?.year, selectedPartial.unit?.make, selectedPartial.unit?.model].filter(Boolean).join(' ') || 'N/A'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-neutral-500 text-[10px] block">{selectedPartial.unit?.isHours ? 'Hours' : 'Mileage'}</span>
+                          <span className="text-white font-semibold">{selectedPartial.unit?.mileageOrHours || 'Not applicable / Not entered'}</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-neutral-500 text-[10px] block">VIN / Serial (Step 3)</span>
+                          <span className="text-emerald-300 font-mono">{selectedPartial.unit?.vinOrSerial || 'None captured before leaving'}</span>
+                        </div>
+                        {selectedPartial.workingWithSalesperson === 'yes' && (
+                          <div className="col-span-2">
+                            <span className="text-neutral-500 text-[10px] block">Working With SR1 Team Member</span>
+                            <span className="text-amber-300 font-semibold">{selectedPartial.salespersonName || 'Yes'}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5 space-y-2">
+                      <div className="text-[10px] font-bold uppercase text-neutral-400">Steps 4, 5 &amp; 6: Condition, Title &amp; Contact</div>
+                      <div className="space-y-2">
+                        <div>
+                          <span className="text-neutral-500 text-[10px] block">Condition Notes (Step 4)</span>
+                          <span className="text-neutral-200">{selectedPartial.unit?.conditionNotes || 'Not entered'}</span>
+                        </div>
+                        <div>
+                          <span className="text-neutral-500 text-[10px] block">Title / Loan Status (Step 5)</span>
+                          <span className="text-neutral-200">
+                            {selectedPartial.financials?.titleStatus || 'Not entered'}
+                            {selectedPartial.financials?.lienHolderName ? ` • Lien: ${selectedPartial.financials.lienHolderName}` : ''}
+                            {selectedPartial.financials?.estimatedPayoff ? ` • Est. Payoff: $${Number(selectedPartial.financials.estimatedPayoff).toLocaleString()}` : ''}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-neutral-500 text-[10px] block">Customer Contact (Step 6)</span>
+                          <span className="text-neutral-200">
+                            {[selectedPartial.customer?.firstName, selectedPartial.customer?.lastName].filter(Boolean).join(' ') || 'No name entered'}
+                            {selectedPartial.customer?.phone ? ` • ${selectedPartial.customer.phone}` : ''}
+                            {selectedPartial.customer?.email ? ` • ${selectedPartial.customer.email}` : ''}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-neutral-500 text-[10px] block">Device &amp; Timestamps</span>
+                          <span className="text-neutral-400">
+                            {selectedPartial.device || 'Browser'} • Last active {formatInquiryDate(selectedPartial.updatedAt || selectedPartial.startedAt).date} {formatInquiryDate(selectedPartial.updatedAt || selectedPartial.startedAt).time}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Uploaded Photos on Step 3 */}
+                  <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5 space-y-2">
+                    <div className="text-[10px] font-bold uppercase text-neutral-400">
+                      Uploaded Photos in Step 3 ({Number(selectedPartial.photosCount) || 0})
+                    </div>
+                    {Array.isArray(selectedPartial.photos) && selectedPartial.photos.length > 0 ? (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+                        {selectedPartial.photos.map((p, idx) => (
+                          <a
+                            key={p.id || idx}
+                            href={p.url || p.thumbUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block aspect-video rounded-lg overflow-hidden border border-neutral-800 bg-neutral-900"
+                          >
+                            <img src={p.thumbUrl || p.url} alt={p.label || ''} className="w-full h-full object-cover" />
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-neutral-500 text-xs">
+                        Visitor reached Step 3 but closed the browser before uploading photos (or uploaded fewer than 3 photos).
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-4 bg-neutral-950 border-t border-neutral-800 flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePartial(selectedPartial)}
+                    className="px-3.5 py-2 rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-200 border border-rose-800 font-semibold text-xs cursor-pointer"
+                  >
+                    🗑️ Delete Partial Form
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleConvertPartial(selectedPartial)}
+                      className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-neutral-950 font-extrabold text-xs cursor-pointer"
+                    >
+                      ⚡ Convert to Active Inquiry Lead
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPartial(null)}
+                      className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function StaffPortalView({ inquiries, partners = [], onSavePartner, onSubmitInquiry, onUpdateInquiry, onDeleteInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onSyncSamplesToCloud, emailRoutingConfig, onSaveEmailRoutingConfig, siteAnalytics }) {
       const canManageRouting = isSuperAdmin(staffUser);
       const canDeleteInquiries = isSuperAdmin(staffUser);
+      const incompletePastStep2Count = useMemo(() => {
+        const list = Array.isArray(siteAnalytics?.partialForms) ? siteAnalytics.partialForms : [];
+        return list.filter(pf => pf && !pf.completed && (Number(pf.maxStepReached) || 0) >= 3).length;
+      }, [siteAnalytics]);
       const [portalTab, setPortalTab] = useState(() => {
         try {
           const params = new URLSearchParams(window.location.search);
           const t = params.get('tab');
-          if (t === 'routing' && isSuperAdmin(staffUser)) return 'routing';
+          if ((t === 'routing' || t === 'analytics') && isSuperAdmin(staffUser)) return t;
           if (t === 'dealers' || t === 'banks' || t === 'inquiries') return t;
         } catch (e) {}
         return 'inquiries';
@@ -9429,18 +10942,38 @@
                 </button>
 
                 {canManageRouting && (
-                  <button
-                    type="button"
-                    onClick={() => setPortalTab('routing')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${portalTab === 'routing' ? 'bg-amber-400 text-neutral-950 shadow-sm' : 'text-amber-400 hover:text-amber-300 hover:bg-neutral-900'}`}
-                    title="Exclusive to reid@sr1companies.com: Edit where each submission routes"
-                  >
-                    <span>✉️</span>
-                    <span>Email Routing</span>
-                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase bg-amber-500/30 text-amber-300 border border-amber-400/40">
-                      Admin
-                    </span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setPortalTab('analytics')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${portalTab === 'analytics' ? 'bg-amber-400 text-neutral-950 shadow-sm' : 'text-amber-400 hover:text-amber-300 hover:bg-neutral-900'}`}
+                      title="Exclusive to reid@sr1companies.com: View website traffic and incomplete forms past Step 2"
+                    >
+                      <span>📊</span>
+                      <span>Traffic &amp; Partial Forms</span>
+                      {incompletePastStep2Count > 0 && (
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${portalTab === 'analytics' ? 'bg-neutral-950 text-amber-300' : 'bg-amber-500/30 text-amber-200 border border-amber-400/50'}`}>
+                          {incompletePastStep2Count}
+                        </span>
+                      )}
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase bg-amber-500/30 text-amber-300 border border-amber-400/40">
+                        Admin
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPortalTab('routing')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${portalTab === 'routing' ? 'bg-amber-400 text-neutral-950 shadow-sm' : 'text-amber-400 hover:text-amber-300 hover:bg-neutral-900'}`}
+                      title="Exclusive to reid@sr1companies.com: Edit where each submission routes"
+                    >
+                      <span>✉️</span>
+                      <span>Email Routing</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase bg-amber-500/30 text-amber-300 border border-amber-400/40">
+                        Admin
+                      </span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -9508,7 +11041,14 @@
             </div>
           </div>
 
-          {portalTab === 'routing' && canManageRouting ? (
+          {portalTab === 'analytics' && canManageRouting ? (
+            <SuperAdminAnalyticsView
+              siteAnalytics={siteAnalytics}
+              staffUser={staffUser}
+              onBackToInquiries={() => setPortalTab('inquiries')}
+              onConvertPartialToInquiry={onSubmitInquiry}
+            />
+          ) : portalTab === 'routing' && canManageRouting ? (
             <EmailRoutingManager
               emailRoutingConfig={emailRoutingConfig}
               onSaveEmailRoutingConfig={onSaveEmailRoutingConfig}
