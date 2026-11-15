@@ -12515,9 +12515,9 @@
                       </div>
                     </th>
                     <th className="p-3.5 min-w-[110px]">Outreach / Chat</th>
-                    <th onClick={() => handleSort('offer')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[90px]">
+                    <th onClick={() => handleSort('offer')} className="p-3.5 cursor-pointer hover:text-white transition-colors w-[105px]">
                       <div className="flex items-center space-x-1">
-                        <span>Offer</span>
+                        <span>Initial Offer</span>
                         {sortField === 'offer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
                       </div>
                     </th>
@@ -13927,13 +13927,12 @@
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-neutral-400 text-[10px] block mb-1">SR1 Offer Amount ($)</label>
+                    <label className="text-neutral-400 text-[10px] block mb-1">Initial Offer ($)</label>
                     <input
                       type="number"
                       min="0"
                       value={offerAmount}
                       onChange={(e) => setOfferAmount(e.target.value)}
-                      placeholder="e.g. 18500"
                       className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-3 py-2 text-white font-bold text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
                     />
                   </div>
