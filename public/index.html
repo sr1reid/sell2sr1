@@ -7326,6 +7326,54 @@
       };
     }
 
+    function getPartnerPortalIdFieldMeta(category) {
+      if (category === 'tractor' || category === 'equipment') {
+        return {
+          label: 'Serial Number',
+          shortLabel: 'Serial Number',
+          placeholder: 'Enter Serial Number (or upload Serial Number photo below)',
+          scanningText: 'Scanning photo for Serial Number...',
+          photoHint: 'Include a photo of the Serial Number tag to automatically scan & populate the Serial Number.',
+          badgeText: 'SERIAL TAG',
+          defaultPending: 'SERIAL-PENDING'
+        };
+      }
+      if (category === 'trailer' || category === 'powersports' || category === 'motorcycle' || category === 'rv') {
+        return {
+          label: 'VIN Number',
+          shortLabel: 'VIN Number',
+          placeholder: 'Enter VIN Number (or upload VIN photo below)',
+          scanningText: 'Scanning photo for VIN Number...',
+          photoHint: 'Include a photo of the VIN tag to automatically scan & populate the VIN Number.',
+          badgeText: 'VIN TAG',
+          defaultPending: 'VIN-PENDING'
+        };
+      }
+      return {
+        label: 'VIN / Serial Number',
+        shortLabel: 'VIN / Serial',
+        placeholder: 'Enter VIN or Serial Number',
+        scanningText: 'Scanning photo...',
+        photoHint: 'Include a photo of the identification tag to automatically scan & populate.',
+        badgeText: 'ID TAG',
+        defaultPending: 'VIN-PENDING'
+      };
+    }
+
+    function getPartnerPortalUsageFieldMeta(category) {
+      if (category === 'rv') {
+        return { show: true, label: 'Mileage (If Applicable)', isHours: false, unitSuffix: 'mi' };
+      }
+      if (category === 'powersports' || category === 'motorcycle') {
+        return { show: true, label: 'Mileage', isHours: false, unitSuffix: 'mi' };
+      }
+      if (category === 'tractor' || category === 'equipment' || category === 'boat_pwc') {
+        return { show: true, label: 'Hours', isHours: true, unitSuffix: 'hrs' };
+      }
+      // Remove mileage field for all other categories (trailer, container, other)
+      return { show: false, label: '', isHours: false, unitSuffix: '' };
+    }
+
     function PartnerPortalView({
       portalType,
       onSwitchPortalType,
@@ -7733,11 +7781,14 @@
             const u = batchUnits[idx];
             const refId = String(Math.floor(1000 + Math.random() * 9000));
             const catConfig = CATEGORIES[u.category] || CATEGORIES.rv;
+            const idMeta = getPartnerPortalIdFieldMeta(u.category);
+            const usageMeta = getPartnerPortalUsageFieldMeta(u.category);
             const nowIso = new Date().toISOString();
             const unitYear = u.year ? String(u.year).trim() : '';
             const unitMake = (u.make || '').trim() || (u.category === 'container' ? 'Shipping Container' : 'Unspecified Make');
             const unitModel = (u.model || '').trim() || (u.category === 'container' ? 'Container' : 'Unit');
-            const cleanVin = (u.vinOrSerial || '').trim().toUpperCase() || (u.category === 'container' ? 'N/A' : 'VIN-PENDING');
+            const cleanVin = (u.vinOrSerial || '').trim().toUpperCase() || (u.category === 'container' ? 'N/A' : idMeta.defaultPending);
+            const cleanMileageOrHours = usageMeta.show ? (Number(u.mileageOrHours) || 0) : 0;
             const initialMsgText = [
               `Submitted via ${portalTitle} by ${activePartner.organizationName} (${activePartner.contactName}).`,
               u.askingPrice ? `Asking / Reserve: $${Number(u.askingPrice).toLocaleString()}.` : '',
@@ -7779,8 +7830,8 @@
                 model: unitModel,
                 trimOrFloorplan: (u.trimOrFloorplan || '').trim(),
                 vinOrSerial: cleanVin,
-                mileageOrHours: Number(u.mileageOrHours) || 0,
-                isHours: !!catConfig.usesHours,
+                mileageOrHours: cleanMileageOrHours,
+                isHours: Boolean(usageMeta.isHours),
                 specs: {
                   lengthFeet: Number(u.lengthFeet) || undefined,
                   slidesCount: u.slidesCount !== '' ? Number(u.slidesCount) : undefined,
@@ -7827,7 +7878,7 @@
             await onSubmitInquiry(newInq);
             submittedSummaryRows.push({
               label: `Unit #${idx + 1} [Ref #${refId}]`,
-              value: `${[unitYear, unitMake, unitModel, u.trimOrFloorplan].filter(Boolean).join(' ')} • VIN: ${cleanVin}${u.askingPrice ? ` • Asking/Floor: $${Number(u.askingPrice).toLocaleString()}` : ''} • Photos: ${(u.photos || []).length}`
+              value: `${[unitYear, unitMake, unitModel, u.trimOrFloorplan].filter(Boolean).join(' ')}${u.category !== 'container' ? ` • ${idMeta.label}: ${cleanVin}` : ''}${usageMeta.show && cleanMileageOrHours > 0 ? ` • ${usageMeta.isHours ? 'Hours' : 'Mileage'}: ${cleanMileageOrHours.toLocaleString()}` : ''}${u.askingPrice ? ` • Asking/Floor: $${Number(u.askingPrice).toLocaleString()}` : ''} • Photos: ${(u.photos || []).length}`
             });
           }
 
@@ -8518,11 +8569,15 @@
                                     </div>
                                     <div className="text-[11px] text-neutral-400">
                                       {CATEGORIES[item.unit?.category]?.label || 'Unit'}
-                                      {item.unit?.mileageOrHours > 0 ? ` • ${item.unit.mileageOrHours.toLocaleString()} ${item.unit.isHours ? 'hrs' : 'mi'}` : ''}
+                                      {getPartnerPortalUsageFieldMeta(item.unit?.category).show && item.unit?.mileageOrHours > 0
+                                        ? ` • ${item.unit.mileageOrHours.toLocaleString()} ${getPartnerPortalUsageFieldMeta(item.unit?.category).unitSuffix}`
+                                        : ''}
                                     </div>
-                                    <div className="text-[10px] text-neutral-500 font-mono">
-                                      VIN: {item.unit?.vinOrSerial || 'Pending'}
-                                    </div>
+                                    {item.unit?.category !== 'container' && (
+                                      <div className="text-[10px] text-neutral-500 font-mono">
+                                        {getPartnerPortalIdFieldMeta(item.unit?.category).label}: {item.unit?.vinOrSerial || 'Pending'}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               </td>
@@ -8605,6 +8660,8 @@
                 {batchUnits.map((u, idx) => {
                   const catConfig = CATEGORIES[u.category] || CATEGORIES.rv;
                   const storeLocations = getLocationsForCategory(u.category);
+                  const idMeta = getPartnerPortalIdFieldMeta(u.category);
+                  const usageMeta = getPartnerPortalUsageFieldMeta(u.category);
 
                   return (
                     <div
@@ -8647,7 +8704,15 @@
                           <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">Category</label>
                           <select
                             value={u.category}
-                            onChange={(e) => updateBatchUnit(u.tempId, { category: e.target.value, subcategory: '' })}
+                            onChange={(e) => {
+                              const nextCat = e.target.value;
+                              const nextUsage = getPartnerPortalUsageFieldMeta(nextCat);
+                              updateBatchUnit(u.tempId, {
+                                category: nextCat,
+                                subcategory: '',
+                                ...(nextUsage.show ? {} : { mileageOrHours: '' })
+                              });
+                            }}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
                           >
                             {Object.entries(CATEGORIES).map(([k, v]) => (
@@ -8690,14 +8755,14 @@
                         </div>
                       </div>
 
-                      {/* Row 2: VIN/Serial & Mileage/Hours (Not needed for Containers) */}
+                      {/* Row 2: VIN Number / Serial Number & Mileage / Hours (Not needed for Containers) */}
                       {u.category !== 'container' && (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
-                          <div className="sm:col-span-2">
+                          <div className={usageMeta.show ? 'sm:col-span-2' : 'sm:col-span-3'}>
                             <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1 flex items-center justify-between">
-                              <span>VIN / Serial Number</span>
+                              <span>{idMeta.label}</span>
                               {u.scanningVin && (
-                                <span className="text-emerald-400 text-[10px] font-normal">Scanning photo for VIN...</span>
+                                <span className="text-emerald-400 text-[10px] font-normal">{idMeta.scanningText}</span>
                               )}
                               {!u.scanningVin && u.vinScanSource === 'ocr' && u.vinOrSerial && (
                                 <span className="text-emerald-400 text-[10px] font-semibold">✓ Auto-detected from photo (editable)</span>
@@ -8707,23 +8772,25 @@
                               type="text"
                               value={u.vinOrSerial}
                               onChange={(e) => updateBatchUnit(u.tempId, { vinOrSerial: e.target.value.toUpperCase(), vinScanSource: 'manual' })}
-                              placeholder="Enter 17-digit VIN or Serial (or upload VIN photo below)"
+                              placeholder={idMeta.placeholder}
                               className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white font-mono"
                             />
                           </div>
 
-                          <div>
-                            <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">
-                              {catConfig.usesHours ? 'Engine / Machine Hours' : 'Mileage (if applicable)'}
-                            </label>
-                            <input
-                              type="number"
-                              value={u.mileageOrHours}
-                              onChange={(e) => updateBatchUnit(u.tempId, { mileageOrHours: e.target.value })}
-                              placeholder=""
-                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
-                            />
-                          </div>
+                          {usageMeta.show && (
+                            <div>
+                              <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">
+                                {usageMeta.label}
+                              </label>
+                              <input
+                                type="number"
+                                value={u.mileageOrHours}
+                                onChange={(e) => updateBatchUnit(u.tempId, { mileageOrHours: e.target.value })}
+                                placeholder=""
+                                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -8797,9 +8864,11 @@
                             <div className="text-xs font-bold text-neutral-200">
                               Photos & Walkaround Videos ({(u.photos || []).length} uploaded — Optional)
                             </div>
-                            <div className="text-[11px] text-neutral-400">
-                              Include a photo of the VIN tag to automatically scan & populate the 17-digit VIN.
-                            </div>
+                            {u.category !== 'container' && (
+                              <div className="text-[11px] text-neutral-400">
+                                {idMeta.photoHint}
+                              </div>
+                            )}
                           </div>
                           <label className="inline-flex items-center justify-center px-3.5 py-2 bg-neutral-850 hover:bg-neutral-800 border border-neutral-700 rounded-xl text-xs font-bold text-white cursor-pointer shrink-0">
                             <span>{u.uploadingPhotos ? 'Uploading...' : '📷 Choose Photos / Videos'}</span>
@@ -8823,7 +8892,7 @@
                                 <img src={p.thumbUrl || p.url} alt={p.label} className="w-full h-full object-cover" />
                                 {p.detectedVin && (
                                   <span className="absolute top-1 left-1 px-1 py-0.2 bg-emerald-600 text-[8px] font-bold text-white rounded">
-                                    VIN TAG
+                                    {idMeta.badgeText}
                                   </span>
                                 )}
                                 <button
@@ -9049,14 +9118,18 @@
                             <span className="text-neutral-500 text-[10px] block">Category</span>
                             <span className="text-neutral-200 font-semibold">{CATEGORIES[selectedUnit.unit?.category]?.label || 'Unit'}</span>
                           </div>
-                          <div>
-                            <span className="text-neutral-500 text-[10px] block">VIN / Serial</span>
-                            <span className="text-neutral-200 font-mono">{selectedUnit.unit?.vinOrSerial || 'Pending'}</span>
-                          </div>
-                          <div>
-                            <span className="text-neutral-500 text-[10px] block">{selectedUnit.unit?.isHours ? 'Hours' : 'Mileage'}</span>
-                            <span className="text-neutral-200 font-semibold">{selectedUnit.unit?.mileageOrHours ? selectedUnit.unit.mileageOrHours.toLocaleString() : 'Not listed'}</span>
-                          </div>
+                          {selectedUnit.unit?.category !== 'container' && (
+                            <div>
+                              <span className="text-neutral-500 text-[10px] block">{getPartnerPortalIdFieldMeta(selectedUnit.unit?.category).label}</span>
+                              <span className="text-neutral-200 font-mono">{selectedUnit.unit?.vinOrSerial || 'Pending'}</span>
+                            </div>
+                          )}
+                          {getPartnerPortalUsageFieldMeta(selectedUnit.unit?.category).show && (
+                            <div>
+                              <span className="text-neutral-500 text-[10px] block">{getPartnerPortalUsageFieldMeta(selectedUnit.unit?.category).label}</span>
+                              <span className="text-neutral-200 font-semibold">{selectedUnit.unit?.mileageOrHours ? selectedUnit.unit.mileageOrHours.toLocaleString() : 'Not listed'}</span>
+                            </div>
+                          )}
                           <div>
                             <span className="text-neutral-500 text-[10px] block">Title / Paperwork</span>
                             <span className="text-neutral-200">{selectedUnit.financials?.titleStatus || 'Standard'}</span>
@@ -9088,14 +9161,18 @@
                             <label className="text-[10px] text-neutral-400 block mb-0.5">Model</label>
                             <input type="text" value={editUnitForm.model} onChange={e => setEditUnitForm({ ...editUnitForm, model: e.target.value })} className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-2.5 py-1.5 text-white" />
                           </div>
-                          <div>
-                            <label className="text-[10px] text-neutral-400 block mb-0.5">VIN / Serial</label>
-                            <input type="text" value={editUnitForm.vinOrSerial} onChange={e => setEditUnitForm({ ...editUnitForm, vinOrSerial: e.target.value.toUpperCase() })} className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-2.5 py-1.5 text-white font-mono" />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-neutral-400 block mb-0.5">Mileage / Hours</label>
-                            <input type="number" value={editUnitForm.mileageOrHours} onChange={e => setEditUnitForm({ ...editUnitForm, mileageOrHours: e.target.value })} className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-2.5 py-1.5 text-white" />
-                          </div>
+                          {selectedUnit.unit?.category !== 'container' && (
+                            <div>
+                              <label className="text-[10px] text-neutral-400 block mb-0.5">{getPartnerPortalIdFieldMeta(selectedUnit.unit?.category).label}</label>
+                              <input type="text" value={editUnitForm.vinOrSerial} onChange={e => setEditUnitForm({ ...editUnitForm, vinOrSerial: e.target.value.toUpperCase() })} className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-2.5 py-1.5 text-white font-mono" />
+                            </div>
+                          )}
+                          {getPartnerPortalUsageFieldMeta(selectedUnit.unit?.category).show && (
+                            <div>
+                              <label className="text-[10px] text-neutral-400 block mb-0.5">{getPartnerPortalUsageFieldMeta(selectedUnit.unit?.category).label}</label>
+                              <input type="number" value={editUnitForm.mileageOrHours} onChange={e => setEditUnitForm({ ...editUnitForm, mileageOrHours: e.target.value })} className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-2.5 py-1.5 text-white" />
+                            </div>
+                          )}
                           <div>
                             <label className="text-[10px] text-neutral-400 block mb-0.5">Title / Paperwork</label>
                             <input type="text" value={editUnitForm.titleStatus} onChange={e => setEditUnitForm({ ...editUnitForm, titleStatus: e.target.value })} className="w-full bg-neutral-900 border border-neutral-750 rounded-lg px-2.5 py-1.5 text-white" />
