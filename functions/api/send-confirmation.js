@@ -647,7 +647,7 @@ export async function onRequestPost({ request, env }) {
                   <td style="vertical-align: top; padding-bottom: 16px;">
                     <div style="font-size: 14px; font-weight: 700; color: #111827;">Written Offer</div>
                     <div style="font-size: 13px; color: #4b5563; line-height: 1.5; margin-top: 2px;">
-                      We will reach out to you by text, call, or email with a competitive offer to purchase your unit or take it on trade.
+                      We will reach out to you by text or call with a subject-to-inspection offer to purchase your unit or take it on trade.
                     </div>
                   </td>
                 </tr>
@@ -660,7 +660,7 @@ export async function onRequestPost({ request, env }) {
                   <td style="vertical-align: top;">
                     <div style="font-size: 14px; font-weight: 700; color: #111827;">Title, Payoff & Hassle-Free Transfer</div>
                     <div style="font-size: 13px; color: #4b5563; line-height: 1.5; margin-top: 2px;">
-                      We manage loan payoffs, title paperwork, and pickup or drop-off logistics.
+                      When applicable, we manage loan payoffs, title paperwork, and pickup or drop-off logistics.
                     </div>
                   </td>
                 </tr>
@@ -718,8 +718,8 @@ ${customerVisibleVin ? `- VIN / Serial Number: ${customerVisibleVin}\n` : ''}${u
 ${salesperson !== 'Direct Appraisal Request' ? `- ${salespersonLabel}: ${salesperson}\n` : ''}
 WHAT TO EXPECT NEXT:
 1. Market Appraisal: Our appraisal team evaluates current book value, internal sales comps, auction comps, dealer network values, and your units condition details.
-2. Written Offer: We will reach out to you by text, call, or email with a competitive offer to purchase your unit or take it on trade.
-3. Easy Settlement: We coordinate paperwork, title, loan payoffs, and unit transfer.
+2. Written Offer: We will reach out to you by text or call with a subject-to-inspection offer to purchase your unit or take it on trade.
+3. Title, Payoff & Hassle-Free Transfer: When applicable, we manage loan payoffs, title paperwork, and pickup or drop-off logistics.
 
 Questions? Simply reply directly to this email or contact us at ${fromAddress}.
 
