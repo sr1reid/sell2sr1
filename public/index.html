@@ -12433,42 +12433,35 @@
                       ) : null}
                     </div>
 
-                    {/* Action Row: Appraise + Archive/Restore */}
-                    <div className="flex items-center gap-2 pt-1" onClick={e => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenInquiry(item)}
-                        className="flex-1 min-w-0 py-2 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-xl text-xs text-center shadow-sm transition-all truncate"
-                      >
-                        {item.submissionSource === 'dealer' || item.submissionSource === 'bank' ? 'Appraise & Unit Chat →' : 'Appraise →'}
-                      </button>
+                    {/* Action Row: Archive/Restore + Delete */}
+                    <div className="flex items-center justify-end gap-1.5 pt-1" onClick={e => e.stopPropagation()}>
                       {item.isArchived || item.stage === 'archived' ? (
                         <button
                           type="button"
                           onClick={() => handleUnarchiveInquiry(item)}
-                          className="px-3 py-2 bg-neutral-950 hover:bg-neutral-800 text-amber-400 hover:text-amber-300 border border-neutral-800 hover:border-amber-700/60 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0"
+                          className="px-2 py-1 bg-neutral-950 hover:bg-neutral-800 text-amber-400 hover:text-amber-300 border border-neutral-800 hover:border-amber-700/60 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap shrink-0"
                           title="Restore to active pipeline"
                         >
-                          ↩️ Restore
+                          Restore
                         </button>
                       ) : (
                         <button
                           type="button"
                           onClick={() => handleArchiveInquiry(item)}
-                          className="px-3 py-2 bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0"
+                          className="px-2 py-1 bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap shrink-0"
                           title="Archive inquiry"
                         >
-                          📦 Archive
+                          Archive
                         </button>
                       )}
                       {canDeleteInquiries && (
                         <button
                           type="button"
                           onClick={() => handleConfirmDeleteInquiry(item)}
-                          className="px-3 py-2 bg-red-950/60 hover:bg-red-900/80 text-red-300 hover:text-white border border-red-800/70 hover:border-red-600 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0"
+                          className="px-2 py-1 bg-red-950/60 hover:bg-red-900/80 text-red-300 hover:text-white border border-red-800/70 hover:border-red-600 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap shrink-0"
                           title="Permanently delete inquiry (Admin: reid@sr1companies.com)"
                         >
-                          🗑️ Delete
+                          Delete
                         </button>
                       )}
                     </div>
@@ -12521,7 +12514,7 @@
                         {sortField === 'offer' && <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>}
                       </div>
                     </th>
-                    <th className="p-3.5 text-right w-[165px]">Action</th>
+                    <th className="p-3.5 text-right w-[110px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800 text-xs">
@@ -12771,40 +12764,34 @@
 
                           {/* Action */}
                           <td className="p-3.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => handleOpenInquiry(item)}
-                                className="px-3.5 py-1.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-lg text-xs shadow-sm transition-all"
-                              >
-                                {item.submissionSource === 'dealer' || item.submissionSource === 'bank' ? 'Appraise / Chat →' : 'Appraise →'}
-                              </button>
+                            <div className="flex items-center justify-end gap-1">
                               {item.isArchived || item.stage === 'archived' ? (
                                 <button
                                   type="button"
                                   onClick={() => handleUnarchiveInquiry(item)}
-                                  className="px-2.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-amber-400 hover:text-amber-300 border border-neutral-800 hover:border-amber-700/60 font-semibold rounded-lg text-xs transition-all"
+                                  className="px-2 py-1 bg-neutral-900 hover:bg-neutral-800 text-amber-400 hover:text-amber-300 border border-neutral-800 hover:border-amber-700/60 font-semibold rounded-md text-[11px] transition-all cursor-pointer"
                                   title="Restore to active pipeline"
                                 >
-                                  ↩️ Restore
+                                  Restore
                                 </button>
                               ) : (
                                 <button
                                   type="button"
                                   onClick={() => handleArchiveInquiry(item)}
-                                  className="px-2.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700 font-semibold rounded-lg text-xs transition-all"
+                                  className="px-2 py-1 bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700 font-semibold rounded-md text-[11px] transition-all cursor-pointer"
                                   title="Archive inquiry"
                                 >
-                                  📦 Archive
+                                  Archive
                                 </button>
                               )}
                               {canDeleteInquiries && (
                                 <button
                                   type="button"
                                   onClick={() => handleConfirmDeleteInquiry(item)}
-                                  className="px-2.5 py-1.5 bg-red-950/60 hover:bg-red-900/80 text-red-300 hover:text-white border border-red-800/70 hover:border-red-600 font-semibold rounded-lg text-xs transition-all"
+                                  className="px-2 py-1 bg-red-950/60 hover:bg-red-900/80 text-red-300 hover:text-white border border-red-800/70 hover:border-red-600 font-semibold rounded-md text-[11px] transition-all cursor-pointer"
                                   title="Permanently delete inquiry (Admin: reid@sr1companies.com)"
                                 >
-                                  🗑️ Delete
+                                  Delete
                                 </button>
                               )}
                             </div>
@@ -13384,15 +13371,15 @@
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1.5">
                 {canDeleteInquiries && (
                   <button
                     type="button"
                     onClick={() => onDeleteInquiry(inquiry)}
-                    className="px-2.5 py-1.5 bg-red-950/70 hover:bg-red-900 border border-red-800 text-red-300 hover:text-white font-semibold rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                    className="px-2 py-1 bg-red-950/70 hover:bg-red-900 border border-red-800 text-red-300 hover:text-white font-semibold rounded-md text-[11px] transition-colors cursor-pointer"
                     title="Permanently delete inquiry (Admin: reid@sr1companies.com)"
                   >
-                    <span>🗑️</span> Delete
+                    Delete
                   </button>
                 )}
 
@@ -13400,19 +13387,19 @@
                   <button
                     type="button"
                     onClick={handleUnarchiveInModal}
-                    className="px-2.5 py-1.5 bg-amber-950/70 hover:bg-amber-900 border border-amber-800 text-amber-300 font-semibold rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                    className="px-2 py-1 bg-amber-950/70 hover:bg-amber-900 border border-amber-800 text-amber-300 font-semibold rounded-md text-[11px] transition-colors cursor-pointer"
                     title="Restore to active pipeline"
                   >
-                    <span>↩️</span> Restore
+                    Restore
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={handleArchiveInModal}
-                    className="px-2.5 py-1.5 bg-neutral-850 hover:bg-neutral-800 border border-neutral-750 text-neutral-300 hover:text-white font-semibold rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                    className="px-2 py-1 bg-neutral-850 hover:bg-neutral-800 border border-neutral-750 text-neutral-300 hover:text-white font-semibold rounded-md text-[11px] transition-colors cursor-pointer"
                     title="Archive inquiry"
                   >
-                    <span>📦</span> Archive
+                    Archive
                   </button>
                 )}
 
