@@ -3870,6 +3870,58 @@
       );
     }
 
+    function CopyPhoneButton({ phone, className = '' }) {
+      const [copied, setCopied] = useState(false);
+      if (!phone) return null;
+
+      const handleCopy = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof window !== 'undefined') {
+          window.__sr1SuppressRowOpenUntil = Date.now() + 650;
+        }
+        const raw = String(phone).trim();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(raw).catch(() => {});
+        } else {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = raw;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          } catch (err) {}
+        }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      };
+
+      const stopBubble = (e) => {
+        e.stopPropagation();
+        if (typeof window !== 'undefined') {
+          window.__sr1SuppressRowOpenUntil = Date.now() + 650;
+        }
+      };
+
+      return (
+        <button
+          type="button"
+          onClick={handleCopy}
+          onMouseDown={stopBubble}
+          onTouchStart={stopBubble}
+          title="Click to copy phone number"
+          className={`inline-flex items-center gap-1 font-mono transition-colors cursor-pointer select-none focus:outline-none ${
+            copied ? 'text-emerald-400 font-bold' : className || 'text-neutral-300 hover:text-white'
+          }`}
+        >
+          <span>{copied ? '✓ Copied!' : phone}</span>
+        </button>
+      );
+    }
+
     function formatInquiryDate(dateStr) {
       if (!dateStr) return { date: 'Recently', time: '' };
       try {
@@ -12827,25 +12879,14 @@
                         </div>
                       </div>
 
-                      {/* 1-Tap Call and Text */}
-                      <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
-                        {item.customer.phone && (
-                          <>
-                            <a
-                              href={`tel:${item.customer.phone}`}
-                              className="px-2.5 py-1 bg-neutral-850 hover:bg-neutral-800 text-neutral-200 rounded-lg text-[11px] font-bold border border-neutral-750 flex items-center gap-1 shadow-sm"
-                            >
-                              📞 Call
-                            </a>
-                            <a
-                              href={`sms:${item.customer.phone}`}
-                              className="px-2.5 py-1 bg-neutral-850 hover:bg-neutral-800 text-neutral-200 rounded-lg text-[11px] font-bold border border-neutral-750 flex items-center gap-1 shadow-sm"
-                            >
-                              💬 Text
-                            </a>
-                          </>
-                        )}
-                      </div>
+                      {item.customer.phone && (
+                        <div className="shrink-0" onClick={e => e.stopPropagation()}>
+                          <CopyPhoneButton
+                            phone={item.customer.phone}
+                            className="px-2.5 py-1 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 hover:text-white rounded-lg text-[11px] font-bold border border-neutral-800 shadow-sm"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* Bottom Row: Outreach, Seen By & Offer Info */}
@@ -13100,29 +13141,18 @@
                                 {item.customer?.firstName} {item.customer?.lastName}
                               </div>
                             )}
-                            <div className="text-[11px] text-neutral-400 font-mono mt-0.5">
-                              {item.customer?.phone || item.customer?.email || 'No contact'}
-                            </div>
-                            <div className="flex items-center gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
-                              {item.customer?.phone && (
-                                <>
-                                  <a
-                                    href={`tel:${item.customer.phone}`}
-                                    className="px-2 py-0.5 bg-neutral-950 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded text-[10px] border border-neutral-800 font-semibold transition-colors"
-                                    title="Call client"
-                                  >
-                                    📞 Call
-                                  </a>
-                                  <a
-                                    href={`sms:${item.customer.phone}`}
-                                    className="px-2 py-0.5 bg-neutral-950 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded text-[10px] border border-neutral-800 font-semibold transition-colors"
-                                    title="Text client"
-                                  >
-                                    💬 Text
-                                  </a>
-                                </>
+                            <div className="text-[11px] text-neutral-400 font-mono mt-0.5" onClick={e => e.stopPropagation()}>
+                              {item.customer?.phone ? (
+                                <CopyPhoneButton
+                                  phone={item.customer.phone}
+                                  className="text-neutral-300 hover:text-white underline decoration-neutral-700 hover:decoration-neutral-400 underline-offset-2"
+                                />
+                              ) : (
+                                item.customer?.email || 'No contact'
                               )}
-                              {item.partnerId && (
+                            </div>
+                            {item.partnerId && (
+                              <div className="flex items-center gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -13134,8 +13164,8 @@
                                 >
                                   💬 Org Chat
                                 </button>
-                              )}
-                            </div>
+                              </div>
+                            )}
                           </td>
 
                           {/* Store Location */}
@@ -13783,20 +13813,10 @@
                     className="inline-flex items-center gap-1 px-2 py-0.5 bg-neutral-850 border border-neutral-750 text-neutral-200 font-semibold rounded-md text-[11px]"
                   />
                   {inquiry.customer.phone && (
-                    <>
-                      <a
-                        href={`tel:${inquiry.customer.phone}`}
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-950/70 border border-emerald-800 hover:bg-emerald-900 text-emerald-300 font-semibold rounded-md text-[11px] transition-colors"
-                      >
-                        <span>📞</span> {inquiry.customer.phone}
-                      </a>
-                      <a
-                        href={`sms:${inquiry.customer.phone}`}
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-950/70 border border-blue-800 hover:bg-blue-900 text-blue-300 font-semibold rounded-md text-[11px] transition-colors"
-                      >
-                        <span>💬</span> Text
-                      </a>
-                    </>
+                    <CopyPhoneButton
+                      phone={inquiry.customer.phone}
+                      className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-neutral-850 border border-neutral-750 hover:bg-neutral-800 text-neutral-200 hover:text-white font-semibold rounded-md text-[11px]"
+                    />
                   )}
                   {inquiry.customer.email && (
                     <a
