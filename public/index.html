@@ -12418,11 +12418,11 @@
                         <span className="text-neutral-600">•</span>
 
                         {lastOffer && typeof lastOffer.amount === 'number' ? (
-                          <span className="text-xs font-bold text-white font-mono">
-                            ${lastOffer.amount.toLocaleString()}
+                          <span className="text-[10px] text-neutral-300 font-medium">
+                            Initial Offer: <strong className="text-xs font-bold text-white font-mono">${lastOffer.amount.toLocaleString()}</strong>
                           </span>
                         ) : (
-                          <span className="text-[10px] text-neutral-500">No Offer</span>
+                          <span className="text-[10px] text-neutral-500">No Initial Offer</span>
                         )}
                       </div>
 
