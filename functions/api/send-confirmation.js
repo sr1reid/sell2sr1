@@ -423,6 +423,7 @@ export async function onRequestPost({ request, env }) {
     const customerVisibleVin = (unit?.vinOrSerial && unit.vinOrSerial !== 'VIN-PENDING') ? String(unit.vinOrSerial).trim() : '';
     const mileageHoursLabel = unit?.isHours ? 'Hours' : 'Mileage';
     const mileageHoursValue = unit?.mileageOrHours ? `${unit.mileageOrHours} ${unit.isHours ? 'hrs' : 'mi'}` : 'Not Specified';
+    const customerTransmission = unit?.transmissionType ? String(unit.transmissionType).trim() : '';
     const customerExtras = unit?.extrasOrUpgrades ? String(unit.extrasOrUpgrades).trim() : '';
     const customerExtrasHtml = customerExtras
       .replace(/&/g, '&amp;')
@@ -602,6 +603,15 @@ export async function onRequestPost({ request, env }) {
                           </div>
                         </td>
                       </tr>` : ''}
+                      ${customerTransmission ? `
+                      <tr>
+                        <td colspan="2" class="stat-tile-wrap" style="vertical-align: top; padding: 0 0 12px 0;">
+                          <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">Transmission Type</div>
+                            <div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px;">${customerTransmission}</div>
+                          </div>
+                        </td>
+                      </tr>` : ''}
                       ${customerExtrasHtml ? `
                       <tr>
                         <td colspan="2" class="stat-tile-wrap" style="vertical-align: top; padding: 0 0 12px 0;">
@@ -729,7 +739,7 @@ Hi ${firstName},
 Thank you for giving SR1 the opportunity to make you an offer on your item. We have received your valuation request for:
 ${unitTitle}
 - Category: ${unit?.category || 'Item'}
-${customerVisibleVin ? `- VIN / Serial Number: ${customerVisibleVin}\n` : ''}${unit?.mileageOrHours ? `- ${mileageHoursLabel}: ${mileageHoursValue}\n` : ''}${customerExtras ? `- Extras / Upgrades / Details: ${customerExtras}\n` : ''}- Transaction: ${transactionType}
+${customerVisibleVin ? `- VIN / Serial Number: ${customerVisibleVin}\n` : ''}${unit?.mileageOrHours ? `- ${mileageHoursLabel}: ${mileageHoursValue}\n` : ''}${customerTransmission ? `- Transmission Type: ${customerTransmission}\n` : ''}${customerExtras ? `- Extras / Upgrades / Details: ${customerExtras}\n` : ''}- Transaction: ${transactionType}
 - Preferred Dealership: ${location}
 ${salesperson !== 'Direct Appraisal Request' ? `- ${salespersonLabel}: ${salesperson}\n` : ''}
 WHAT TO EXPECT NEXT:

@@ -4270,6 +4270,7 @@
           vinOrSerial: unit.vinOrSerial || 'VIN-PENDING',
           mileageOrHours: Number(unit.mileageOrHours) || 0,
           isHours: !!unit.isHours,
+          transmissionType: unit.transmissionType || (unit.specs && unit.specs.transmissionType) || '',
           specs: unit.specs && typeof unit.specs === 'object' ? unit.specs : {},
           extrasOrUpgrades: unit.extrasOrUpgrades || '',
           condition: unit.condition || 'Good',
@@ -6143,6 +6144,7 @@
         trimOrFloorplan: '',
         vinOrSerial: '',
         mileageOrHours: '',
+        transmissionType: '',
         extrasOrUpgrades: '',
         condition: 'good',
         conditionNotes: '',
@@ -6267,6 +6269,7 @@
             model: category === 'container' ? 'Container' : (formData.model || ''),
             mileageOrHours: formData.mileageOrHours || '',
             isHours: !!activeCatConfig.isHours,
+            transmissionType: category === 'tractor' ? (formData.transmissionType || '') : '',
             extrasOrUpgrades: (formData.extrasOrUpgrades || '').trim(),
             vinOrSerial: resolvedVin,
             conditionNotes: (formData.conditionNotes || '').trim()
@@ -7023,6 +7026,11 @@
 
       const handleSubmit = async (e) => {
         e.preventDefault();
+        if (category === 'tractor' && !formData.transmissionType) {
+          alert('Please select the Transmission Type for your tractor.');
+          setStep(2);
+          return;
+        }
         if (photos.length < 3) {
           alert('Please upload at least 3 photos of your unit before submitting.');
           setStep(3);
@@ -7136,11 +7144,13 @@
             vinOrSerial: resolvedVinOrSerial || (category === 'container' ? 'N/A' : idMeta.defaultPending),
             mileageOrHours: Number(formData.mileageOrHours) || 0,
             isHours: activeCatConfig.isHours,
+            transmissionType: category === 'tractor' ? (formData.transmissionType || '') : '',
             specs: {
               lengthFeet: Number(formData.lengthFeet) || 0,
               slidesCount: Number(formData.slidesCount) || 0,
               horsepower: Number(formData.horsepower) || 0,
-              cabType: formData.cabType || 'standard'
+              cabType: formData.cabType || 'standard',
+              transmissionType: category === 'tractor' ? (formData.transmissionType || '') : ''
             },
             extrasOrUpgrades: (formData.extrasOrUpgrades || '').trim(),
             condition: formData.condition === 'excellent' ? 'Excellent' : formData.condition === 'very_good' ? 'Very Good' : formData.condition === 'good' ? 'Good' : 'Fair',
@@ -7222,6 +7232,7 @@
             Trim_or_Floorplan: formData.trimOrFloorplan || 'N/A',
             VIN_or_Serial_or_Box_ID: resolvedVinOrSerial || (vinPhotoConfirmed ? 'Included in Photos' : 'N/A'),
             Mileage_or_Hours: category === 'container' ? 'N/A' : `${formData.mileageOrHours || 0} ${activeCatConfig.isHours ? 'Hours' : 'Miles'}`,
+            Transmission_Type: category === 'tractor' ? (formData.transmissionType || 'Not specified') : 'N/A',
             Extras_or_Upgrades: (formData.extrasOrUpgrades || '').trim() || 'None listed',
             Overall_Condition: formData.condition,
             Condition_Notes: formData.conditionNotes || 'None',
@@ -7241,6 +7252,7 @@
             Estimated_Loan_Payoff: (formData.titleStatus === 'financed_money_owed' && formData.estimatedPayoff) ? `$${Number(formData.estimatedPayoff).toLocaleString()}` : 'N/A',
             Asking_Price: formData.askingPrice ? `$${formData.askingPrice}` : 'Open to best offer',
             Unit_Specifications: [
+              category === 'tractor' && formData.transmissionType ? `Transmission: ${formData.transmissionType}` : '',
               formData.lengthFeet ? `Length: ${formData.lengthFeet}ft` : '',
               formData.slidesCount ? `Slides: ${formData.slidesCount}` : '',
               formData.horsepower ? `HP: ${formData.horsepower}` : '',
@@ -7292,6 +7304,7 @@
               category: activeCatConfig.label,
               mileageOrHours: formData.mileageOrHours,
               isHours: activeCatConfig.isHours,
+              transmissionType: category === 'tractor' ? (formData.transmissionType || '') : '',
               extrasOrUpgrades: (formData.extrasOrUpgrades || '').trim()
             },
             intent: formData.intent,
@@ -7382,6 +7395,7 @@
                       trimOrFloorplan: '',
                       vinOrSerial: '',
                       mileageOrHours: '',
+                      transmissionType: '',
                       extrasOrUpgrades: '',
                       condition: 'very_good',
                       conditionNotes: '',
@@ -7772,6 +7786,28 @@
                             />
                           </div>
                         )}
+
+                        {/* Transmission Type: Required strictly for tractors */}
+                        {category === 'tractor' && (
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                              Transmission Type *
+                            </label>
+                            <select
+                              required
+                              value={formData.transmissionType}
+                              onChange={(e) => handleInputChange('transmissionType', e.target.value)}
+                              className={`w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none ${
+                                !formData.transmissionType ? 'text-neutral-500' : 'text-white'
+                              }`}
+                            >
+                              <option value="" disabled>Select transmission type...</option>
+                              <option value="Hydrostatic" className="text-white">Hydrostatic</option>
+                              <option value="Shuttle Shift" className="text-white">Shuttle Shift</option>
+                              <option value="Power Shuttle" className="text-white">Power Shuttle</option>
+                            </select>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -7830,6 +7866,10 @@
                           }
                           if (requiresMiles && !formData.mileageOrHours) {
                             alert('Please enter the Miles');
+                            return;
+                          }
+                          if (category === 'tractor' && !formData.transmissionType) {
+                            alert('Please select the Transmission Type');
                             return;
                           }
                           setStep(3);
@@ -8472,6 +8512,9 @@
                       <p>• {idMeta.label}: <span className="font-mono text-neutral-200">{formData.vinOrSerial}</span></p>
                     )}
                     <p>• Category: {activeCatConfig.label}</p>
+                    {category === 'tractor' && formData.transmissionType && (
+                      <p>• Transmission Type: <span className="text-neutral-200">{formData.transmissionType}</span></p>
+                    )}
                     {formData.extrasOrUpgrades && formData.extrasOrUpgrades.trim() && (
                       <p>• Extras / Upgrades: <span className="text-neutral-200">{formData.extrasOrUpgrades.trim()}</span></p>
                     )}
@@ -11632,7 +11675,10 @@
             vinOrSerial: pf.unit?.vinOrSerial || (pf.category === 'container' ? 'N/A' : 'VIN-PENDING'),
             mileageOrHours: Number(pf.unit?.mileageOrHours) || 0,
             isHours: !!pf.unit?.isHours,
-            specs: {},
+            transmissionType: pf.unit?.transmissionType || '',
+            specs: {
+              ...(pf.unit?.transmissionType ? { transmissionType: pf.unit.transmissionType } : {})
+            },
             extrasOrUpgrades: pf.unit?.extrasOrUpgrades || '',
             condition: 'Good',
             conditionNotes: pf.unit?.conditionNotes || `Converted from incomplete form (visitor stopped at ${STEP_NAME_MAP[pf.maxStepReached] || `Step ${pf.maxStepReached}`}).`,
@@ -14975,6 +15021,12 @@
                       <span className="text-neutral-500 block text-[10px]">{inquiry.unit.isHours ? 'Hours' : 'Mileage'}</span>
                       <span className="font-semibold text-neutral-200">{inquiry.unit.mileageOrHours.toLocaleString()}</span>
                     </div>
+                    {inquiry.unit.transmissionType && (
+                      <div>
+                        <span className="text-neutral-500 block text-[10px]">Transmission</span>
+                        <span className="font-semibold text-neutral-200">{inquiry.unit.transmissionType}</span>
+                      </div>
+                    )}
                     <div>
                       <span className="text-neutral-500 block text-[10px]">Condition</span>
                       <span className="font-semibold text-neutral-200">{inquiry.unit.condition}</span>
