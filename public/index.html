@@ -1451,6 +1451,59 @@
       };
     };
 
+    const resolveSr1RepFromFirstAndInitial = (firstNameInput, lastInitialInput) => {
+      const f = (firstNameInput || '').trim();
+      const l = (lastInitialInput || '').replace(/[^a-zA-Z]/g, '').slice(0, 1).toUpperCase();
+      if (!f) return l;
+      if (!l) return f;
+      const match = matchSalespersonDirectory(f, l);
+      if (match.matchedEntries.length === 1) {
+        return `${match.matchedEntries[0].first} ${match.matchedEntries[0].last}`;
+      }
+      return `${f} ${l}.`;
+    };
+
+    const resolveSr1RepFromRawName = (rawName) => {
+      const clean = String(rawName || '').trim();
+      if (!clean || ['none', 'n/a', 'unassigned', 'none listed'].includes(clean.toLowerCase())) {
+        return { displayName: '', matchedNames: [] };
+      }
+      const exactFull = SR1_SALESPERSON_DIRECTORY.find(
+        emp => `${emp.first} ${emp.last}`.toLowerCase() === clean.toLowerCase()
+      );
+      if (exactFull) {
+        const full = `${exactFull.first} ${exactFull.last}`;
+        return { displayName: full, matchedNames: [full] };
+      }
+      const parts = clean.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        const firstPart = parts[0].replace(/[^a-zA-Z]/g, '');
+        const lastPart = parts[parts.length - 1].replace(/[^a-zA-Z]/g, '');
+        if (firstPart && lastPart) {
+          if (lastPart.length > 1) {
+            const fullMatches = SR1_SALESPERSON_DIRECTORY.filter(
+              emp => emp.first.toLowerCase() === firstPart.toLowerCase() && emp.last.toLowerCase().startsWith(lastPart.toLowerCase())
+            );
+            if (fullMatches.length === 1) {
+              const full = `${fullMatches[0].first} ${fullMatches[0].last}`;
+              return { displayName: full, matchedNames: [full] };
+            }
+          }
+          const dirMatch = matchSalespersonDirectory(firstPart, lastPart.charAt(0));
+          if (dirMatch.matchedEntries.length === 1) {
+            const full = `${dirMatch.matchedEntries[0].first} ${dirMatch.matchedEntries[0].last}`;
+            return { displayName: full, matchedNames: [full] };
+          }
+          if (dirMatch.matchedEntries.length > 1) {
+            const names = dirMatch.matchedEntries.map(m => `${m.first} ${m.last}`);
+            const shortLabel = `${firstPart} ${lastPart.charAt(0).toUpperCase()}.`;
+            return { displayName: shortLabel, matchedNames: [...names, shortLabel] };
+          }
+        }
+      }
+      return { displayName: clean, matchedNames: [clean] };
+    };
+
     // --- AUTOMATIC VIN / SERIAL NUMBER BARCODE & OCR SCANNER ---
     const VIN_TRANSLITERATION_MAP = {
       A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7, H: 8,
@@ -4192,8 +4245,8 @@
         archivedBy: inq.archivedBy || null,
         previousStage: inq.previousStage || (stage !== 'archived' ? stage : 'new'),
         intent: inq.intent === 'trade' ? 'trade' : 'sell',
-        workingWithSalesperson: inq.workingWithSalesperson || 'no',
-        salespersonName: inq.salespersonName || '',
+        workingWithSalesperson: inq.workingWithSalesperson || (inq.salespersonName ? 'yes' : 'no'),
+        salespersonName: resolveSr1RepFromRawName(inq.salespersonName).displayName,
         assignedStaffName: inq.assignedStaffName || '',
         preferredLocation: inq.preferredLocation || inq.dealershipLocation || 'turner_me',
         customer: {
@@ -4308,6 +4361,12 @@
         ...found,
         staffName
       };
+    }
+
+    function getInquiryDealStatusId(item) {
+      const rawStatus = item?.outreach?.status || (item?.outreach?.reachedOut ? 'contacted' : null);
+      const found = STAFF_DEAL_STATUSES.find(s => s.id === rawStatus);
+      return found ? found.id : 'needs_outreach';
     }
 
     function InlineDealStatusSelect({ item, onChangeStatus }) {
@@ -7537,7 +7596,7 @@
                                   onChange={(e) => {
                                     const first = e.target.value;
                                     const lastInit = (formData.salespersonLastInitial || '').trim().charAt(0).toUpperCase();
-                                    const combined = first.trim() ? `${first.trim()}${lastInit ? ` ${lastInit}.` : ''}` : '';
+                                    const combined = resolveSr1RepFromFirstAndInitial(first, lastInit);
                                     setFormData(prev => ({
                                       ...prev,
                                       salespersonFirstName: first,
@@ -7559,7 +7618,7 @@
                                   onChange={(e) => {
                                     const raw = e.target.value.replace(/[^a-zA-Z]/g, '').slice(0, 1).toUpperCase();
                                     const first = (formData.salespersonFirstName || '').trim();
-                                    const combined = first ? `${first}${raw ? ` ${raw}.` : ''}` : raw;
+                                    const combined = resolveSr1RepFromFirstAndInitial(first, raw);
                                     setFormData(prev => ({
                                       ...prev,
                                       salespersonLastInitial: raw,
@@ -12573,6 +12632,8 @@
       const [filterCategory, setFilterCategory] = useState('all');
       const [filterLocation, setFilterLocation] = useState('all');
       const [filterIntent, setFilterIntent] = useState('all'); // 'all', 'trade', 'sell'
+      const [filterDealStatus, setFilterDealStatus] = useState('all'); // 'all', 'needs_outreach', 'contacted', 'deal_pending', 'deal_complete', 'deal_lost'
+      const [filterSr1Rep, setFilterSr1Rep] = useState('all'); // 'all', '__with_rep__', '__no_rep__', or SR1 Rep name
       const [searchTerm, setSearchTerm] = useState('');
       const [mobileLayout, setMobileLayout] = useState(() => {
         try {
@@ -12771,6 +12832,51 @@
         return counts;
       }, [sourceFilteredInquiries, activePartnerType, filterPartnerId]);
 
+      const sr1RepOptions = useMemo(() => {
+        const countsMap = new Map();
+        sourceFilteredInquiries.forEach(inq => {
+          if (!inq) return;
+          const isArch = inq.isArchived || inq.stage === 'archived';
+          if (filterStage === 'archived' ? !isArch : isArch) return;
+          const resolved = resolveSr1RepFromRawName(inq.salespersonName);
+          if (!resolved.displayName) return;
+          resolved.matchedNames.forEach(name => {
+            countsMap.set(name, (countsMap.get(name) || 0) + 1);
+          });
+        });
+        const activeInquiryReps = Array.from(countsMap.entries())
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        const activeNamesLower = new Set(activeInquiryReps.map(r => r.name.toLowerCase()));
+        const directoryReps = SR1_SALESPERSON_DIRECTORY
+          .map(emp => `${emp.first} ${emp.last}`)
+          .filter((name, idx, arr) => arr.indexOf(name) === idx && !activeNamesLower.has(name.toLowerCase()))
+          .sort((a, b) => a.localeCompare(b));
+        return { activeInquiryReps, directoryReps };
+      }, [sourceFilteredInquiries, filterStage]);
+
+      const hasActiveFilters = Boolean(
+        searchTerm ||
+        filterStage !== 'all' ||
+        filterPartnerId !== 'all' ||
+        filterCategory !== 'all' ||
+        filterLocation !== 'all' ||
+        filterIntent !== 'all' ||
+        filterDealStatus !== 'all' ||
+        filterSr1Rep !== 'all'
+      );
+
+      const handleResetAllFilters = () => {
+        setSearchTerm('');
+        setFilterStage('all');
+        setFilterPartnerId('all');
+        setFilterCategory('all');
+        setFilterLocation('all');
+        setFilterIntent('all');
+        setFilterDealStatus('all');
+        setFilterSr1Rep('all');
+      };
+
       const filtered = useMemo(() => {
         const list = sourceFilteredInquiries;
         return list.filter(inq => {
@@ -12793,6 +12899,23 @@
             const inqIntent = inq.intent || 'sell';
             if (inqIntent !== filterIntent) return false;
           }
+          if (filterDealStatus !== 'all') {
+            const statusId = getInquiryDealStatusId(inq);
+            if (statusId !== filterDealStatus) return false;
+          }
+          if (filterSr1Rep !== 'all') {
+            const resolvedRep = resolveSr1RepFromRawName(inq.salespersonName);
+            if (filterSr1Rep === '__with_rep__') {
+              if (!resolvedRep.displayName) return false;
+            } else if (filterSr1Rep === '__no_rep__') {
+              if (resolvedRep.displayName) return false;
+            } else {
+              const targetLower = filterSr1Rep.toLowerCase();
+              const matchesRep = resolvedRep.matchedNames.some(n => n.toLowerCase() === targetLower) ||
+                resolvedRep.displayName.toLowerCase() === targetLower;
+              if (!matchesRep) return false;
+            }
+          }
           if (searchTerm.trim()) {
             const term = searchTerm.toLowerCase();
             const custName = `${inq.customer?.firstName || ''} ${inq.customer?.lastName || ''}`.toLowerCase();
@@ -12808,7 +12931,7 @@
           }
           return true;
         });
-      }, [sourceFilteredInquiries, filterStage, activePartnerType, filterPartnerId, filterCategory, filterLocation, filterIntent, searchTerm]);
+      }, [sourceFilteredInquiries, filterStage, activePartnerType, filterPartnerId, filterCategory, filterLocation, filterIntent, filterDealStatus, filterSr1Rep, searchTerm]);
 
       const sorted = useMemo(() => {
         return [...filtered].sort((a, b) => {
@@ -13548,6 +13671,48 @@
                     ))}
                   </select>
                 </div>
+
+                <div className="flex items-center space-x-1.5 flex-1 sm:flex-none">
+                  <span className="text-neutral-400 text-[11px] shrink-0">Status:</span>
+                  <select
+                    value={filterDealStatus}
+                    onChange={(e) => setFilterDealStatus(e.target.value)}
+                    className="w-full sm:w-auto bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none max-w-[160px] sm:max-w-none"
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="needs_outreach">Needs Outreach</option>
+                    {STAFF_DEAL_STATUSES.map(st => (
+                      <option key={st.id} value={st.id}>{st.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center space-x-1.5 flex-1 sm:flex-none">
+                  <span className="text-neutral-400 text-[11px] shrink-0">SR1 Rep:</span>
+                  <select
+                    value={filterSr1Rep}
+                    onChange={(e) => setFilterSr1Rep(e.target.value)}
+                    className="w-full sm:w-auto bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none max-w-[180px] sm:max-w-none"
+                  >
+                    <option value="all">All SR1 Reps</option>
+                    <option value="__with_rep__">Any SR1 Rep Assigned</option>
+                    <option value="__no_rep__">No SR1 Rep (Unassigned)</option>
+                    {sr1RepOptions.activeInquiryReps.length > 0 && (
+                      <optgroup label="Identified on Inquiries">
+                        {sr1RepOptions.activeInquiryReps.map(rep => (
+                          <option key={`active-${rep.name}`} value={rep.name}>
+                            {rep.name} ({rep.count})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="SR1 Team Directory">
+                      {sr1RepOptions.directoryReps.map(name => (
+                        <option key={`dir-${name}`} value={name}>{name}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -13586,16 +13751,9 @@
                 <span>
                   Showing <strong className="text-white">{sorted.length}</strong> of {filterStage === 'archived' ? (stageCounts.archived || 0) : (stageCounts.all || 0)} {filterStage === 'archived' ? 'archived' : 'active'} units
                 </span>
-                {(searchTerm || filterStage !== 'all' || filterPartnerId !== 'all' || filterCategory !== 'all' || filterLocation !== 'all' || filterIntent !== 'all') && (
+                {hasActiveFilters && (
                   <button
-                    onClick={() => {
-                      setSearchTerm('');
-                      setFilterStage('all');
-                      setFilterPartnerId('all');
-                      setFilterCategory('all');
-                      setFilterLocation('all');
-                      setFilterIntent('all');
-                    }}
+                    onClick={handleResetAllFilters}
                     className="text-amber-400 hover:text-amber-300 font-semibold underline text-xs ml-1"
                   >
                     Clear Filters
@@ -13611,14 +13769,7 @@
               <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center text-neutral-400 space-y-3">
                 <p className="text-sm font-semibold text-neutral-300">No units found matching your filters</p>
                 <button
-                  onClick={() => {
-                    setSearchTerm('');
-                    setFilterStage('all');
-                    setFilterPartnerId('all');
-                    setFilterCategory('all');
-                    setFilterLocation('all');
-                    setFilterIntent('all');
-                  }}
+                  onClick={handleResetAllFilters}
                   className="px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-white rounded-lg text-xs font-semibold"
                 >
                   Reset All Filters
@@ -13856,17 +14007,10 @@
                     <tr>
                       <td colSpan="7" className="p-12 text-center text-neutral-400 space-y-3">
                         <p className="text-sm font-semibold text-neutral-300">No units found matching your filters</p>
-                        <p className="text-xs text-neutral-500">Try clearing search terms or changing category / location filters</p>
-                        {(searchTerm || filterStage !== 'all' || filterPartnerId !== 'all' || filterCategory !== 'all' || filterLocation !== 'all' || filterIntent !== 'all') && (
+                        <p className="text-xs text-neutral-500">Try clearing search terms or changing category / location / status / rep filters</p>
+                        {hasActiveFilters && (
                           <button
-                            onClick={() => {
-                              setSearchTerm('');
-                              setFilterStage('all');
-                              setFilterPartnerId('all');
-                              setFilterCategory('all');
-                              setFilterLocation('all');
-                              setFilterIntent('all');
-                            }}
+                            onClick={handleResetAllFilters}
                             className="px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-white rounded-lg text-xs font-semibold transition-all mt-2 shadow-sm"
                           >
                             Reset All Filters
