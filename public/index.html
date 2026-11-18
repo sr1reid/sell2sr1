@@ -362,15 +362,43 @@
       }
     }
 
+    // Paginated REST API fetch across all pages (prevents 100-document truncation)
+    let inflightCollectionDocsPromise = null;
+    async function fetchAllCollectionDocsFromCloudRest() {
+      if (inflightCollectionDocsPromise) return inflightCollectionDocsPromise;
+      inflightCollectionDocsPromise = (async () => {
+        try {
+          const allDocs = [];
+          let pageToken = '';
+          let safetyPages = 0;
+          do {
+            const url = `${FS_REST_BASE}?key=${FS_API_KEY}&pageSize=300${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+            const res = await fetch(url);
+            if (!res.ok) return null;
+            const data = await res.json();
+            if (Array.isArray(data.documents)) {
+              allDocs.push(...data.documents);
+            }
+            pageToken = data.nextPageToken || '';
+            safetyPages += 1;
+          } while (pageToken && safetyPages < 100);
+          return allDocs;
+        } catch (e) {
+          return null;
+        } finally {
+          inflightCollectionDocsPromise = null;
+        }
+      })();
+      return inflightCollectionDocsPromise;
+    }
+
     // Direct REST API fetch: instant fallback & multi-device sync
     async function fetchInquiriesFromCloudRest() {
       try {
-        const url = `${FS_REST_BASE}?key=${FS_API_KEY}&pageSize=100`;
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        const data = await res.json();
-        if (!data.documents) return [];
-        return data.documents
+        const docs = await fetchAllCollectionDocsFromCloudRest();
+        if (!docs) return null;
+        if (docs.length === 0) return [];
+        return docs
           .filter(doc => !doc.name.endsWith('/_config_email_routing') && !doc.name.includes('/_config_'))
           .map(doc => {
             const item = {};
@@ -1099,12 +1127,10 @@
 
     async function fetchPartnersFromCloudRest() {
       try {
-        const url = `${FS_REST_BASE}?key=${FS_API_KEY}&pageSize=100`;
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        const data = await res.json();
-        if (!data.documents) return [];
-        return data.documents
+        const docs = await fetchAllCollectionDocsFromCloudRest();
+        if (!docs) return null;
+        if (docs.length === 0) return [];
+        return docs
           .filter(doc => doc.name.includes('/_partner_') || doc.fields?.isPartnerDoc?.booleanValue === true)
           .map(doc => {
             const item = {};
@@ -5243,10 +5269,12 @@
           if (cloudList.length === 0 && (!deletedIdsRef.current || deletedIdsRef.current.length === 0)) return;
           const deletedSet = new Set(deletedIdsRef.current || []);
           const nowMs = Date.now();
+          const seenIds = new Set();
           const normalized = cloudList
             .map(raw => {
               const item = normalizeInquiry(raw);
               if (!item) return null;
+              seenIds.add(item.id);
               const localLock = recentLocalUpdatesRef.current[item.id];
               if (localLock && (nowMs - localLock.timestamp < 15000)) {
                 return localLock.item;
@@ -5254,6 +5282,11 @@
               return item;
             })
             .filter(item => item && !deletedSet.has(item.id));
+          Object.entries(recentLocalUpdatesRef.current || {}).forEach(([id, lock]) => {
+            if (lock && lock.item && (nowMs - lock.timestamp < 15000) && !seenIds.has(id) && !deletedSet.has(id)) {
+              normalized.push(lock.item);
+            }
+          });
           normalized.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
           setInquiries(normalized);
         };
@@ -5364,6 +5397,10 @@
 
       const handleNewInquiry = async (newInquiry) => {
         const normalized = normalizeInquiry(newInquiry);
+        recentLocalUpdatesRef.current[normalized.id] = {
+          item: normalized,
+          timestamp: Date.now()
+        };
         setInquiries(prev => [normalized, ...(prev || []).filter(i => i.id !== normalized.id)]);
         setLastSubmittedRef(normalized.referenceId);
 
