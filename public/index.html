@@ -4179,55 +4179,46 @@
       rv: {
         label: 'RV / Camper',
         desc: 'Travel trailers, 5th wheels, motorhomes, toy haulers & truck campers',
-        subtypes: ['Travel Trailer', 'Fifth Wheel', 'Toy Hauler', 'Class C Motorhome', 'Class A Motorhome', 'Class B / Van', 'Pop-Up', 'Truck Camper'],
         isHours: false
       },
       trailer: {
         label: 'Trailer',
         desc: 'Dump trailers, cargo/enclosed, equipment haulers, utility, tilt & goosenecks',
-        subtypes: ['Dump Trailer', 'Cargo / Enclosed', 'Equipment Hauler', 'Utility / Landscape', 'Gooseneck / Deckover', 'Tilt Bed', 'Snowmobile / ATV Trailer'],
         isHours: false
       },
       tractor: {
         label: 'Tractor',
         desc: 'Sub-compact, compact & utility tractors with loaders & attachments',
-        subtypes: ['Sub-Compact (<25 HP)', 'Compact Tractor (25-50 HP)', 'Utility Tractor (50+ HP)', 'Commercial Mower', 'Tractor Loader Backhoe'],
         isHours: true
       },
       equipment: {
         label: 'Heavy Equipment',
         desc: 'Track loaders, skid steers, mini excavators, telehandlers & attachments',
-        subtypes: ['Compact Track Loader (CTL)', 'Skid Steer (Wheeled)', 'Mini Excavator', 'Backhoe Loader', 'Attachments'],
         isHours: true
       },
       powersports: {
         label: 'Powersports',
         desc: 'Side-by-sides (UTVs), ATVs, snowmobiles & youth models',
-        subtypes: ['UTV / Side-by-Side', 'ATV / 4-Wheeler', 'Snowmobile', 'Youth Powersports'],
         isHours: false
       },
       motorcycle: {
         label: 'Motorcycle',
         desc: 'Cruisers, touring, dual sports, adventure & sport bikes',
-        subtypes: ['Cruiser', 'Touring / Bagger', 'Adventure / Dual Sport', 'Sport Bike', 'Dirt Bike'],
         isHours: false
       },
       boat_pwc: {
         label: 'Boat / PWC',
         desc: 'Pontoon boats, fishing boats, personal watercraft (Jet Skis) & docks',
-        subtypes: ['Personal Watercraft (Jet Ski)', 'Pontoon / Tritoon Boat', 'Fishing Boat', 'Bowrider / Deck Boat', 'Dock System'],
         isHours: true
       },
       container: {
         label: 'Shipping Container',
         desc: '20ft, 40ft standard, 40ft High Cube & custom storage containers',
-        subtypes: ['20ft Standard Container', '40ft Standard Container', '40ft High Cube Container', 'Custom Modified Container'],
         isHours: false
       },
       other: {
         label: 'Other',
         desc: 'Specialty equipment, trucks, commercial units or items not listed above',
-        subtypes: ['Specialty Vehicle / Truck', 'Commercial Equipment', 'Attachment / Implement', 'Other'],
         isHours: false
       }
     };
@@ -4288,7 +4279,7 @@
         },
         unit: {
           category: unit.category || 'other',
-          subcategory: unit.subcategory || 'Equipment',
+          subcategory: CATEGORIES[unit.category]?.label || unit.subcategory || 'Unit',
           year: unit.year || '',
           make: unit.make || 'Unknown Make',
           model: unit.model || '',
@@ -4764,7 +4755,7 @@
         },
         unit: {
           category: 'rv',
-          subcategory: 'Fifth Wheel',
+          subcategory: 'RV / Camper',
           year: 2022,
           make: 'Grand Design',
           model: 'Reflection 31MB',
@@ -4816,7 +4807,7 @@
         },
         unit: {
           category: 'tractor',
-          subcategory: 'Compact Tractor (25-50 HP)',
+          subcategory: 'Tractor',
           year: 2021,
           make: 'Kubota',
           model: 'L3901 HST',
@@ -4879,7 +4870,7 @@
         },
         unit: {
           category: 'trailer',
-          subcategory: 'Dump Trailer',
+          subcategory: 'Trailer',
           year: 2023,
           make: 'Diamond C',
           model: 'LPX 14ft Dump',
@@ -4945,7 +4936,7 @@
         },
         unit: {
           category: 'powersports',
-          subcategory: 'UTV / Side-by-Side (SxS)',
+          subcategory: 'Powersports',
           year: 2020,
           make: 'Polaris',
           model: 'RZR XP 1000 Premium',
@@ -9590,7 +9581,7 @@
               },
               unit: {
                 category: u.category || 'rv',
-                subcategory: u.subcategory || catConfig.subcategories?.[0] || 'Standard',
+                subcategory: catConfig?.label || CATEGORIES[u.category]?.label || 'Unit',
                 year: unitYear,
                 make: unitMake,
                 model: unitModel,
@@ -13929,7 +13920,7 @@
                           {item.unit.year} {item.unit.make} {item.unit.model}
                         </h3>
                         <p className="text-[11px] text-neutral-400">
-                          {item.unit.subcategory || 'Standard'} • {item.unit.mileageOrHours > 0 ? `${item.unit.mileageOrHours.toLocaleString()} ${item.unit.isHours ? 'hrs' : 'mi'}` : 'N/A'}
+                          {CATEGORIES[item.unit.category]?.label || item.unit.subcategory || 'Unit'} • {item.unit.mileageOrHours > 0 ? `${item.unit.mileageOrHours.toLocaleString()} ${item.unit.isHours ? 'hrs' : 'mi'}` : 'N/A'}
                           {item.financials?.askingPrice > 0 && (
                             <span className="text-emerald-400 font-medium"> • Ask: ${Number(item.financials.askingPrice).toLocaleString()}</span>
                           )}
@@ -14167,7 +14158,7 @@
                                   {[item.unit?.year, item.unit?.make, item.unit?.model, item.unit?.trimOrFloorplan].filter(Boolean).join(' ') || 'Unit Details Pending'}
                                 </div>
                                 <div className="text-[11px] text-neutral-400 mt-0.5 flex items-center space-x-2">
-                                  <span>{item.unit?.subcategory || CATEGORIES[item.unit?.category]?.label || 'Unit'}</span>
+                                  <span>{CATEGORIES[item.unit?.category]?.label || item.unit?.subcategory || 'Unit'}</span>
                                   {item.unit?.mileageOrHours > 0 && (
                                     <>
                                       <span>•</span>
@@ -15048,7 +15039,7 @@
                     </div>
                     <div>
                       <span className="text-neutral-500 block text-[10px]">Type</span>
-                      <span className="font-semibold text-neutral-200">{inquiry.unit.subcategory}</span>
+                      <span className="font-semibold text-neutral-200">{CATEGORIES[inquiry.unit.category]?.label || inquiry.unit.subcategory || 'Unit'}</span>
                     </div>
                     <div>
                       <span className="text-neutral-500 block text-[10px]">VIN / Serial</span>
