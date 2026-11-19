@@ -364,7 +364,10 @@
 
     // Paginated REST API fetch across all pages (prevents 100-document truncation)
     let inflightCollectionDocsPromise = null;
-    async function fetchAllCollectionDocsFromCloudRest() {
+    async function fetchAllCollectionDocsFromCloudRest(forceFresh = false) {
+      if (forceFresh) {
+        inflightCollectionDocsPromise = null;
+      }
       if (inflightCollectionDocsPromise) return inflightCollectionDocsPromise;
       inflightCollectionDocsPromise = (async () => {
         try {
@@ -373,7 +376,7 @@
           let safetyPages = 0;
           do {
             const url = `${FS_REST_BASE}?key=${FS_API_KEY}&pageSize=300${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
-            const res = await fetch(url);
+            const res = await fetch(url, { cache: 'no-store' });
             if (!res.ok) return null;
             const data = await res.json();
             if (Array.isArray(data.documents)) {
@@ -393,9 +396,9 @@
     }
 
     // Direct REST API fetch: instant fallback & multi-device sync
-    async function fetchInquiriesFromCloudRest() {
+    async function fetchInquiriesFromCloudRest(forceFresh = false) {
       try {
-        const docs = await fetchAllCollectionDocsFromCloudRest();
+        const docs = await fetchAllCollectionDocsFromCloudRest(forceFresh);
         if (!docs) return null;
         if (docs.length === 0) return [];
         return docs
@@ -5523,6 +5526,56 @@
         return true;
       };
 
+      const handleRefreshPortalData = async () => {
+        try {
+          const [list, pList] = await Promise.all([
+            fetchInquiriesFromCloudRest(true),
+            fetchPartnersFromCloudRest(),
+            fetchSiteAnalyticsFromCloudRest()
+          ]);
+          if (Array.isArray(list) && list.length > 0) {
+            const deletedSet = new Set(deletedIdsRef.current || []);
+            const nowMs = Date.now();
+            const seenIds = new Set();
+            const normalized = list
+              .map(raw => {
+                const item = normalizeInquiry(raw);
+                if (!item) return null;
+                seenIds.add(item.id);
+                const localLock = recentLocalUpdatesRef.current[item.id];
+                if (localLock && (nowMs - localLock.timestamp < 15000)) {
+                  return localLock.item;
+                }
+                return item;
+              })
+              .filter(item => item && !deletedSet.has(item.id));
+            Object.entries(recentLocalUpdatesRef.current || {}).forEach(([id, lock]) => {
+              if (lock && lock.item && (nowMs - lock.timestamp < 15000) && !seenIds.has(id) && !deletedSet.has(id)) {
+                normalized.push(lock.item);
+              }
+            });
+            normalized.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            setInquiries(normalized);
+          }
+          if (Array.isArray(pList) && pList.length > 0) {
+            const normalizedPartners = pList.map(normalizePartner).filter(Boolean);
+            if (normalizedPartners.length > 0) {
+              normalizedPartners.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+              setPartners(prev => {
+                const byId = new Map();
+                (Array.isArray(prev) ? prev : []).forEach(p => { if (p && p.id) byId.set(p.id, p); });
+                normalizedPartners.forEach(p => { if (p && p.id) byId.set(p.id, p); });
+                return Array.from(byId.values());
+              });
+            }
+          }
+          return true;
+        } catch (err) {
+          console.warn('Manual portal refresh notice:', err);
+          return false;
+        }
+      };
+
       const handleSyncSamplesToCloud = async () => {
         try {
           for (const inq of INITIAL_INQUIRIES_DATA) {
@@ -5709,6 +5762,7 @@
                   setSelectedInquiryId={setSelectedInquiryId}
                   staffUser={staffUser}
                   onSignOut={handleSignOut}
+                  onRefreshPortalData={handleRefreshPortalData}
                   onSyncSamplesToCloud={handleSyncSamplesToCloud}
                   emailRoutingConfig={emailRoutingConfig}
                   onSaveEmailRoutingConfig={handleSaveEmailRoutingConfig}
@@ -12673,9 +12727,24 @@
       );
     }
 
-    function StaffPortalView({ inquiries, partners = [], onSavePartner, onSubmitInquiry, onUpdateInquiry, onDeleteInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onSyncSamplesToCloud, emailRoutingConfig, onSaveEmailRoutingConfig, siteAnalytics }) {
+    function StaffPortalView({ inquiries, partners = [], onSavePartner, onSubmitInquiry, onUpdateInquiry, onDeleteInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onRefreshPortalData, onSyncSamplesToCloud, emailRoutingConfig, onSaveEmailRoutingConfig, siteAnalytics }) {
       const canManageRouting = isSuperAdmin(staffUser);
       const canDeleteInquiries = isSuperAdmin(staffUser);
+      const [refreshingPortal, setRefreshingPortal] = useState(false);
+
+      const handleManualPortalRefresh = async () => {
+        if (refreshingPortal) return;
+        setRefreshingPortal(true);
+        try {
+          if (typeof onRefreshPortalData === 'function') {
+            await onRefreshPortalData();
+          } else {
+            await fetchInquiriesFromCloudRest(true);
+          }
+        } finally {
+          setTimeout(() => setRefreshingPortal(false), 350);
+        }
+      };
       const incompletePastStep2Count = useMemo(() => {
         const list = Array.isArray(siteAnalytics?.partialForms) ? siteAnalytics.partialForms : [];
         return list.filter(pf => pf && !pf.completed && (Number(pf.maxStepReached) || 0) >= 3).length;
@@ -13332,6 +13401,17 @@
                   <span>Cloud Live</span>
                 </div>
               )}
+
+              <button
+                type="button"
+                onClick={handleManualPortalRefresh}
+                disabled={refreshingPortal}
+                title="Refresh inquiries and portal data from cloud"
+                className="px-3 py-1.5 rounded-lg bg-neutral-850 hover:bg-neutral-800 disabled:opacity-60 text-neutral-200 hover:text-white border border-neutral-750 font-semibold text-xs flex items-center space-x-1.5 transition-all shadow-sm cursor-pointer"
+              >
+                <span className={refreshingPortal ? 'inline-block animate-spin' : ''}>↻</span>
+                <span>{refreshingPortal ? 'Refreshing...' : 'Refresh'}</span>
+              </button>
 
               {inquiries.length <= 3 && (
                 <button
