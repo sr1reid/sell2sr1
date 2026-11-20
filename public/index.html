@@ -3758,7 +3758,7 @@
 
     const STEP2_CONFIDENCE_TIMEOUT_MS = 8000;
 
-    const scanImageFileForVin = async (file, categoryKey, shouldAbortScan = null, onVinTagIdentified = null) => {
+    const scanImageFileForVin = async (file, categoryKey, shouldAbortScan = null, onVinTagIdentified = null, options = null) => {
       if (!file) return { vin: '', unreadableVinTag: false };
       const isVideo = file.type?.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name || '');
       if (isVideo) return { vin: '', unreadableVinTag: false };
@@ -3776,15 +3776,17 @@
         const quickIsCrazed = Boolean(canvases.quickIsCrazed);
         const isWideBanner = Boolean(canvases.isWideBanner);
         const visualSignal = canvases.visualSignal || { hasPlausibleText: true, looksLikeCloseUpLabel: false, priorityScore: 20 };
+        const isDirectVinTagPhoto = Boolean(options && options.directVinTagPhoto);
 
         // =========================================================================
         // STEP 1: FAST IDENTIFICATION GATE ("Does this photo have a VIN/tag on it?")
         // Never returns a low-res guess — if ANY sign of a barcode, tag, or VIN is
-        // detected, the photo is immediately handed to Step 2 for 100% full-accuracy scanning
-        // with a strict 8-second post-identification deadline before requiring manual entry!
+        // detected (or if uploaded directly as a VIN/Serial tag photo), the photo is
+        // handed to Step 2 for 100% full-accuracy scanning with a strict 8-second
+        // deadline before requiring manual entry!
         // =========================================================================
-        let confirmedVinTagEvidence = quickIsCrazed;
-        let hasPotentialVinOrTag = quickIsCrazed || isWideBanner;
+        let confirmedVinTagEvidence = isDirectVinTagPhoto || quickIsCrazed;
+        let hasPotentialVinOrTag = isDirectVinTagPhoto || quickIsCrazed || isWideBanner;
         const barcodeSerial6HintsSet = new Set();
         const recordBarcodeSerialHint = (rawVal) => {
           if (!rawVal) return;
@@ -3805,7 +3807,7 @@
             }
             if (formats.length > 0) {
               detector = new window.BarcodeDetector({ formats });
-              if (!confirmedVinTagEvidence) {
+              if (!quickIsCrazed) {
                 for (let c = 0; c < (canvases.fastGateBarcodeCanvases || []).length; c++) {
                   try {
                     const barcodes = await detector.detect(canvases.fastGateBarcodeCanvases[c]);
@@ -6269,26 +6271,17 @@
       const [uploading, setUploading] = useState(false);
       const [uploadStatus, setUploadStatus] = useState('');
       const [isDragging, setIsDragging] = useState(false);
+      const [vinPhotoChoice, setVinPhotoChoice] = useState(''); // '' | 'has_photo' | 'no_photo'
+      const [vinPhotoItem, setVinPhotoItem] = useState(null);
+      const [vinPhotoUploading, setVinPhotoUploading] = useState(false);
+      const [vinPhotoScanFailed, setVinPhotoScanFailed] = useState(false);
+      const [isDraggingVinPhoto, setIsDraggingVinPhoto] = useState(false);
       const [scanningVin, setScanningVin] = useState(false);
-      const [checkingVinBeforeNext, setCheckingVinBeforeNext] = useState(false);
       const [vinScanSource, setVinScanSource] = useState('');
-      const [vinModalMode, setVinModalMode] = useState(null); // null | 'ask' | 'no_manual' | 'yes_upload'
-      const [manualVinInput, setManualVinInput] = useState('');
-      const [vinModalError, setVinModalError] = useState('');
-      const [vinPhotoConfirmed, setVinPhotoConfirmed] = useState(false);
-      const [unreadableVinDetected, setUnreadableVinDetected] = useState(false);
       const [isEditingDetectedVin, setIsEditingDetectedVin] = useState(false);
       const [overrideVinInput, setOverrideVinInput] = useState('');
-      const activeScanPromisesRef = useRef([]);
-      const activeScanCountRef = useRef(0);
+      const activeVinScanIdRef = useRef(0);
       const latestVinRef = useRef('');
-      const stepRef = useRef(step);
-      stepRef.current = step;
-      const uploadingRef = useRef(uploading);
-      uploadingRef.current = uploading;
-      const photosCountRef = useRef(photos.length);
-      photosCountRef.current = photos.length;
-      const hasUnreadableVinPhoto = unreadableVinDetected || photos.some(p => p.unreadableVinTag);
 
       // --- PARTIAL FORM TRACKING (STRICTLY ONLY PAST STEP 2: STEP 3, 4, 5, OR 6) ---
       const formSessionIdRef = useRef('pf-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
@@ -6457,9 +6450,6 @@
         if (field === 'vinOrSerial') {
           const trimmed = String(value || '').trim();
           latestVinRef.current = trimmed;
-          if (trimmed) {
-            setUnreadableVinDetected(false);
-          }
         }
         setFormData(prev => ({ ...prev, [field]: value }));
       };
@@ -6731,20 +6721,14 @@
         });
       };
 
-      const processFiles = async (filesList, options = {}) => {
+      const processFiles = async (filesList) => {
         const files = Array.from(filesList || []).filter(file => 
           file.type.startsWith('image/') || 
           file.type.startsWith('video/') ||
           /\.(mp4|mov|webm|m4v|avi|heic|heif|jpg|jpeg|png|webp)$/i.test(file.name)
         );
-        if (files.length === 0) return '';
-        const existingPhotosCount = photosCountRef.current;
+        if (files.length === 0) return;
         setUploading(true);
-        uploadingRef.current = true;
-        let firstDetectedInBatch = '';
-        let activeIdentifiedVinTagCount = 0;
-        let batchManualEntryTriggered = false;
-        let openManualModalAfterBatchUpload = false;
 
         const batchEntries = files.map((file) => {
           const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(file.name);
@@ -6752,86 +6736,10 @@
             file,
             isVideo,
             mediaId: 'm-' + Math.random().toString(36).substr(2, 9),
-            label: file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo'),
-            resolvedDetectedVin: '',
-            resolvedUnreadableVinTag: false,
-            isIdentifiedVinTag: false
+            label: file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo')
           };
         });
 
-        // Kick off VIN / Serial screening across ALL image files in the batch upfront (instead of waiting behind sequential cloud uploads)
-        // so likely VIN tags jump to the front of the priority queue immediately and abort all remaining photos as soon as a VIN is found
-        // or once an identified VIN photo fails to resolve with 100% confidence within 8 seconds!
-        if (category !== 'container' && !latestVinRef.current) {
-          for (let s = 0; s < batchEntries.length; s++) {
-            const entry = batchEntries[s];
-            if (entry.isVideo) continue;
-            activeScanCountRef.current += 1;
-            setScanningVin(true);
-            const shouldAbortEntryScan = () =>
-              Boolean(latestVinRef.current || (batchManualEntryTriggered && !entry.isIdentifiedVinTag));
-            const handleEntryVinTagIdentified = () => {
-              if (!entry.isIdentifiedVinTag) {
-                entry.isIdentifiedVinTag = true;
-                activeIdentifiedVinTagCount += 1;
-              }
-            };
-            let scanPromise;
-            scanPromise = scanImageFileForVin(entry.file, category, shouldAbortEntryScan, handleEntryVinTagIdentified)
-              .then((scanRes) => {
-                if (entry.isIdentifiedVinTag) {
-                  activeIdentifiedVinTagCount = Math.max(0, activeIdentifiedVinTagCount - 1);
-                }
-                const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
-                const unreadableTag = Boolean(typeof scanRes === 'object' && scanRes?.unreadableVinTag && !detected);
-                if (detected) {
-                  entry.resolvedDetectedVin = detected;
-                  if (!firstDetectedInBatch) firstDetectedInBatch = detected;
-                  setUnreadableVinDetected(false);
-                  setPhotos(prev => prev.map(p => (p.id === entry.mediaId ? { ...p, detectedVin: detected, unreadableVinTag: false } : p)));
-                  if (!latestVinRef.current) {
-                    latestVinRef.current = detected;
-                    setVinScanSource('ocr');
-                    setFormData(prev => (prev.vinOrSerial && prev.vinOrSerial.trim() ? prev : { ...prev, vinOrSerial: detected }));
-                  }
-                  pumpOcrQueue();
-                  setScanningVin(false);
-                } else if (unreadableTag) {
-                  entry.resolvedUnreadableVinTag = true;
-                  setPhotos(prev => prev.map(p => (p.id === entry.mediaId ? { ...p, unreadableVinTag: true } : p)));
-                  if (!latestVinRef.current) {
-                    setUnreadableVinDetected(true);
-                    if (activeIdentifiedVinTagCount === 0) {
-                      batchManualEntryTriggered = true;
-                      pumpOcrQueue();
-                      setScanningVin(false);
-                      if (!options?.fromVinModal && stepRef.current === 2) {
-                        const projectedPhotoCount = Math.max(photosCountRef.current, existingPhotosCount + batchEntries.length);
-                        if (!uploadingRef.current && photosCountRef.current >= 3) {
-                          setVinModalError('');
-                          setVinModalMode('no_manual');
-                        } else if (projectedPhotoCount >= 3) {
-                          openManualModalAfterBatchUpload = true;
-                        }
-                      }
-                    }
-                  }
-                }
-                return detected || '';
-              })
-              .catch(() => '')
-              .finally(() => {
-                activeScanPromisesRef.current = activeScanPromisesRef.current.filter(pr => pr !== scanPromise);
-                activeScanCountRef.current = Math.max(0, activeScanCountRef.current - 1);
-                if (activeScanCountRef.current === 0) {
-                  setScanningVin(false);
-                }
-              });
-            activeScanPromisesRef.current.push(scanPromise);
-          }
-        }
-
-        let addedInBatchCount = 0;
         for (let i = 0; i < batchEntries.length; i++) {
           const entry = batchEntries[i];
           const { file, isVideo, mediaId, label } = entry;
@@ -6850,7 +6758,6 @@
             }
 
             if (cloudUrl) {
-              addedInBatchCount += 1;
               setPhotos(prev => [
                 ...prev,
                 {
@@ -6861,8 +6768,6 @@
                   fileSize: uploadableFile.size || file.size,
                   fileType: uploadableFile.type || file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
                   label: label,
-                  detectedVin: entry.resolvedDetectedVin || '',
-                  unreadableVinTag: entry.resolvedUnreadableVinTag,
                   uploadedAt: new Date().toISOString()
                 }
               ]);
@@ -6871,7 +6776,6 @@
               if (isVideo) {
                 const thumbUrl = await extractVideoThumbnail(file);
                 if (thumbUrl) {
-                  addedInBatchCount += 1;
                   setPhotos(prev => [
                     ...prev,
                     {
@@ -6889,7 +6793,6 @@
               } else {
                 const thumbUrl = await compressImageFile(uploadableFile, 480, 0.55);
                 if (thumbUrl) {
-                  addedInBatchCount += 1;
                   setPhotos(prev => [
                     ...prev,
                     {
@@ -6900,8 +6803,6 @@
                       fileSize: file.size,
                       fileType: 'image/jpeg',
                       label: label,
-                      detectedVin: entry.resolvedDetectedVin || '',
-                      unreadableVinTag: entry.resolvedUnreadableVinTag,
                       uploadedAt: new Date().toISOString()
                     }
                   ]);
@@ -6913,19 +6814,7 @@
           }
         }
         setUploading(false);
-        uploadingRef.current = false;
         setUploadStatus('');
-        if (
-          openManualModalAfterBatchUpload &&
-          !options?.fromVinModal &&
-          stepRef.current === 2 &&
-          !latestVinRef.current &&
-          existingPhotosCount + addedInBatchCount >= 3
-        ) {
-          setVinModalError('');
-          setVinModalMode('no_manual');
-        }
-        return firstDetectedInBatch;
       };
 
       const handleFileSelect = async (e) => {
@@ -6961,24 +6850,21 @@
       };
 
       const removePhoto = (id) => {
-        setPhotos(prev => {
-          const removed = prev.find(p => p.id === id);
-          const remaining = prev.filter(p => p.id !== id);
-          if (remaining.length === 0) {
-            setVinPhotoConfirmed(false);
-          }
-          setUnreadableVinDetected(remaining.some(p => p.unreadableVinTag));
-          if (removed?.detectedVin && vinScanSource === 'ocr' && latestVinRef.current === removed.detectedVin) {
-            const fallbackVin = remaining.map(p => p.detectedVin).find(Boolean) || '';
-            latestVinRef.current = fallbackVin;
-            setVinScanSource(fallbackVin ? 'ocr' : '');
-            setFormData(f => ({ ...f, vinOrSerial: fallbackVin }));
-          }
-          return remaining;
-        });
+        setPhotos(prev => prev.filter(p => p.id !== id));
+        if (vinPhotoItem && vinPhotoItem.id === id) {
+          activeVinScanIdRef.current += 1;
+          setVinPhotoItem(null);
+          setVinPhotoUploading(false);
+          setScanningVin(false);
+          setVinPhotoScanFailed(false);
+          setIsEditingDetectedVin(false);
+          latestVinRef.current = '';
+          setVinScanSource('');
+          setFormData(f => ({ ...f, vinOrSerial: '' }));
+        }
       };
 
-      const handleContinueFromStep3 = async () => {
+      const handleContinueFromPhotos = () => {
         if (uploading) {
           alert('Please wait for photos to finish uploading to cloud storage before continuing.');
           return;
@@ -6987,124 +6873,175 @@
           alert('Please upload at least 3 photos of your unit before continuing.');
           return;
         }
-
-        // Shipping containers do not require a VIN / Serial number
-        if (category === 'container') {
-          setStep(3);
-          scrollToFormTop();
-          return;
-        }
-
-        if (activeScanPromisesRef.current.length > 0) {
-          setCheckingVinBeforeNext(true);
-          try {
-            await Promise.allSettled([...activeScanPromisesRef.current]);
-          } catch (e) {}
-          setCheckingVinBeforeNext(false);
-        }
-
-        const pendingOverrideVin = isEditingDetectedVin ? (overrideVinInput || '').trim().toUpperCase() : '';
-        if (pendingOverrideVin) {
-          handleInputChange('vinOrSerial', pendingOverrideVin);
-          setVinScanSource('manual');
-          setIsEditingDetectedVin(false);
-          setStep(3);
-          scrollToFormTop();
-          return;
-        }
-
-        const pendingInlineManualVin = (manualVinInput || '').trim().toUpperCase();
-        const photoDetectedVin = photos.map(p => p.detectedVin).find(Boolean) || '';
-        const effectiveVin = (latestVinRef.current || formData.vinOrSerial || photoDetectedVin || pendingInlineManualVin || '').trim();
-
-        if (effectiveVin) {
-          if (!formData.vinOrSerial || !formData.vinOrSerial.trim()) {
-            handleInputChange('vinOrSerial', effectiveVin);
-            setVinScanSource(photoDetectedVin ? 'ocr' : 'manual');
-          }
-          setStep(3);
-          scrollToFormTop();
-          return;
-        }
-
-        if (hasUnreadableVinPhoto) {
-          setVinModalError('');
-          setVinModalMode('no_manual');
-          return;
-        }
-
-        if (vinPhotoConfirmed) {
-          setStep(3);
-          scrollToFormTop();
-          return;
-        }
-
-        setVinModalError('');
-        setManualVinInput('');
-        setVinModalMode('ask');
-      };
-
-      const handleVinModalPhotoUpload = async (e) => {
-        const selected = e.target?.files;
-        if (!selected || selected.length === 0) return;
-        const batchDetected = await processFiles(selected, { fromVinModal: true });
-        if (e.target) e.target.value = '';
-        let scanDetected = batchDetected || '';
-        if (activeScanPromisesRef.current.length > 0) {
-          setCheckingVinBeforeNext(true);
-          try {
-            const results = await Promise.allSettled([...activeScanPromisesRef.current]);
-            for (let r = 0; r < results.length; r++) {
-              if (results[r].status === 'fulfilled' && results[r].value) {
-                scanDetected = results[r].value;
-                break;
-              }
-            }
-          } catch (err) {}
-          setCheckingVinBeforeNext(false);
-        }
-        const effectiveVin = (latestVinRef.current || formData.vinOrSerial || scanDetected || '').trim();
-        if (effectiveVin) {
-          setVinPhotoConfirmed(true);
-          setVinModalError('');
-          setVinModalMode(null);
-          setStep(3);
-          scrollToFormTop();
-        } else {
-          // If the uploaded VIN sticker could not be read with full confidence within 8 seconds, require manual entry before Step 3
-          setVinModalError('');
-          setVinModalMode('no_manual');
-        }
-      };
-
-      const handleSaveManualVinAndContinue = () => {
-        const cleanedVin = (manualVinInput || '').trim().toUpperCase();
-        if (!cleanedVin) {
-          setVinModalError(
-            category === 'container'
-              ? 'Please enter the Box Identification Number before continuing to Unit Details.'
-              : `Please enter the ${idMeta.label} before continuing to Unit Details.`
-          );
-          return;
-        }
-        handleInputChange('vinOrSerial', cleanedVin);
-        setVinScanSource('manual');
-        setVinModalError('');
-        setVinModalMode(null);
         setStep(3);
         scrollToFormTop();
       };
 
-      useEffect(() => {
-        if (!vinModalMode) return;
-        const onKeyDown = (ev) => {
-          if (ev.key === 'Escape' && !uploading && !checkingVinBeforeNext) {
-            setVinModalMode(null);
+      const handleRemoveVinPhoto = () => {
+        activeVinScanIdRef.current += 1;
+        setVinPhotoItem(null);
+        setVinPhotoUploading(false);
+        setScanningVin(false);
+        setVinPhotoScanFailed(false);
+        setIsEditingDetectedVin(false);
+        setOverrideVinInput('');
+        setPhotos(prev => prev.filter(p => !p.isVinPhoto));
+        latestVinRef.current = '';
+        setVinScanSource('');
+        setFormData(prev => ({ ...prev, vinOrSerial: '' }));
+      };
+
+      const handleSelectVinPhotoChoice = (choice) => {
+        if (choice === vinPhotoChoice) return;
+        setVinPhotoChoice(choice);
+        if (choice === 'no_photo') {
+          activeVinScanIdRef.current += 1;
+          setVinPhotoUploading(false);
+          setScanningVin(false);
+          setVinPhotoScanFailed(false);
+          setIsEditingDetectedVin(false);
+          setOverrideVinInput('');
+          setVinPhotoItem(null);
+          setPhotos(prev => prev.filter(p => !p.isVinPhoto));
+          setVinScanSource('manual');
+        } else if (choice === 'has_photo') {
+          setVinPhotoScanFailed(false);
+          setIsEditingDetectedVin(false);
+        }
+      };
+
+      const handleVinPhotoFile = async (file) => {
+        if (!file) return;
+        const isValidImage =
+          file.type.startsWith('image/') ||
+          /\.(heic|heif|jpg|jpeg|png|webp)$/i.test(file.name || '');
+        if (!isValidImage) {
+          alert('Please select a photo image file (JPG, PNG, HEIC, or WEBP).');
+          return;
+        }
+
+        const scanId = activeVinScanIdRef.current + 1;
+        activeVinScanIdRef.current = scanId;
+        const mediaId = 'm-vin-' + Math.random().toString(36).substr(2, 9);
+        const photoLabel = idMeta.tagLabel || 'VIN / Serial Tag';
+
+        setVinPhotoChoice('has_photo');
+        setVinPhotoUploading(true);
+        setScanningVin(true);
+        setVinPhotoScanFailed(false);
+        setIsEditingDetectedVin(false);
+        setOverrideVinInput('');
+        latestVinRef.current = '';
+        setVinScanSource('');
+        setFormData(prev => ({ ...prev, vinOrSerial: '' }));
+
+        let uploadedPhotoObj = null;
+
+        const uploadTask = (async () => {
+          try {
+            const uploadableFile = (await ensureDecodableImageBlob(file)) || file;
+            let cloudUrl = null;
+            try {
+              cloudUrl = await uploadMediaFileToStorage(uploadableFile);
+            } catch (storageErr) {
+              console.warn('VIN photo storage upload notice, falling back:', storageErr);
+            }
+            const finalUrl = cloudUrl || (await compressImageFile(uploadableFile, 1200, 0.8));
+            if (activeVinScanIdRef.current !== scanId) return null;
+            if (finalUrl) {
+              uploadedPhotoObj = {
+                id: mediaId,
+                url: finalUrl,
+                thumbUrl: finalUrl,
+                isVideo: false,
+                isVinPhoto: true,
+                fileSize: uploadableFile.size || file.size,
+                fileType: uploadableFile.type || file.type || 'image/jpeg',
+                label: photoLabel,
+                detectedVin: '',
+                unreadableVinTag: false,
+                uploadedAt: new Date().toISOString()
+              };
+              setVinPhotoItem(uploadedPhotoObj);
+              setPhotos(prev => [...prev.filter(p => !p.isVinPhoto), uploadedPhotoObj]);
+            }
+          } catch (err) {
+            console.error('VIN photo upload error:', err);
+          } finally {
+            if (activeVinScanIdRef.current === scanId) {
+              setVinPhotoUploading(false);
+            }
           }
-        };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-      }, [vinModalMode, uploading, checkingVinBeforeNext]);
+          return uploadedPhotoObj;
+        })();
+
+        const scanTask = (async () => {
+          try {
+            const scanRes = await scanImageFileForVin(
+              file,
+              category,
+              () => activeVinScanIdRef.current !== scanId,
+              null,
+              { directVinTagPhoto: true }
+            );
+            if (activeVinScanIdRef.current !== scanId) return '';
+            const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
+            if (detected) {
+              latestVinRef.current = detected;
+              setVinScanSource('ocr');
+              setVinPhotoScanFailed(false);
+              setFormData(prev => ({ ...prev, vinOrSerial: detected }));
+              setVinPhotoItem(prev => (prev && prev.id === mediaId ? { ...prev, detectedVin: detected, unreadableVinTag: false } : prev));
+              setPhotos(prev => prev.map(p => (p.id === mediaId ? { ...p, detectedVin: detected, unreadableVinTag: false } : p)));
+            } else {
+              setVinPhotoScanFailed(true);
+              setVinScanSource('manual');
+              setVinPhotoItem(prev => (prev && prev.id === mediaId ? { ...prev, detectedVin: '', unreadableVinTag: true } : prev));
+              setPhotos(prev => prev.map(p => (p.id === mediaId ? { ...p, detectedVin: '', unreadableVinTag: true } : p)));
+            }
+            return detected;
+          } catch (err) {
+            if (activeVinScanIdRef.current === scanId) {
+              setVinPhotoScanFailed(true);
+              setVinScanSource('manual');
+            }
+            return '';
+          } finally {
+            if (activeVinScanIdRef.current === scanId) {
+              setScanningVin(false);
+            }
+          }
+        })();
+
+        const [finalPhoto, detectedVin] = await Promise.all([uploadTask, scanTask]);
+        if (activeVinScanIdRef.current === scanId && finalPhoto) {
+          const updatedPhoto = {
+            ...finalPhoto,
+            detectedVin: detectedVin || '',
+            unreadableVinTag: !detectedVin
+          };
+          setVinPhotoItem(updatedPhoto);
+          setPhotos(prev => prev.map(p => (p.id === mediaId ? updatedPhoto : p)));
+        }
+      };
+
+      const handleVinPhotoSelect = async (e) => {
+        const selectedFile = e.target?.files?.[0];
+        if (e.target) e.target.value = '';
+        if (selectedFile) {
+          await handleVinPhotoFile(selectedFile);
+        }
+      };
+
+      const handleVinPhotoDrop = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingVinPhoto(false);
+        const droppedFile = e.dataTransfer?.files?.[0];
+        if (droppedFile) {
+          await handleVinPhotoFile(droppedFile);
+        }
+      };
 
       const handleSubmit = async (e) => {
         e.preventDefault();
@@ -7115,6 +7052,11 @@
         }
         if (category === 'tractor' && !formData.transmissionType) {
           alert('Please select the Transmission Type for your tractor.');
+          setStep(3);
+          return;
+        }
+        if (category !== 'container' && (!formData.vinOrSerial || !formData.vinOrSerial.trim())) {
+          alert(`Please provide the ${idMeta.label} on the Unit Details step before submitting.`);
           setStep(3);
           return;
         }
@@ -7312,7 +7254,7 @@
             Make: category === 'container' ? 'Shipping Container' : (formData.make || 'N/A'),
             Model: category === 'container' ? 'Container' : (formData.model || 'N/A'),
             Trim_or_Floorplan: formData.trimOrFloorplan || 'N/A',
-            VIN_or_Serial_or_Box_ID: resolvedVinOrSerial || (vinPhotoConfirmed ? 'Included in Photos' : 'N/A'),
+            VIN_or_Serial_or_Box_ID: resolvedVinOrSerial || (vinPhotoItem ? 'Included in Photos' : 'N/A'),
             Mileage_or_Hours: category === 'container' ? 'N/A' : `${formData.mileageOrHours || 0} ${activeCatConfig.isHours ? 'Hours' : 'Miles'}`,
             Transmission_Type: category === 'tractor' ? (formData.transmissionType || 'Not specified') : 'N/A',
             Extras_or_Upgrades: (formData.extrasOrUpgrades || '').trim() || 'None listed',
@@ -7507,12 +7449,14 @@
                       photos: []
                     });
                     setPhotos([]);
+                    activeVinScanIdRef.current += 1;
                     latestVinRef.current = '';
+                    setVinPhotoChoice('');
+                    setVinPhotoItem(null);
+                    setVinPhotoUploading(false);
+                    setVinPhotoScanFailed(false);
+                    setScanningVin(false);
                     setVinScanSource('');
-                    setVinModalMode(null);
-                    setManualVinInput('');
-                    setVinModalError('');
-                    setVinPhotoConfirmed(false);
                     setIsEditingDetectedVin(false);
                     setOverrideVinInput('');
                   }}
@@ -7893,6 +7837,282 @@
                       </div>
                     )}
 
+                    {/* VIN / SERIAL NUMBER SECTION (ALL UNIT TYPES EXCEPT SHIPPING CONTAINERS) */}
+                    {category !== 'container' && (
+                      <div className="bg-neutral-950 p-4 md:p-5 rounded-xl border border-neutral-800 space-y-4">
+                        <div>
+                          <label className="block text-xs font-semibold uppercase text-neutral-300 mb-2">
+                            {idMeta.label} *
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={() => handleSelectVinPhotoChoice('has_photo')}
+                              className={`flex items-center space-x-2.5 p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
+                                vinPhotoChoice === 'has_photo'
+                                  ? 'bg-neutral-900 border-neutral-300 text-white font-bold ring-1 ring-neutral-300'
+                                  : 'bg-neutral-950/60 border-neutral-800 text-neutral-300 hover:border-neutral-600'
+                              }`}
+                            >
+                              <span className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                vinPhotoChoice === 'has_photo' ? 'border-white bg-white' : 'border-neutral-600'
+                              }`}>
+                                {vinPhotoChoice === 'has_photo' && <span className="w-1.5 h-1.5 rounded-full bg-neutral-950"></span>}
+                              </span>
+                              <span className="text-xs sm:text-sm font-semibold">
+                                I have a photo of the {idMeta.choiceNoun}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSelectVinPhotoChoice('no_photo')}
+                              className={`flex items-center space-x-2.5 p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
+                                vinPhotoChoice === 'no_photo'
+                                  ? 'bg-neutral-900 border-neutral-300 text-white font-bold ring-1 ring-neutral-300'
+                                  : 'bg-neutral-950/60 border-neutral-800 text-neutral-300 hover:border-neutral-600'
+                              }`}
+                            >
+                              <span className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                vinPhotoChoice === 'no_photo' ? 'border-white bg-white' : 'border-neutral-600'
+                              }`}>
+                                {vinPhotoChoice === 'no_photo' && <span className="w-1.5 h-1.5 rounded-full bg-neutral-950"></span>}
+                              </span>
+                              <span className="text-xs sm:text-sm font-semibold">
+                                I do not have a photo of the {idMeta.choiceNoun}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {vinPhotoChoice === 'has_photo' && (
+                          <div className="space-y-3 pt-1">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleVinPhotoSelect}
+                              id="unit-details-vin-photo-input"
+                              disabled={vinPhotoUploading || scanningVin}
+                              className="hidden"
+                            />
+
+                            {!vinPhotoItem ? (
+                              <div
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingVinPhoto(true); }}
+                                onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingVinPhoto(true); }}
+                                onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingVinPhoto(false); }}
+                                onDrop={handleVinPhotoDrop}
+                                className={`border-2 border-dashed rounded-xl p-5 text-center transition-all ${
+                                  isDraggingVinPhoto
+                                    ? 'border-emerald-400 bg-emerald-950/30'
+                                    : 'border-neutral-700 hover:border-neutral-500 bg-neutral-900/50'
+                                }`}
+                              >
+                                <div className="flex flex-col items-center justify-center space-y-1 pointer-events-none">
+                                  <div className="text-xl mb-0.5">📷</div>
+                                  <p className="text-xs font-semibold text-neutral-200">
+                                    Upload a clear close-up photo of the {idMeta.tagLabelLower}
+                                  </p>
+                                  <p className="text-[11px] text-emerald-400 font-medium">
+                                    Full-resolution upload — automatically scanned to read your {idMeta.label}
+                                  </p>
+                                </div>
+                                <label
+                                  htmlFor="unit-details-vin-photo-input"
+                                  className={`mt-3 inline-block px-4 py-2 text-xs font-semibold rounded-lg border transition-colors shadow-sm ${
+                                    vinPhotoUploading || scanningVin
+                                      ? 'bg-neutral-800 text-neutral-500 border-neutral-700 cursor-not-allowed pointer-events-none'
+                                      : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700 cursor-pointer'
+                                  }`}
+                                >
+                                  {vinPhotoUploading || scanningVin
+                                    ? `Uploading & Scanning ${idMeta.tagLabel}...`
+                                    : `Choose Photo of ${idMeta.tagLabel}`}
+                                </label>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-neutral-900 border border-neutral-800">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <img
+                                    src={vinPhotoItem.thumbUrl || vinPhotoItem.url}
+                                    alt={idMeta.tagLabel}
+                                    className="w-16 h-12 rounded-lg object-cover border border-neutral-700 shrink-0"
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold text-white truncate">{idMeta.tagLabel} Photo Attached</p>
+                                    <p className="text-[11px] text-neutral-400">Saved at full resolution to your unit gallery</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <label
+                                    htmlFor="unit-details-vin-photo-input"
+                                    className={`px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 text-[11px] font-semibold transition-colors ${
+                                      vinPhotoUploading || scanningVin ? 'opacity-50 pointer-events-none' : 'cursor-pointer'
+                                    }`}
+                                  >
+                                    Replace Photo
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={handleRemoveVinPhoto}
+                                    className="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/80 border border-red-800/70 text-red-300 hover:text-white text-[11px] font-semibold transition-colors"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {(vinPhotoUploading || scanningVin) ? (
+                              <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-300">
+                                <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                                <span>
+                                  {vinPhotoUploading && scanningVin
+                                    ? `Uploading full-resolution photo & scanning for ${idMeta.label}...`
+                                    : scanningVin
+                                    ? `Scanning full-resolution photo for ${idMeta.label}...`
+                                    : `Finishing full-resolution upload...`}
+                                </span>
+                              </div>
+                            ) : vinPhotoScanFailed ? (
+                              <div className="p-3.5 sm:p-4 rounded-xl bg-amber-950/35 border border-amber-500/40 space-y-3 text-xs">
+                                <div className="flex items-start gap-2.5 text-amber-200">
+                                  <span className="text-amber-400 font-bold text-sm leading-none mt-0.5">⚠️</span>
+                                  <div className="space-y-1">
+                                    <p className="font-bold text-amber-200">
+                                      We couldn't read the {idMeta.label} from this photo with full confidence.
+                                    </p>
+                                    <p className="text-neutral-300 leading-relaxed">
+                                      Your full-resolution photo is still attached. Please enter the full {idMeta.label} below to continue:
+                                    </p>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                                    Full {idMeta.label} *
+                                  </label>
+                                  <input
+                                    type="text"
+                                    required
+                                    value={formData.vinOrSerial}
+                                    onChange={(e) => {
+                                      handleInputChange('vinOrSerial', e.target.value.toUpperCase());
+                                      setVinScanSource('manual');
+                                    }}
+                                    className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm uppercase focus:ring-1 focus:ring-amber-400 focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+                            ) : (formData.vinOrSerial && formData.vinOrSerial.trim()) ? (
+                              <div className="px-3.5 py-2.5 rounded-xl bg-emerald-950/35 border border-emerald-600/40 text-xs space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 text-emerald-300">
+                                    <span className="font-bold">✓</span>
+                                    <span>
+                                      {vinScanSource === 'ocr'
+                                        ? `${idMeta.label} detected from photo:`
+                                        : `${idMeta.label} saved:`}{' '}
+                                      <strong className="font-mono text-white tracking-wide">{formData.vinOrSerial}</strong>
+                                    </span>
+                                  </div>
+                                  {!isEditingDetectedVin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setOverrideVinInput(formData.vinOrSerial || '');
+                                        setIsEditingDetectedVin(true);
+                                      }}
+                                      className="px-2.5 py-1 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 border border-emerald-500/40 text-emerald-200 hover:text-white font-semibold text-[11px] transition-all whitespace-nowrap"
+                                    >
+                                      Edit / Override
+                                    </button>
+                                  )}
+                                </div>
+                                {isEditingDetectedVin && (
+                                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-emerald-700/30">
+                                    <div className="relative flex-1">
+                                      <input
+                                        type="text"
+                                        value={overrideVinInput}
+                                        onFocus={(e) => e.target.select()}
+                                        onChange={(e) => setOverrideVinInput(e.target.value.toUpperCase())}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const cleaned = (overrideVinInput || '').trim().toUpperCase();
+                                            if (cleaned) {
+                                              handleInputChange('vinOrSerial', cleaned);
+                                              setVinScanSource('manual');
+                                              setIsEditingDetectedVin(false);
+                                            }
+                                          } else if (e.key === 'Escape') {
+                                            e.preventDefault();
+                                            setIsEditingDetectedVin(false);
+                                          }
+                                        }}
+                                        autoFocus
+                                        className="w-full bg-neutral-950 border border-neutral-700 rounded-xl pl-3.5 pr-8 py-2 text-white font-mono text-sm uppercase focus:ring-1 focus:ring-emerald-400 focus:outline-none"
+                                      />
+                                      {overrideVinInput && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setOverrideVinInput('')}
+                                          title="Clear input"
+                                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white text-sm font-bold leading-none px-1"
+                                        >
+                                          ×
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const cleaned = (overrideVinInput || '').trim().toUpperCase();
+                                          if (!cleaned) return;
+                                          handleInputChange('vinOrSerial', cleaned);
+                                          setVinScanSource('manual');
+                                          setIsEditingDetectedVin(false);
+                                        }}
+                                        className="flex-1 sm:flex-none px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs rounded-xl transition-all whitespace-nowrap"
+                                      >
+                                        {idMeta.saveBtnText}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsEditingDetectedVin(false)}
+                                        className="px-3 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white font-semibold text-xs rounded-xl transition-all whitespace-nowrap"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+
+                        {vinPhotoChoice === 'no_photo' && (
+                          <div className="pt-1">
+                            <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                              Full {idMeta.label} *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={formData.vinOrSerial}
+                              onChange={(e) => {
+                                handleInputChange('vinOrSerial', e.target.value.toUpperCase());
+                                setVinScanSource('manual');
+                              }}
+                              className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm uppercase focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Optional Extras, Upgrades, or Additional Details (All Unit Types) */}
                     <div>
                       <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
@@ -7919,6 +8139,7 @@
                       </button>
                       <button
                         type="button"
+                        disabled={vinPhotoUploading || scanningVin}
                         onClick={() => {
                           if (category === 'container') {
                             if (!formData.year) {
@@ -7954,12 +8175,43 @@
                             alert('Please select the Transmission Type');
                             return;
                           }
+                          if (vinPhotoUploading || scanningVin) {
+                            alert(`Please wait for your ${idMeta.tagLabelLower} photo to finish uploading and scanning.`);
+                            return;
+                          }
+                          if (!vinPhotoChoice) {
+                            alert(`Please select whether you have a photo of the ${idMeta.choiceNoun}.`);
+                            return;
+                          }
+                          if (isEditingDetectedVin && overrideVinInput && overrideVinInput.trim()) {
+                            const cleanedOverride = overrideVinInput.trim().toUpperCase();
+                            handleInputChange('vinOrSerial', cleanedOverride);
+                            setVinScanSource('manual');
+                            setIsEditingDetectedVin(false);
+                            setStep(4);
+                            scrollToFormTop();
+                            return;
+                          }
+                          if (vinPhotoChoice === 'has_photo' && !vinPhotoItem && (!formData.vinOrSerial || !formData.vinOrSerial.trim())) {
+                            alert(`Please upload a photo of the ${idMeta.tagLabelLower}, or select "I do not have a photo of the ${idMeta.choiceNoun}".`);
+                            return;
+                          }
+                          if (!formData.vinOrSerial || !formData.vinOrSerial.trim()) {
+                            alert(`Please enter the full ${idMeta.label} before continuing.`);
+                            return;
+                          }
                           setStep(4);
                           scrollToFormTop();
                         }}
-                        className="px-6 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
+                        className={`px-6 py-3 font-bold text-xs rounded-xl transition-all ${
+                          vinPhotoUploading || scanningVin
+                            ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700'
+                            : 'bg-neutral-100 hover:bg-white text-neutral-950'
+                        }`}
                       >
-                        Continue to Condition →
+                        {vinPhotoUploading || scanningVin
+                          ? `Scanning ${idMeta.shortLabel}...`
+                          : 'Continue to Condition →'}
                       </button>
                     </div>
                   </div>
@@ -8001,11 +8253,6 @@
                         <p className="text-[11px] text-emerald-400 font-medium">
                           Full-quality photos & walkaround videos welcome — no resolution cap
                         </p>
-                        {category !== 'container' && (
-                          <p className="text-xs text-neutral-300 font-medium pt-0.5">
-                            Please include a photo of the {idMeta.tagLabel}
-                          </p>
-                        )}
                       </div>
                       
                       <input
@@ -8030,151 +8277,6 @@
                       )}
                     </div>
 
-                    {/* VIN / SERIAL DETECTION STATUS */}
-                    {category !== 'container' && (formData.vinOrSerial && formData.vinOrSerial.trim() ? (
-                      <div className="px-3.5 py-2.5 rounded-xl bg-emerald-950/35 border border-emerald-600/40 text-xs space-y-2.5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 text-emerald-300">
-                            <span className="font-bold">✓</span>
-                            <span>
-                              {vinScanSource === 'ocr'
-                                ? `${idMeta.label} detected from photo & added to unit details:`
-                                : `${idMeta.label} saved to unit details:`}{' '}
-                              <strong className="font-mono text-white tracking-wide">{formData.vinOrSerial}</strong>
-                            </span>
-                          </div>
-                          {!isEditingDetectedVin && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOverrideVinInput(formData.vinOrSerial || '');
-                                setIsEditingDetectedVin(true);
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 border border-emerald-500/40 text-emerald-200 hover:text-white font-semibold text-[11px] transition-all whitespace-nowrap"
-                            >
-                              Override / Enter Manually
-                            </button>
-                          )}
-                        </div>
-                        {isEditingDetectedVin && (
-                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-emerald-700/30">
-                            <div className="relative flex-1">
-                              <input
-                                type="text"
-                                value={overrideVinInput}
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) => setOverrideVinInput(e.target.value.toUpperCase())}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    const cleaned = (overrideVinInput || '').trim().toUpperCase();
-                                    if (cleaned) {
-                                      handleInputChange('vinOrSerial', cleaned);
-                                      setVinScanSource('manual');
-                                      setIsEditingDetectedVin(false);
-                                    }
-                                  } else if (e.key === 'Escape') {
-                                    e.preventDefault();
-                                    setIsEditingDetectedVin(false);
-                                  }
-                                }}
-                                placeholder={idMeta.manualPlaceholder}
-                                autoFocus
-                                className="w-full bg-neutral-950 border border-neutral-700 rounded-xl pl-3.5 pr-8 py-2 text-white font-mono text-sm placeholder:font-sans placeholder:text-neutral-500 focus:ring-1 focus:ring-emerald-400 focus:outline-none"
-                              />
-                              {overrideVinInput && (
-                                <button
-                                  type="button"
-                                  onClick={() => setOverrideVinInput('')}
-                                  title="Clear input"
-                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white text-sm font-bold leading-none px-1"
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const cleaned = (overrideVinInput || '').trim().toUpperCase();
-                                  if (!cleaned) return;
-                                  handleInputChange('vinOrSerial', cleaned);
-                                  setVinScanSource('manual');
-                                  setIsEditingDetectedVin(false);
-                                }}
-                                className="flex-1 sm:flex-none px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs rounded-xl transition-all whitespace-nowrap"
-                              >
-                                {idMeta.saveBtnText}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setIsEditingDetectedVin(false)}
-                                className="px-3 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white font-semibold text-xs rounded-xl transition-all whitespace-nowrap"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : scanningVin ? (
-                      <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-300">
-                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                        <span>Scanning uploaded photos for {idMeta.tagLabelLower}...</span>
-                      </div>
-                    ) : hasUnreadableVinPhoto ? (
-                      <div className="p-3.5 sm:p-4 rounded-xl bg-amber-950/35 border border-amber-500/40 space-y-3 text-xs">
-                        <div className="flex items-start gap-2.5 text-amber-200">
-                          <span className="text-amber-400 font-bold text-sm leading-none mt-0.5">⚠️</span>
-                          <div className="space-y-1">
-                            <p className="font-bold text-amber-200">
-                              We detected your {idMeta.tagLabelLower}, but couldn't read the {idMeta.label} with full confidence.
-                            </p>
-                            <p className="text-neutral-300 leading-relaxed">
-                              To ensure your appraisal is 100% accurate, please manually enter your {idMeta.label} below:
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-0.5">
-                          <input
-                            type="text"
-                            value={manualVinInput}
-                            onChange={(e) => {
-                              setManualVinInput(e.target.value.toUpperCase());
-                              if (vinModalError) setVinModalError('');
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                const cleaned = (manualVinInput || '').trim().toUpperCase();
-                                if (cleaned) {
-                                  handleInputChange('vinOrSerial', cleaned);
-                                  setVinScanSource('manual');
-                                  setVinModalError('');
-                                }
-                              }
-                            }}
-                            placeholder={idMeta.manualPlaceholder}
-                            className="flex-1 bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2 text-white font-mono text-sm placeholder:font-sans placeholder:text-neutral-500 focus:ring-1 focus:ring-amber-400 focus:outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const cleaned = (manualVinInput || '').trim().toUpperCase();
-                              if (!cleaned) return;
-                              handleInputChange('vinOrSerial', cleaned);
-                              setVinScanSource('manual');
-                              setVinModalError('');
-                            }}
-                            className="px-4 py-2 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all whitespace-nowrap"
-                          >
-                            Save to Unit Details
-                          </button>
-                        </div>
-                      </div>
-                    ) : null)}
-
                     {photos.length > 0 && (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
                         {photos.map(p => (
@@ -8198,15 +8300,6 @@
                             ) : (
                               <div className="w-full h-full relative">
                                 <img src={p.thumbUrl || p.url} alt={p.label} className="w-full h-full object-cover" />
-                                {p.detectedVin ? (
-                                  <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-emerald-600/95 text-[9px] font-bold text-white rounded shadow">
-                                    {idMeta.badgeText}
-                                  </span>
-                                ) : p.unreadableVinTag ? (
-                                  <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-amber-600/95 text-[9px] font-bold text-white rounded shadow">
-                                    {idMeta.manualBadgeText}
-                                  </span>
-                                ) : null}
                               </div>
                             )}
                             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2">
@@ -8240,19 +8333,15 @@
                     </button>
                     <button
                       type="button"
-                      disabled={uploading || checkingVinBeforeNext}
-                      onClick={handleContinueFromStep3}
+                      disabled={uploading}
+                      onClick={handleContinueFromPhotos}
                       className={`px-6 py-3 font-bold text-xs rounded-xl transition-all ${
-                        uploading || checkingVinBeforeNext
+                        uploading
                           ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700' 
                           : 'bg-neutral-100 hover:bg-white text-neutral-950'
                       }`}
                     >
-                      {uploading
-                        ? 'Uploading Media...'
-                        : checkingVinBeforeNext
-                        ? `Scanning Photos for ${idMeta.shortLabel}...`
-                        : 'Continue to Unit Details →'}
+                      {uploading ? 'Uploading Media...' : 'Continue to Unit Details →'}
                     </button>
                   </div>
                 </div>
@@ -8658,180 +8747,6 @@
 
             </form>
           </div>
-
-          {/* VIN / SERIAL TAG CHECK POP-UP MODAL (STEP 3 -> STEP 4) */}
-          {vinModalMode && (
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="vin-tag-modal-title"
-              className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-            >
-              <div className="bg-neutral-900 border border-neutral-750 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-5 text-neutral-200">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 id="vin-tag-modal-title" className="text-base sm:text-lg font-bold text-white leading-snug">
-                      {vinModalMode === 'yes_upload'
-                        ? `Include a Photo of the ${idMeta.tagLabel}`
-                        : vinModalMode === 'no_manual' && hasUnreadableVinPhoto
-                          ? `Manual ${idMeta.shortLabel} Entry Required`
-                          : `Do you have a photo of the ${idMeta.tagLabelLower}?`}
-                    </h3>
-                    {vinModalMode === 'ask' && (
-                      <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                        We didn't automatically detect a {idMeta.label} in your uploaded photos.
-                      </p>
-                    )}
-                    {vinModalMode === 'no_manual' && (
-                      <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                        {hasUnreadableVinPhoto
-                          ? `We detected your ${idMeta.tagLabelLower} photo, but couldn't read the ${idMeta.label} with full confidence. Please manually enter it below before continuing to Unit Details.`
-                          : `Please manually enter the ${idMeta.label} before continuing to Unit Details.`}
-                      </p>
-                    )}
-                    {vinModalMode === 'yes_upload' && (
-                      <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                        Upload a clear close-up photo of the {idMeta.tagLabelLower} now, or enter it manually if the tag is too damaged to scan.
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    disabled={uploading || checkingVinBeforeNext}
-                    onClick={() => setVinModalMode(null)}
-                    aria-label="Close dialog"
-                    className="text-neutral-400 hover:text-white text-base font-bold px-1.5 py-0.5 rounded transition-colors"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {vinModalMode === 'ask' && (
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setVinModalError('');
-                        setVinModalMode('yes_upload');
-                      }}
-                      className="px-4 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setVinModalError('');
-                        setVinModalMode('no_manual');
-                      }}
-                      className="px-4 py-3 bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs rounded-xl border border-neutral-700 transition-all"
-                    >
-                      No
-                    </button>
-                  </div>
-                )}
-
-                {vinModalMode === 'no_manual' && (
-                  <div className="space-y-4">
-                    <div>
-                      <label htmlFor="manual-vin-modal-input" className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                        {idMeta.label} *
-                      </label>
-                      <input
-                        id="manual-vin-modal-input"
-                        type="text"
-                        autoFocus
-                        value={manualVinInput}
-                        onChange={(e) => {
-                          setManualVinInput(e.target.value.toUpperCase());
-                          if (vinModalError) setVinModalError('');
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleSaveManualVinAndContinue();
-                          }
-                        }}
-                        placeholder={idMeta.manualPlaceholder}
-                        className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-2.5 text-white font-mono text-base sm:text-sm placeholder:font-sans placeholder:text-neutral-600 focus:ring-1 focus:ring-neutral-300 focus:outline-none"
-                      />
-                      {vinModalError && (
-                        <p className="text-xs text-red-400 mt-1.5 font-medium">{vinModalError}</p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setVinModalError('');
-                          setVinModalMode(hasUnreadableVinPhoto ? null : 'ask');
-                        }}
-                        className="px-3 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
-                      >
-                        {hasUnreadableVinPhoto ? '← Back to Photos' : '← Back'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSaveManualVinAndContinue}
-                        className="px-5 py-2.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
-                      >
-                        Continue to Unit Details →
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {vinModalMode === 'yes_upload' && (
-                  <div className="space-y-3">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleVinModalPhotoUpload}
-                      id="vin-modal-photo-input"
-                      disabled={uploading || checkingVinBeforeNext}
-                      className="hidden"
-                    />
-                    <label
-                      htmlFor="vin-modal-photo-input"
-                      className={`w-full flex items-center justify-center gap-2 px-4 py-3 font-bold text-xs rounded-xl transition-all ${
-                        uploading || checkingVinBeforeNext
-                          ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700 pointer-events-none'
-                          : 'bg-neutral-100 hover:bg-white text-neutral-950 cursor-pointer'
-                      }`}
-                    >
-                      {uploading || checkingVinBeforeNext
-                        ? `Uploading & Scanning ${idMeta.tagLabel}...`
-                        : `📷 Upload Photo of ${idMeta.tagLabel}`}
-                    </label>
-
-                    <button
-                      type="button"
-                      disabled={uploading || checkingVinBeforeNext}
-                      onClick={() => {
-                        setVinModalError('');
-                        setVinModalMode('no_manual');
-                      }}
-                      className="w-full px-4 py-2.5 bg-neutral-800/80 hover:bg-neutral-800 text-neutral-200 font-semibold text-xs rounded-xl border border-neutral-700 transition-all"
-                    >
-                      Already Included in Uploaded Photos — Enter {idMeta.shortLabel} Manually →
-                    </button>
-
-                    <div className="pt-1">
-                      <button
-                        type="button"
-                        disabled={uploading || checkingVinBeforeNext}
-                        onClick={() => setVinModalMode('ask')}
-                        className="px-2 py-1 text-neutral-400 hover:text-white text-xs font-semibold"
-                      >
-                        ← Back
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       );
     }
@@ -9059,6 +8974,7 @@
         return {
           label: 'Serial Number',
           shortLabel: 'Serial Number',
+          choiceNoun: 'Serial Number',
           tagLabel: 'Serial Number Tag',
           tagLabelLower: 'Serial Number tag',
           placeholder: 'Enter Serial Number (or upload Serial Number photo below)',
@@ -9075,6 +8991,7 @@
         return {
           label: 'VIN Number',
           shortLabel: 'VIN Number',
+          choiceNoun: 'VIN',
           tagLabel: 'VIN Tag',
           tagLabelLower: 'VIN tag',
           placeholder: 'Enter VIN Number (or upload VIN photo below)',
@@ -9091,6 +9008,7 @@
         return {
           label: 'HIN / Serial Number',
           shortLabel: 'HIN / Serial Number',
+          choiceNoun: 'HIN / Serial Number',
           tagLabel: 'HIN / Serial Tag',
           tagLabelLower: 'HIN / Serial Number tag',
           placeholder: 'Enter HIN / Serial Number (or upload photo below)',
@@ -9106,6 +9024,7 @@
       return {
         label: 'VIN / Serial Number',
         shortLabel: 'VIN / Serial Number',
+        choiceNoun: 'VIN / Serial Number',
         tagLabel: 'VIN / Serial Tag',
         tagLabelLower: 'VIN / Serial tag',
         placeholder: 'Enter VIN or Serial Number',
