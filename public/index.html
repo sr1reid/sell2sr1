@@ -478,12 +478,12 @@
 
     // --- SUPER ADMIN WEBSITE TRAFFIC & PARTIAL FORM TRACKING (PAST STEP 2 ONLY) ---
     const STEP_NAME_MAP = {
-      1: 'Step 1: Category & Intent',
-      2: 'Step 2: Unit Details',
-      3: 'Step 3: Photos',
+      1: 'Step 1: Deal Type',
+      2: 'Step 2: Photos',
+      3: 'Step 3: Unit Details',
       4: 'Step 4: Condition',
       5: 'Step 5: Ownership',
-      6: 'Step 6: Contact & Location'
+      6: 'Step 6: Contact Info'
     };
 
     function getLocalDateKey(d = new Date()) {
@@ -6805,7 +6805,7 @@
                       batchManualEntryTriggered = true;
                       pumpOcrQueue();
                       setScanningVin(false);
-                      if (!options?.fromVinModal && stepRef.current === 3) {
+                      if (!options?.fromVinModal && stepRef.current === 2) {
                         const projectedPhotoCount = Math.max(photosCountRef.current, existingPhotosCount + batchEntries.length);
                         if (!uploadingRef.current && photosCountRef.current >= 3) {
                           setVinModalError('');
@@ -6918,7 +6918,7 @@
         if (
           openManualModalAfterBatchUpload &&
           !options?.fromVinModal &&
-          stepRef.current === 3 &&
+          stepRef.current === 2 &&
           !latestVinRef.current &&
           existingPhotosCount + addedInBatchCount >= 3
         ) {
@@ -6990,7 +6990,7 @@
 
         // Shipping containers do not require a VIN / Serial number
         if (category === 'container') {
-          setStep(4);
+          setStep(3);
           scrollToFormTop();
           return;
         }
@@ -7008,7 +7008,7 @@
           handleInputChange('vinOrSerial', pendingOverrideVin);
           setVinScanSource('manual');
           setIsEditingDetectedVin(false);
-          setStep(4);
+          setStep(3);
           scrollToFormTop();
           return;
         }
@@ -7022,7 +7022,7 @@
             handleInputChange('vinOrSerial', effectiveVin);
             setVinScanSource(photoDetectedVin ? 'ocr' : 'manual');
           }
-          setStep(4);
+          setStep(3);
           scrollToFormTop();
           return;
         }
@@ -7034,7 +7034,7 @@
         }
 
         if (vinPhotoConfirmed) {
-          setStep(4);
+          setStep(3);
           scrollToFormTop();
           return;
         }
@@ -7068,10 +7068,10 @@
           setVinPhotoConfirmed(true);
           setVinModalError('');
           setVinModalMode(null);
-          setStep(4);
+          setStep(3);
           scrollToFormTop();
         } else {
-          // If the uploaded VIN sticker could not be read with full confidence within 8 seconds, require manual entry before Step 4
+          // If the uploaded VIN sticker could not be read with full confidence within 8 seconds, require manual entry before Step 3
           setVinModalError('');
           setVinModalMode('no_manual');
         }
@@ -7082,8 +7082,8 @@
         if (!cleanedVin) {
           setVinModalError(
             category === 'container'
-              ? 'Please enter the Box Identification Number before continuing to Step 4.'
-              : `Please enter the ${idMeta.label} before continuing to Step 4.`
+              ? 'Please enter the Box Identification Number before continuing to Unit Details.'
+              : `Please enter the ${idMeta.label} before continuing to Unit Details.`
           );
           return;
         }
@@ -7091,7 +7091,7 @@
         setVinScanSource('manual');
         setVinModalError('');
         setVinModalMode(null);
-        setStep(4);
+        setStep(3);
         scrollToFormTop();
       };
 
@@ -7108,13 +7108,13 @@
 
       const handleSubmit = async (e) => {
         e.preventDefault();
-        if (category === 'tractor' && !formData.transmissionType) {
-          alert('Please select the Transmission Type for your tractor.');
+        if (photos.length < 3) {
+          alert('Please upload at least 3 photos of your unit before submitting.');
           setStep(2);
           return;
         }
-        if (photos.length < 3) {
-          alert('Please upload at least 3 photos of your unit before submitting.');
+        if (category === 'tractor' && !formData.transmissionType) {
+          alert('Please select the Transmission Type for your tractor.');
           setStep(3);
           return;
         }
@@ -7548,10 +7548,10 @@
                   <span>1. Deal Type</span>
                 </div>
                 <div className={`py-2 md:py-2.5 px-1 rounded-lg transition-all ${step >= 2 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
-                  <span>2. Unit Details</span>
+                  <span>2. Photos</span>
                 </div>
                 <div className={`py-2 md:py-2.5 px-1 rounded-lg transition-all ${step >= 3 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
-                  <span>3. Photos</span>
+                  <span>3. Unit Details</span>
                 </div>
                 <div className={`py-2 md:py-2.5 px-1 rounded-lg transition-all ${step >= 4 ? 'bg-neutral-100 text-neutral-950 font-bold' : 'text-neutral-500'}`}>
                   <span>4. Condition</span>
@@ -7756,14 +7756,14 @@
                       }}
                       className="px-6 py-3 md:px-7 md:py-3.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs md:text-sm rounded-xl transition-all"
                     >
-                      Continue to Unit Details →
+                      Continue to Photos →
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* --- STEP 2: UNIT DETAILS --- */}
-              {step === 2 && (() => {
+              {/* --- STEP 3: UNIT DETAILS --- */}
+              {step === 3 && (() => {
                 const requiresHours = category === 'tractor' || category === 'equipment' || category === 'boat_pwc';
                 const requiresMiles = category === 'powersports' || category === 'motorcycle';
 
@@ -7910,7 +7910,7 @@
                       <button
                         type="button"
                         onClick={() => {
-                          setStep(1);
+                          setStep(2);
                           scrollToFormTop();
                         }}
                         className="px-4 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
@@ -7925,7 +7925,7 @@
                               alert('Please enter the Year Purchased');
                               return;
                             }
-                            setStep(3);
+                            setStep(4);
                             scrollToFormTop();
                             return;
                           }
@@ -7954,20 +7954,20 @@
                             alert('Please select the Transmission Type');
                             return;
                           }
-                          setStep(3);
+                          setStep(4);
                           scrollToFormTop();
                         }}
                         className="px-6 py-3 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
                       >
-                        Continue to Photos →
+                        Continue to Condition →
                       </button>
                     </div>
                   </div>
                 );
               })()}
 
-              {/* --- STEP 3: PHOTOS --- */}
-              {step === 3 && (
+              {/* --- STEP 2: PHOTOS --- */}
+              {step === 2 && (
                 <div className="space-y-6">
                   <div>
                     <h2 className="text-lg font-bold text-white">Photos</h2>
@@ -8231,7 +8231,7 @@
                     <button
                       type="button"
                       onClick={() => {
-                        setStep(2);
+                        setStep(1);
                         scrollToFormTop();
                       }}
                       className="px-4 py-2 text-neutral-400 hover:text-white text-xs font-semibold"
@@ -8252,7 +8252,7 @@
                         ? 'Uploading Media...'
                         : checkingVinBeforeNext
                         ? `Scanning Photos for ${idMeta.shortLabel}...`
-                        : 'Continue to Condition →'}
+                        : 'Continue to Unit Details →'}
                     </button>
                   </div>
                 </div>
@@ -8685,8 +8685,8 @@
                     {vinModalMode === 'no_manual' && (
                       <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
                         {hasUnreadableVinPhoto
-                          ? `We detected your ${idMeta.tagLabelLower} photo, but couldn't read the ${idMeta.label} with full confidence. Please manually enter it below before continuing to Step 4.`
-                          : `Please manually enter the ${idMeta.label} before continuing to Step 4.`}
+                          ? `We detected your ${idMeta.tagLabelLower} photo, but couldn't read the ${idMeta.label} with full confidence. Please manually enter it below before continuing to Unit Details.`
+                          : `Please manually enter the ${idMeta.label} before continuing to Unit Details.`}
                       </p>
                     )}
                     {vinModalMode === 'yes_upload' && (
@@ -8776,7 +8776,7 @@
                         onClick={handleSaveManualVinAndContinue}
                         className="px-5 py-2.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all"
                       >
-                        Continue to Step 4 →
+                        Continue to Unit Details →
                       </button>
                     </div>
                   </div>
@@ -11993,7 +11993,7 @@
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
                   {[
                     { id: 'all', title: 'All Incomplete (Step 3+)', sub: 'Every partial form past Step 2', count: stepDropOffCounts.all },
-                    { id: 3, title: 'Stopped at Step 3', sub: 'Photos & VIN Screen', count: stepDropOffCounts[3] },
+                    { id: 3, title: 'Stopped at Step 3', sub: 'Unit Details Screen', count: stepDropOffCounts[3] },
                     { id: 4, title: 'Stopped at Step 4', sub: 'Condition Notes Screen', count: stepDropOffCounts[4] },
                     { id: 5, title: 'Stopped at Step 5', sub: 'Ownership & Title Screen', count: stepDropOffCounts[5] },
                     { id: 6, title: 'Stopped at Step 6', sub: 'Contact & Store Screen', count: stepDropOffCounts[6] }
@@ -12157,9 +12157,9 @@
 
                         {/* Middle Grid: All Captured Details From Steps 1 through Max Step */}
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-                          {/* Col 1: Unit & Step 1/2 Info */}
+                          {/* Col 1: Unit & Step 1/3 Info */}
                           <div className="bg-neutral-950/80 border border-neutral-850 rounded-xl p-3 space-y-1">
-                            <div className="text-[10px] font-bold uppercase text-neutral-500">Step 1 &amp; 2: Unit Details</div>
+                            <div className="text-[10px] font-bold uppercase text-neutral-500">Step 1 &amp; 3: Unit Details</div>
                             <div className="font-extrabold text-white text-sm">{unitTitle}</div>
                             <div className="text-[11px] text-neutral-300">
                               {pf.categoryLabel || 'Unit'} •{' '}
@@ -12184,9 +12184,9 @@
                             )}
                           </div>
 
-                          {/* Col 2: Step 3 Photos & VIN */}
+                          {/* Col 2: Step 2 Photos & VIN */}
                           <div className="bg-neutral-950/80 border border-neutral-850 rounded-xl p-3 space-y-1.5">
-                            <div className="text-[10px] font-bold uppercase text-neutral-500">Step 3: Photos &amp; VIN</div>
+                            <div className="text-[10px] font-bold uppercase text-neutral-500">Step 2: Photos &amp; VIN</div>
                             <div className="text-[11px] text-neutral-200 font-semibold">
                               📷 {Number(pf.photosCount) || 0} photo(s) uploaded
                             </div>
@@ -12596,7 +12596,7 @@
                   {/* Captured Details Grid */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5 space-y-2">
-                      <div className="text-[10px] font-bold uppercase text-neutral-400">Step 1 &amp; Step 2: Unit Information</div>
+                      <div className="text-[10px] font-bold uppercase text-neutral-400">Steps 1, 2 &amp; 3: Unit Information</div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <span className="text-neutral-500 text-[10px] block">Category</span>
@@ -12618,12 +12618,12 @@
                         </div>
                         {selectedPartial.unit?.extrasOrUpgrades && (
                           <div className="col-span-2">
-                            <span className="text-neutral-500 text-[10px] block">Extras, Upgrades, or Additional Details (Step 2)</span>
+                            <span className="text-neutral-500 text-[10px] block">Extras, Upgrades, or Additional Details (Step 3)</span>
                             <span className="text-neutral-200 whitespace-pre-line">{selectedPartial.unit.extrasOrUpgrades}</span>
                           </div>
                         )}
                         <div className="col-span-2">
-                          <span className="text-neutral-500 text-[10px] block">VIN / Serial (Step 3)</span>
+                          <span className="text-neutral-500 text-[10px] block">VIN / Serial (Step 2)</span>
                           <span className="text-emerald-300 font-mono">{selectedPartial.unit?.vinOrSerial || 'None captured before leaving'}</span>
                         </div>
                         {selectedPartial.workingWithSalesperson === 'yes' && (
@@ -12668,10 +12668,10 @@
                     </div>
                   </div>
 
-                  {/* Uploaded Photos on Step 3 */}
+                  {/* Uploaded Photos on Step 2 */}
                   <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5 space-y-2">
                     <div className="text-[10px] font-bold uppercase text-neutral-400">
-                      Uploaded Photos in Step 3 ({Number(selectedPartial.photosCount) || 0})
+                      Uploaded Photos in Step 2 ({Number(selectedPartial.photosCount) || 0})
                     </div>
                     {Array.isArray(selectedPartial.photos) && selectedPartial.photos.length > 0 ? (
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
