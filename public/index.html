@@ -7837,6 +7837,19 @@
                       </div>
                     )}
 
+                    {/* Optional Extras, Upgrades, or Additional Details (All Unit Types) */}
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
+                        Extras, Upgrades, or Additional Details <span className="text-neutral-500 font-normal normal-case">(Optional)</span>
+                      </label>
+                      <textarea
+                        rows="3"
+                        value={formData.extrasOrUpgrades}
+                        onChange={(e) => handleInputChange('extrasOrUpgrades', e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                      ></textarea>
+                    </div>
+
                     {/* VIN / SERIAL NUMBER SECTION (ALL UNIT TYPES EXCEPT SHIPPING CONTAINERS) */}
                     {category !== 'container' && (
                       <div className="bg-neutral-950 p-4 md:p-5 rounded-xl border border-neutral-800 space-y-4">
@@ -8112,19 +8125,6 @@
                         )}
                       </div>
                     )}
-
-                    {/* Optional Extras, Upgrades, or Additional Details (All Unit Types) */}
-                    <div>
-                      <label className="block text-xs font-semibold uppercase text-neutral-300 mb-1.5">
-                        Extras, Upgrades, or Additional Details <span className="text-neutral-500 font-normal normal-case">(Optional)</span>
-                      </label>
-                      <textarea
-                        rows="3"
-                        value={formData.extrasOrUpgrades}
-                        onChange={(e) => handleInputChange('extrasOrUpgrades', e.target.value)}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-base sm:text-sm focus:ring-1 focus:ring-neutral-400 focus:outline-none"
-                      ></textarea>
-                    </div>
 
                     <div className="pt-4 flex items-center justify-between">
                       <button
