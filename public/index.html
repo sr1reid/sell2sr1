@@ -6721,9 +6721,9 @@
         });
       };
 
-      // Optimize Step 2 photos for fast upload (~60-85% smaller while keeping crisp 2K appraisal detail).
+      // Optimize Step 2 photos for fast upload (~65-75% smaller while keeping sharp 2.5K appraisal detail).
       // Note: Step 3 VIN/Serial tag photos bypass this helper and upload at full resolution for OCR.
-      const optimizePhotoForUpload = async (file, { maxDim = 2048, quality = 0.82 } = {}) => {
+      const optimizePhotoForUpload = async (file, { maxDim = 2560, quality = 0.88 } = {}) => {
         if (!file || typeof document === 'undefined') return file;
         let bitmap = null;
         let objectUrl = null;
@@ -7041,8 +7041,8 @@
             } else {
               // 1. Ensure HEIC/HEIF images are converted to browser-compatible JPEG
               const decodedFile = (await ensureDecodableImageBlob(file)) || file;
-              // 2. Optimize photo resolution/quality (max 2048px, JPEG 0.82) for fast upload
-              uploadableFile = await optimizePhotoForUpload(decodedFile, { maxDim: 2048, quality: 0.82 });
+              // 2. Optimize photo resolution/quality (max 2560px, JPEG 0.88) for fast upload with crisp detail
+              uploadableFile = await optimizePhotoForUpload(decodedFile, { maxDim: 2560, quality: 0.88 });
             }
 
             // 3. Direct upload to Firebase Cloud Storage bucket
