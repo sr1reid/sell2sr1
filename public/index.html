@@ -260,7 +260,7 @@
           else contentType = 'image/jpeg';
         }
 
-        const metadata = { contentType };
+        const metadata = { contentType, cacheControl: 'public, max-age=31536000' };
         const snapshot = await ref.put(file, metadata);
         const downloadUrl = await snapshot.ref.getDownloadURL();
         return downloadUrl;
@@ -6721,6 +6721,283 @@
         });
       };
 
+      // Optimize Step 2 photos for fast upload (~60-85% smaller while keeping crisp 2K appraisal detail).
+      // Note: Step 3 VIN/Serial tag photos bypass this helper and upload at full resolution for OCR.
+      const optimizePhotoForUpload = async (file, { maxDim = 2048, quality = 0.82 } = {}) => {
+        if (!file || typeof document === 'undefined') return file;
+        let bitmap = null;
+        let objectUrl = null;
+        try {
+          let source = null;
+          let srcW = 0;
+          let srcH = 0;
+
+          if (typeof createImageBitmap === 'function') {
+            try {
+              bitmap = await createImageBitmap(file);
+              source = bitmap;
+              srcW = bitmap.width;
+              srcH = bitmap.height;
+            } catch (bmErr) {
+              bitmap = null;
+            }
+          }
+
+          if (!source) {
+            objectUrl = URL.createObjectURL(file);
+            source = await new Promise((resolve, reject) => {
+              const img = new Image();
+              img.onload = () => resolve(img);
+              img.onerror = () => reject(new Error('Image decode failed'));
+              img.src = objectUrl;
+            });
+            srcW = source.naturalWidth || source.width;
+            srcH = source.naturalHeight || source.height;
+          }
+
+          if (!srcW || !srcH) return file;
+
+          let targetW = srcW;
+          let targetH = srcH;
+          let wasScaled = false;
+          if (targetW > maxDim || targetH > maxDim) {
+            wasScaled = true;
+            if (targetW >= targetH) {
+              targetH = Math.max(1, Math.round((targetH * maxDim) / targetW));
+              targetW = maxDim;
+            } else {
+              targetW = Math.max(1, Math.round((targetW * maxDim) / targetH));
+              targetH = maxDim;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return file;
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(source, 0, 0, targetW, targetH);
+
+          const compressedBlob = await new Promise((resolve) => {
+            canvas.toBlob((blob) => resolve(blob || null), 'image/jpeg', quality);
+          });
+
+          if (!compressedBlob || compressedBlob.size === 0) return file;
+
+          // Keep original if it wasn't oversized and compression didn't meaningfully shrink it
+          if (!wasScaled && compressedBlob.size >= file.size * 0.92) {
+            return file;
+          }
+
+          const baseName = (file.name || 'photo').replace(/\.[^.]+$/, '');
+          try {
+            return new File([compressedBlob], `${baseName}.jpg`, {
+              type: 'image/jpeg',
+              lastModified: file.lastModified || Date.now()
+            });
+          } catch (e) {
+            compressedBlob.name = `${baseName}.jpg`;
+            return compressedBlob;
+          }
+        } catch (err) {
+          console.warn('Photo optimization fallback to original:', err);
+          return file;
+        } finally {
+          if (bitmap && typeof bitmap.close === 'function') {
+            try { bitmap.close(); } catch (e) {}
+          }
+          if (objectUrl) {
+            try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+          }
+        }
+      };
+
+      // Smart client-side video compression for heavy high-bitrate phone videos (e.g. 4K / 1080p60 > 18MB).
+      // Downscales to crisp 720p HD (~2.8 Mbps) silently without audio playback, falling back seamlessly
+      // to the original file on unsupported browsers (e.g. older iOS Safari) or if savings < 35%.
+      const optimizeVideoForUpload = async (
+        file,
+        { maxDim = 1280, videoBitsPerSecond = 2800000, audioBitsPerSecond = 96000 } = {}
+      ) => {
+        if (
+          !file ||
+          typeof document === 'undefined' ||
+          typeof MediaRecorder === 'undefined' ||
+          file.size < 18 * 1024 * 1024
+        ) {
+          return file;
+        }
+
+        const candidateTypes = [
+          'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+          'video/mp4',
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8,opus',
+          'video/webm'
+        ];
+        const mimeType = candidateTypes.find((t) => {
+          try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; }
+        });
+        if (!mimeType) return file;
+
+        let objectUrl = null;
+        let audioCtx = null;
+        let rafId = null;
+        let safetyTimer = null;
+
+        try {
+          objectUrl = URL.createObjectURL(file);
+          const video = document.createElement('video');
+          video.preload = 'auto';
+          video.playsInline = true;
+          video.muted = false;
+          video.crossOrigin = 'anonymous';
+          video.src = objectUrl;
+
+          await new Promise((resolve, reject) => {
+            const metaTimer = setTimeout(() => reject(new Error('Video metadata timeout')), 6000);
+            video.onloadedmetadata = () => { clearTimeout(metaTimer); resolve(); };
+            video.onerror = () => { clearTimeout(metaTimer); reject(new Error('Video decode failed')); };
+          });
+
+          const duration = Number(video.duration) || 0;
+          const srcW = video.videoWidth || 0;
+          const srcH = video.videoHeight || 0;
+          if (!duration || duration > 60 || !srcW || !srcH) return file;
+
+          // Only transcode when bitrate is genuinely high (> 7 Mbps) so we save real time
+          const bitrateBps = (file.size * 8) / duration;
+          if (bitrateBps <= 7000000) return file;
+
+          let targetW = srcW;
+          let targetH = srcH;
+          if (targetW > maxDim || targetH > maxDim) {
+            if (targetW >= targetH) {
+              targetH = Math.max(2, Math.round((targetH * maxDim) / targetW) & ~1);
+              targetW = maxDim & ~1;
+            } else {
+              targetW = Math.max(2, Math.round((targetW * maxDim) / targetH) & ~1);
+              targetH = maxDim & ~1;
+            }
+          } else {
+            targetW = Math.max(2, targetW & ~1);
+            targetH = Math.max(2, targetH & ~1);
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          if (typeof canvas.captureStream !== 'function') return file;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return file;
+
+          const canvasStream = canvas.captureStream(30);
+          const tracks = [...canvasStream.getVideoTracks()];
+
+          // Route audio silently into the MediaRecorder stream (not connected to speakers)
+          try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) {
+              audioCtx = new AudioCtx();
+              const sourceNode = audioCtx.createMediaElementSource(video);
+              const destNode = audioCtx.createMediaStreamDestination();
+              sourceNode.connect(destNode);
+              destNode.stream.getAudioTracks().forEach((t) => tracks.push(t));
+            } else {
+              video.muted = true;
+            }
+          } catch (audioErr) {
+            video.muted = true;
+          }
+
+          const combinedStream = new MediaStream(tracks);
+          const chunks = [];
+          const recorder = new MediaRecorder(combinedStream, {
+            mimeType,
+            videoBitsPerSecond,
+            audioBitsPerSecond
+          });
+          recorder.ondataavailable = (ev) => {
+            if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+          };
+
+          const drawFrame = () => {
+            if (!video.paused && !video.ended) {
+              try { ctx.drawImage(video, 0, 0, targetW, targetH); } catch (e) {}
+              rafId = requestAnimationFrame(drawFrame);
+            }
+          };
+
+          const compressedBlob = await new Promise((resolve, reject) => {
+            safetyTimer = setTimeout(() => {
+              try { video.pause(); } catch (e) {}
+              try { if (recorder.state !== 'inactive') recorder.stop(); } catch (e) {}
+              reject(new Error('Video compression timeout'));
+            }, Math.ceil((duration + 12) * 1000));
+
+            recorder.onstop = () => {
+              clearTimeout(safetyTimer);
+              resolve(new Blob(chunks, { type: mimeType.split(';')[0] }));
+            };
+            recorder.onerror = () => {
+              clearTimeout(safetyTimer);
+              reject(new Error('MediaRecorder error'));
+            };
+            video.onended = () => {
+              if (rafId) cancelAnimationFrame(rafId);
+              try { ctx.drawImage(video, 0, 0, targetW, targetH); } catch (e) {}
+              if (recorder.state !== 'inactive') recorder.stop();
+            };
+
+            recorder.start(500);
+            const playPromise = video.play();
+            if (playPromise && typeof playPromise.then === 'function') {
+              playPromise.then(() => {
+                rafId = requestAnimationFrame(drawFrame);
+              }).catch((playErr) => {
+                clearTimeout(safetyTimer);
+                try { if (recorder.state !== 'inactive') recorder.stop(); } catch (e) {}
+                reject(playErr);
+              });
+            } else {
+              rafId = requestAnimationFrame(drawFrame);
+            }
+          });
+
+          // Only use the transcoded video if it saved at least 35%
+          if (!compressedBlob || compressedBlob.size === 0 || compressedBlob.size >= file.size * 0.65) {
+            return file;
+          }
+
+          const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+          const outMime = ext === 'mp4' ? 'video/mp4' : 'video/webm';
+          const baseName = (file.name || 'video').replace(/\.[^.]+$/, '');
+          try {
+            return new File([compressedBlob], `${baseName}.${ext}`, {
+              type: outMime,
+              lastModified: file.lastModified || Date.now()
+            });
+          } catch (e) {
+            compressedBlob.name = `${baseName}.${ext}`;
+            return compressedBlob;
+          }
+        } catch (err) {
+          console.warn('Video optimization fallback to original:', err);
+          return file;
+        } finally {
+          if (rafId) cancelAnimationFrame(rafId);
+          if (safetyTimer) clearTimeout(safetyTimer);
+          if (audioCtx && typeof audioCtx.close === 'function') {
+            try { audioCtx.close(); } catch (e) {}
+          }
+          if (objectUrl) {
+            try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+          }
+        }
+      };
+
       const processFiles = async (filesList) => {
         const files = Array.from(filesList || []).filter(file => 
           file.type.startsWith('image/') || 
@@ -6740,16 +7017,35 @@
           };
         });
 
-        for (let i = 0; i < batchEntries.length; i++) {
-          const entry = batchEntries[i];
+        const totalCount = batchEntries.length;
+        let completedCount = 0;
+        let nextIndex = 0;
+        const MAX_CONCURRENT_UPLOADS = 3;
+
+        setUploadStatus(
+          totalCount === 1
+            ? 'Optimizing & uploading 1 file...'
+            : `Optimizing & uploading ${totalCount} files...`
+        );
+
+        const uploadOneEntry = async (entry) => {
           const { file, isVideo, mediaId, label } = entry;
           try {
-            setUploadStatus(`Uploading file ${i + 1} of ${batchEntries.length}...`);
+            let uploadableFile = file;
+            let videoThumbPromise = null;
 
-            // 1. Ensure HEIC/HEIF images are converted to browser-compatible JPEG before upload & thumbnail display
-            const uploadableFile = !isVideo ? (await ensureDecodableImageBlob(file)) || file : file;
+            if (isVideo) {
+              // Extract a lightweight preview frame in parallel while optimizing/uploading the video
+              videoThumbPromise = extractVideoThumbnail(file).catch(() => '');
+              uploadableFile = await optimizeVideoForUpload(file);
+            } else {
+              // 1. Ensure HEIC/HEIF images are converted to browser-compatible JPEG
+              const decodedFile = (await ensureDecodableImageBlob(file)) || file;
+              // 2. Optimize photo resolution/quality (max 2048px, JPEG 0.82) for fast upload
+              uploadableFile = await optimizePhotoForUpload(decodedFile, { maxDim: 2048, quality: 0.82 });
+            }
 
-            // 2. Direct upload to Firebase Cloud Storage bucket
+            // 3. Direct upload to Firebase Cloud Storage bucket
             let cloudUrl = null;
             try {
               cloudUrl = await uploadMediaFileToStorage(uploadableFile);
@@ -6758,12 +7054,13 @@
             }
 
             if (cloudUrl) {
+              const videoThumb = isVideo && videoThumbPromise ? (await videoThumbPromise) : '';
               setPhotos(prev => [
                 ...prev,
                 {
                   id: mediaId,
                   url: cloudUrl,
-                  thumbUrl: cloudUrl,
+                  thumbUrl: isVideo ? (videoThumb || '') : cloudUrl,
                   isVideo: isVideo,
                   fileSize: uploadableFile.size || file.size,
                   fileType: uploadableFile.type || file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
@@ -6772,9 +7069,9 @@
                 }
               ]);
             } else {
-              // 3. Client-side fallback if storage bucket was unreachable
+              // 4. Client-side fallback if storage bucket was unreachable
               if (isVideo) {
-                const thumbUrl = await extractVideoThumbnail(file);
+                const thumbUrl = (videoThumbPromise ? await videoThumbPromise : '') || (await extractVideoThumbnail(file));
                 if (thumbUrl) {
                   setPhotos(prev => [
                     ...prev,
@@ -6800,7 +7097,7 @@
                       url: thumbUrl,
                       thumbUrl: thumbUrl,
                       isVideo: false,
-                      fileSize: file.size,
+                      fileSize: uploadableFile.size || file.size,
                       fileType: 'image/jpeg',
                       label: label,
                       uploadedAt: new Date().toISOString()
@@ -6811,8 +7108,23 @@
             }
           } catch (err) {
             console.error('Photo/Video processing error:', err);
+          } finally {
+            completedCount += 1;
+            if (completedCount < totalCount) {
+              setUploadStatus(`Uploaded ${completedCount} of ${totalCount} files...`);
+            }
           }
-        }
+        };
+
+        const workerCount = Math.min(MAX_CONCURRENT_UPLOADS, totalCount);
+        const workers = Array.from({ length: workerCount }, async () => {
+          while (nextIndex < totalCount) {
+            const idx = nextIndex++;
+            await uploadOneEntry(batchEntries[idx]);
+          }
+        });
+        await Promise.all(workers);
+
         setUploading(false);
         setUploadStatus('');
       };
@@ -8251,7 +8563,7 @@
                           {isDragging ? 'Drop your photos & videos right here' : 'Drag & drop photos & videos or select from your device'}
                         </p>
                         <p className="text-[11px] text-emerald-400 font-medium">
-                          Full-quality photos & walkaround videos welcome — no resolution cap
+                          Photos &amp; walkaround videos automatically optimized for fast upload
                         </p>
                       </div>
                       
