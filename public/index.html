@@ -10760,9 +10760,6 @@
                 }`}>
                   {portalBadge}
                 </span>
-                <span className="text-xs text-neutral-300">
-                  {activePartner.city ? `${activePartner.city}, ${activePartner.state}` : ''}
-                </span>
               </div>
               <h1 className="text-lg sm:text-xl font-extrabold text-white">
                 {activePartner.organizationName}
@@ -10852,72 +10849,6 @@
           {/* =============================================================== */}
           {activeTab === 'hub' && (
             <div className="space-y-4">
-              {/* Top Section: Process Status KPI Strip (clickable to filter) */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setHubStageFilter('all')}
-                  className={`text-left bg-neutral-700 border rounded-xl p-3.5 transition-all cursor-pointer ${
-                    hubStageFilter === 'all' ? 'border-white ring-1 ring-white/50' : 'border-neutral-600 hover:border-neutral-400'
-                  }`}
-                >
-                  <div className="text-[10px] font-bold uppercase text-neutral-300">All Active Units</div>
-                  <div className="text-xl font-extrabold text-white mt-1">{hubStatusCounts.active}</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHubStageFilter('waiting_sr1_offer')}
-                  className={`text-left bg-neutral-700 border rounded-xl p-3.5 transition-all cursor-pointer ${
-                    hubStageFilter === 'waiting_sr1_offer' ? 'border-amber-400 ring-1 ring-amber-400/50' : 'border-neutral-600 hover:border-neutral-400'
-                  }`}
-                >
-                  <div className="text-[10px] font-bold uppercase text-neutral-300">Waiting for SR1 Offer</div>
-                  <div className="text-xl font-extrabold text-amber-300 mt-1">{hubStatusCounts.waiting_sr1_offer}</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHubStageFilter('waiting_partner_acceptance')}
-                  className={`text-left bg-neutral-700 border rounded-xl p-3.5 transition-all cursor-pointer ${
-                    hubStageFilter === 'waiting_partner_acceptance' ? 'border-sky-400 ring-1 ring-sky-400/50' : 'border-neutral-600 hover:border-neutral-400'
-                  }`}
-                >
-                  <div className="text-[10px] font-bold uppercase text-neutral-300">
-                    Waiting for {isBankPortal ? 'Bank' : 'Dealer'} Acceptance
-                  </div>
-                  <div className="text-xl font-extrabold text-sky-300 mt-1">{hubStatusCounts.waiting_partner_acceptance}</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHubStageFilter('waiting_transaction_plan')}
-                  className={`text-left bg-neutral-700 border rounded-xl p-3.5 transition-all cursor-pointer ${
-                    hubStageFilter === 'waiting_transaction_plan' ? 'border-violet-400 ring-1 ring-violet-400/50' : 'border-neutral-600 hover:border-neutral-400'
-                  }`}
-                >
-                  <div className="text-[10px] font-bold uppercase text-neutral-300">Coordinating Plan</div>
-                  <div className="text-xl font-extrabold text-violet-300 mt-1">{hubStatusCounts.waiting_transaction_plan}</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHubStageFilter('complete')}
-                  className={`text-left bg-neutral-700 border rounded-xl p-3.5 transition-all cursor-pointer ${
-                    hubStageFilter === 'complete' ? 'border-emerald-400 ring-1 ring-emerald-400/50' : 'border-neutral-600 hover:border-neutral-400'
-                  }`}
-                >
-                  <div className="text-[10px] font-bold uppercase text-neutral-300">Complete</div>
-                  <div className="text-xl font-extrabold text-emerald-300 mt-1">{hubStatusCounts.complete}</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHubStageFilter('deal_not_made')}
-                  className={`text-left bg-neutral-700 border rounded-xl p-3.5 transition-all cursor-pointer ${
-                    hubStageFilter === 'deal_not_made' ? 'border-rose-400 ring-1 ring-rose-400/50' : 'border-neutral-600 hover:border-neutral-400'
-                  }`}
-                >
-                  <div className="text-[10px] font-bold uppercase text-neutral-300">Deal Not Made</div>
-                  <div className="text-xl font-extrabold text-rose-300 mt-1">{hubStatusCounts.deal_not_made}</div>
-                </button>
-              </div>
-
               {/* Filter & Search Bar */}
               <div className="bg-neutral-700 border border-neutral-600 rounded-xl p-3.5 space-y-3 text-xs">
                 <div className="flex flex-wrap items-center gap-1.5">
