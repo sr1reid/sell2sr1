@@ -295,7 +295,7 @@ export async function onRequestPost({ request, env }) {
       const primaryTo = cleanRecipients[0];
       const ccList = cleanRecipients.slice(1);
       const portalLabel = data.partnerType === 'bank'
-        ? 'SR1 Bank & Credit Union Repo Portal'
+        ? 'SR1 Bank / Credit Union Portal'
         : 'SR1 Dealer Portal';
       const subject = data.subject || `[${portalLabel}] Notification - selltosr1.com`;
       const heading = data.heading || 'New Portal Update';

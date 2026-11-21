@@ -516,7 +516,7 @@
     const TRACKED_LINKS_CATALOG = [
       // Footer: Partner Portals
       { id: 'footer_dealer_portal', label: 'Dealer Portal — CLICK HERE', group: 'footer_portals', groupLabel: 'Footer: Partner Portals', destination: 'Dealer Portal (?portal=dealer)', icon: '🤝' },
-      { id: 'footer_bank_portal', label: 'Bank / Credit Union Repo Portal — CLICK HERE', group: 'footer_portals', groupLabel: 'Footer: Partner Portals', destination: 'Bank / Credit Union Portal (?portal=bank)', icon: '🏦' },
+      { id: 'footer_bank_portal', label: 'Bank / Credit Union Portal — CLICK HERE', group: 'footer_portals', groupLabel: 'Footer: Partner Portals', destination: 'Bank / Credit Union Portal (?portal=bank)', icon: '🏦' },
       // Footer: Our Websites
       { id: 'footer_sr1companies', label: 'sr1companies.com', group: 'footer_websites', groupLabel: 'Footer: Our Websites', destination: 'https://sr1companies.com', icon: '🌐' },
       { id: 'footer_sr1rv', label: 'sr1rv.com', group: 'footer_websites', groupLabel: 'Footer: Our Websites', destination: 'https://sr1rv.com', icon: '🚐' },
@@ -1247,7 +1247,7 @@
 
     const PARTNER_ROUTING_CHANNELS = [
       { id: 'dealer_portal', name: 'Dealer Portal (Submissions & Chats)', category: 'partner_portal' },
-      { id: 'bank_portal', name: 'Bank & Credit Union Repo Portal (Submissions & Chats)', category: 'partner_portal' }
+      { id: 'bank_portal', name: 'Bank / Credit Union Portal (Submissions & Chats)', category: 'partner_portal' }
     ];
 
     const getPartnerPortalNotificationEmails = (partnerType, customRouting) => {
@@ -6076,7 +6076,7 @@
                   <div className="space-y-1.5">
                     <h3 className="text-sm sm:text-base font-bold text-white">1. Overview & Scope</h3>
                     <p>
-                      SR1 Companies ("SR1," "we," "us," or "our") operates <strong className="text-white">selltosr1.com</strong> as our official purchasing, trade-in appraisal, Dealer Portal, and Bank &amp; Credit Union Portal platform across Maine, New Hampshire, and New England. This Privacy Policy explains what information we collect, how we use and protect it, and your choices regarding your information.
+                      SR1 Companies ("SR1," "we," "us," or "our") operates <strong className="text-white">selltosr1.com</strong> as our official purchasing, trade-in appraisal, Dealer Portal, and Bank / Credit Union Portal platform across Maine, New Hampshire, and New England. This Privacy Policy explains what information we collect, how we use and protect it, and your choices regarding your information.
                     </p>
                   </div>
 
@@ -6149,7 +6149,7 @@
                   <div className="space-y-1.5">
                     <h3 className="text-sm sm:text-base font-bold text-white">1. Acceptance of Terms</h3>
                     <p>
-                      By accessing or submitting a unit through <strong className="text-white">selltosr1.com</strong> (including the retail intake flow, Dealer Portal, or Bank &amp; Credit Union Portal), you agree to these Terms of Use and our Privacy Policy.
+                      By accessing or submitting a unit through <strong className="text-white">selltosr1.com</strong> (including the retail intake flow, Dealer Portal, or Bank / Credit Union Portal), you agree to these Terms of Use and our Privacy Policy.
                     </p>
                   </div>
 
@@ -9631,10 +9631,10 @@
     }) {
       const isBankPortal = portalType === 'bank';
       const portalTitle = isBankPortal
-        ? 'Bank & Credit Union Portal'
+        ? 'Bank / Credit Union Portal'
         : 'Dealer Portal';
       const portalBadge = isBankPortal
-        ? '🏦 BANK & CREDIT UNION PORTAL'
+        ? '🏦 BANK / CREDIT UNION PORTAL'
         : '🤝 DEALER PORTAL';
       const orgLabel = isBankPortal ? 'Bank or Credit Union Name' : 'Dealership Name';
 
@@ -10002,8 +10002,8 @@
             senderName: 'SR1 Purchasing Desk',
             senderEmail: 'appraisals@sr1companies.com',
             text: isBankPortal
-              ? `Welcome to the SR1 Bank & Credit Union Repo Liquidation Portal, ${contactClean}! Submit single or multiple repo units anytime, and use this General Chat or any Unit Chat to reach our buyers directly.`
-              : `Welcome to the SR1 Dealer Portal, ${contactClean}! Submit single or multiple trade-in units anytime for wholesale buy offers, and use this General Chat or any Unit Chat to reach our buyers directly.`,
+              ? `Welcome to the SR1 Bank / Credit Union Portal, ${contactClean}! Submit single or multiple repo units anytime, and use each unit's Deal Chat to reach our buyers directly.`
+              : `Welcome to the SR1 Dealer Portal, ${contactClean}! Submit single or multiple trade-in units anytime for wholesale buy offers, and use each unit's Deal Chat to reach our buyers directly.`,
             createdAt: nowIso
           };
 
@@ -13401,7 +13401,7 @@
                           </span>
                         </div>
                         <p className="text-[11px] text-neutral-400 mt-0.5">
-                          Tracks clicks on every footer link (Dealer Portal, Bank/Credit Union Repo Portal, Our Websites, Contact Us, Staff Login, Terms, Privacy), the mid-page inventory banner, and header pages.
+                          Tracks clicks on every footer link (Dealer Portal, Bank / Credit Union Portal, Our Websites, Contact Us, Staff Login, Terms, Privacy), the mid-page inventory banner, and header pages.
                         </p>
                       </div>
                     </div>
@@ -14556,7 +14556,7 @@
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${portalTab === 'banks' ? 'bg-emerald-500 text-neutral-950 shadow-sm' : 'text-emerald-300 hover:text-white hover:bg-neutral-900'}`}
                 >
                   <span>🏦</span>
-                  <span>Banks / Credit Unions (Repos)</span>
+                  <span>Bank / Credit Union Portal</span>
                   <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${portalTab === 'banks' ? 'bg-neutral-950/20 text-neutral-950' : 'bg-emerald-950/90 text-emerald-300 border border-emerald-800/70'}`}>
                     {sectionMetrics.bankActive || 0}
                   </span>
@@ -14704,7 +14704,7 @@
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="text-sm sm:text-base font-extrabold text-white">
-                          {activePartnerType === 'bank' ? 'Banks & Credit Unions — Repo Liquidation Desk' : 'Dealers Looking to Bank Trades — Wholesale Desk'}
+                          {activePartnerType === 'bank' ? 'Bank / Credit Union Portal' : 'Dealer Portal'}
                         </h2>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-neutral-900 border border-neutral-750 text-neutral-300">
                           Portal URL: selltosr1.com/?view={activePartnerType === 'bank' ? 'bank' : 'dealer'}
@@ -14712,8 +14712,8 @@
                       </div>
                       <p className="text-xs text-neutral-400 mt-0.5">
                         {activePartnerType === 'bank'
-                          ? 'Review repo units submitted by banks & credit unions, send formal bids, and message via the general relationship chat.'
-                          : 'Review trade-in units submitted by partner dealers, issue wholesale buy bids, and message via the general relationship chat.'}
+                          ? 'Review repo units submitted through the Bank / Credit Union Portal, send formal offers, and message via individual deal chats.'
+                          : 'Review trade-in units submitted through the Dealer Portal, issue wholesale buy offers, and message via individual deal chats.'}
                       </p>
                     </div>
                   </div>
@@ -16703,8 +16703,8 @@
                         createdAt: new Date().toLocaleTimeString(),
                         category: 'call_log',
                         content: nextId
-                          ? `${staffLabel} set ${pType === 'bank' ? 'Bank' : 'Dealer'} Portal status to "${meta?.label || nextId}".`
-                          : `${staffLabel} reset ${pType === 'bank' ? 'Bank' : 'Dealer'} Portal status to automatic tracking.`
+                          ? `${staffLabel} set ${pType === 'bank' ? 'Bank / Credit Union Portal' : 'Dealer Portal'} status to "${meta?.label || nextId}".`
+                          : `${staffLabel} reset ${pType === 'bank' ? 'Bank / Credit Union Portal' : 'Dealer Portal'} status to automatic tracking.`
                       }
                     ]
                   });
@@ -16715,7 +16715,7 @@
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[11px] font-bold uppercase text-neutral-300">
-                          {pType === 'bank' ? 'Bank' : 'Dealer'} Portal Process Status
+                          {pType === 'bank' ? 'Bank / Credit Union Portal' : 'Dealer Portal'} Process Status
                         </span>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${currentPartnerStatus.badgeClass}`}>
                           {currentPartnerStatus.displayLabel}
