@@ -5,6 +5,7 @@ import {
   handleOneClickStatusUpdate,
   runScheduledStatusReminders
 } from "./functions/api/status-reminders.js";
+import { handleChatRecapApi } from "./functions/api/chat-recap.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -39,6 +40,10 @@ export default {
 
     if (url.pathname === "/api/update-status" || url.pathname === "/api/update-status/") {
       return handleOneClickStatusUpdate({ request, env, ctx });
+    }
+
+    if (url.pathname === "/api/chat-recap" || url.pathname === "/api/chat-recap/") {
+      return handleChatRecapApi({ request, env, ctx });
     }
 
     // Pass through all other requests to static assets in ./public

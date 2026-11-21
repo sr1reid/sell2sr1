@@ -4322,6 +4322,7 @@
         unreadUnitForPartner: Number(inq.unreadUnitForPartner) || 0,
         partnerAcceptance: inq.partnerAcceptance && typeof inq.partnerAcceptance === 'object' ? inq.partnerAcceptance : null,
         partnerWorkflowStatus: inq.partnerWorkflowStatus || null,
+        chatAiRecap: inq.chatAiRecap && typeof inq.chatAiRecap === 'object' ? inq.chatAiRecap : null,
         outreach: (inq.outreach && typeof inq.outreach === 'object') ? {
           reachedOut: !!(inq.outreach.reachedOut || inq.outreach.status),
           status: inq.outreach.status || (inq.outreach.reachedOut ? 'contacted' : null),
@@ -9517,6 +9518,102 @@
       };
     }
 
+    function getRealUnitChatMessages(item) {
+      const raw = Array.isArray(item?.unitMessages) ? item.unitMessages : [];
+      return raw.filter((m) => {
+        if (!m || !String(m.text || '').trim()) return false;
+        // Exclude legacy auto-seeded submission announcement messages so new deals start cleanly with "No messages"
+        if (/^Submitted via (Dealer|Bank|Partner).+Portal by /i.test(String(m.text).trim())) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    function buildClientChatRecapFallback(item, portalTypeOverride) {
+      const msgs = getRealUnitChatMessages(item);
+      if (msgs.length === 0) return '';
+      const pType = portalTypeOverride || (item?.submissionSource === 'bank' || item?.partnerType === 'bank' ? 'bank' : 'dealer');
+      const partnerLabel = pType === 'bank' ? 'Bank' : 'Dealer';
+      const last = msgs[msgs.length - 1];
+      const lastText = String(last.text || '').trim();
+      const isStaff = last.senderRole === 'staff';
+      const speaker = isStaff ? 'SR1' : partnerLabel;
+      const waitingOn = isStaff ? partnerLabel.toLowerCase() : 'SR1';
+      const lastOffer = Array.isArray(item?.offers) && item.offers.length > 0 ? item.offers[item.offers.length - 1] : null;
+
+      if (item?.partnerAcceptance?.decision === 'accepted' && /accepted/i.test(lastText)) {
+        return `${partnerLabel} accepted SR1's offer; awaiting SR1 to coordinate pickup & paperwork.`;
+      }
+      if (item?.partnerAcceptance?.decision === 'declined' && /declined/i.test(lastText)) {
+        return `${partnerLabel} declined SR1's offer; deal currently paused unless revised.`;
+      }
+      if (isStaff && /official sr1 offer recorded/i.test(lastText)) {
+        const amt = lastOffer?.amount ? `$${Number(lastOffer.amount).toLocaleString()} ` : '';
+        return `SR1 posted a ${amt}offer; waiting on ${partnerLabel.toLowerCase()} response.`;
+      }
+
+      const lower = lastText.toLowerCase();
+      const hasQ = lastText.includes('?');
+      let topic = '';
+      if (/\b(pick\s*up|pickup|drop\s*off|transport|deliver|haul|schedule|logistics)\b/i.test(lower)) topic = 'pickup / delivery logistics';
+      else if (/\b(title|paperwork|affidavit|lien|payoff|bill of sale|repo)\b/i.test(lower)) topic = 'title & paperwork details';
+      else if (/\b(\$|offer|price|counter|bid|amount|number|value)\b/i.test(lower)) topic = 'pricing / offer terms';
+      else if (/\b(photo|pic|picture|video|vin|serial|hour|mile|damage|condition)\b/i.test(lower)) topic = 'unit details / photos';
+
+      if (topic) {
+        return hasQ
+          ? `${speaker} asked about ${topic}; waiting on ${waitingOn} reply.`
+          : `${speaker} shared an update on ${topic}; awaiting ${waitingOn} reply.`;
+      }
+      const snippet = lastText.replace(/\s+/g, ' ').slice(0, 68);
+      return `${speaker}: "${snippet}${lastText.length > 68 ? '…' : ''}" — awaiting ${waitingOn} reply.`;
+    }
+
+    async function requestUnitChatAiRecap(item, messagesOverride, portalTypeOverride) {
+      const msgs = Array.isArray(messagesOverride) ? messagesOverride : getRealUnitChatMessages(item);
+      if (msgs.length === 0) return null;
+      const pType = portalTypeOverride || (item?.submissionSource === 'bank' || item?.partnerType === 'bank' ? 'bank' : 'dealer');
+      const unitTitle = [item?.unit?.year, item?.unit?.make, item?.unit?.model].filter(Boolean).join(' ') || 'Submitted Unit';
+      const lastOffer = Array.isArray(item?.offers) && item.offers.length > 0 ? item.offers[item.offers.length - 1] : null;
+      const processStatus = getPartnerUnitProcessStatus(item, pType);
+
+      try {
+        const res = await fetch('/api/chat-recap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            unitTitle,
+            partnerType: pType,
+            currentStatus: processStatus.displayLabel,
+            offerAmount: Number(lastOffer?.amount) || 0,
+            acceptanceDecision: item?.partnerAcceptance?.decision || '',
+            messages: msgs.slice(-12).map((m) => ({
+              senderRole: m.senderRole,
+              senderName: m.senderName,
+              text: m.text,
+              createdAt: m.createdAt
+            }))
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.recap) {
+            return {
+              text: data.recap,
+              messageCount: msgs.length,
+              updatedAt: new Date().toISOString(),
+              source: data.source || 'ai'
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('Chat AI recap request fallback:', err);
+      }
+      const fallback = buildClientChatRecapFallback({ ...item, unitMessages: msgs }, pType);
+      return fallback ? { text: fallback, messageCount: msgs.length, updatedAt: new Date().toISOString(), source: 'client_fallback' } : null;
+    }
+
     function PartnerPortalView({
       portalType,
       onSwitchPortalType,
@@ -9569,10 +9666,7 @@
       const [editingUnitDetails, setEditingUnitDetails] = useState(false);
       const [editUnitForm, setEditUnitForm] = useState({});
       const [uploadingExtraPhotos, setUploadingExtraPhotos] = useState(false);
-
-      // General relationship chat state
-      const [generalChatInput, setGeneralChatInput] = useState('');
-      const [sendingGeneralChat, setSendingGeneralChat] = useState(false);
+      const chatRecapRequestedRef = useRef(new Set());
 
       // Live partner record from synced partners list
       const activePartner = useMemo(() => {
@@ -9698,7 +9792,7 @@
           content: decisionText
         };
 
-        onUpdateInquiry({
+        const updatedWithDecision = {
           ...item,
           stage: decision === 'accepted' ? 'accepted' : 'lost',
           partnerAcceptance: {
@@ -9712,6 +9806,19 @@
           notes: [...(Array.isArray(item.notes) ? item.notes : []), noteObj],
           unreadUnitForStaff: (Number(item.unreadUnitForStaff) || 0) + 1,
           updatedAt: nowIso
+        };
+        const immediateRecap = buildClientChatRecapFallback(updatedWithDecision, portalType);
+        const updatedWithRecap = {
+          ...updatedWithDecision,
+          chatAiRecap: immediateRecap
+            ? { text: immediateRecap, messageCount: getRealUnitChatMessages(updatedWithDecision).length, updatedAt: nowIso, source: 'client_fallback' }
+            : updatedWithDecision.chatAiRecap
+        };
+        onUpdateInquiry(updatedWithRecap);
+        requestUnitChatAiRecap(updatedWithRecap, getRealUnitChatMessages(updatedWithRecap), portalType).then((aiRecap) => {
+          if (aiRecap && aiRecap.text) {
+            onUpdateInquiry({ ...updatedWithRecap, chatAiRecap: aiRecap });
+          }
         });
 
         setBannerNotice(
@@ -9743,22 +9850,31 @@
         return myUnits.reduce((acc, u) => acc + (Number(u.unreadUnitForPartner) || 0), 0);
       }, [myUnits]);
 
-      const unreadGeneralMsgs = Number(activePartner?.unreadGeneralForPartner) || 0;
-
       const selectedUnit = useMemo(() => {
         if (!selectedUnitId) return null;
         return myUnits.find(u => u.id === selectedUnitId) || null;
       }, [myUnits, selectedUnitId]);
 
-      // Clear unread general messages when partner opens general chat tab
+      // Lazily generate & cache AI chat recaps for any units with messages missing an up-to-date recap
       useEffect(() => {
-        if (activeTab === 'chat' && activePartner && unreadGeneralMsgs > 0) {
-          onSavePartner({
-            ...activePartner,
-            unreadGeneralForPartner: 0
+        if (activeTab !== 'hub' || !myUnits.length) return;
+        myUnits.forEach((u) => {
+          const realMsgs = getRealUnitChatMessages(u);
+          if (realMsgs.length === 0) return;
+          const cachedCount = Number(u.chatAiRecap?.messageCount) || 0;
+          const alreadyAi = u.chatAiRecap?.source === 'workers_ai' || u.chatAiRecap?.source === 'openai';
+          const reqKey = `${u.id}:${realMsgs.length}`;
+          if ((cachedCount === realMsgs.length && alreadyAi) || chatRecapRequestedRef.current.has(reqKey)) {
+            return;
+          }
+          chatRecapRequestedRef.current.add(reqKey);
+          requestUnitChatAiRecap(u, realMsgs, portalType).then((aiRecap) => {
+            if (aiRecap && aiRecap.text && aiRecap.text !== u.chatAiRecap?.text) {
+              onUpdateInquiry({ ...u, chatAiRecap: aiRecap });
+            }
           });
-        }
-      }, [activeTab, activePartner?.id, unreadGeneralMsgs]);
+        });
+      }, [activeTab, myUnits, portalType]);
 
       // Clear unread unit messages when partner opens a unit modal
       useEffect(() => {
@@ -10296,17 +10412,8 @@
               },
               photos: Array.isArray(u.photos) ? u.photos : [],
               offers: [],
-              unitMessages: [
-                {
-                  id: 'umsg-' + Date.now() + '-' + idx,
-                  senderRole: 'partner',
-                  senderName: `${activePartner.contactName} (${activePartner.organizationName})`,
-                  senderEmail: activePartner.email,
-                  text: initialMsgText,
-                  createdAt: nowIso
-                }
-              ],
-              unreadUnitForStaff: 1,
+              unitMessages: [],
+              unreadUnitForStaff: 0,
               unreadUnitForPartner: 0,
               notes: [
                 {
@@ -10375,24 +10482,38 @@
           createdAt: nowIso
         };
 
-        const updatedUnit = {
+        const updatedUnitBase = {
           ...selectedUnit,
           unitMessages: [...(selectedUnit.unitMessages || []), newMsg],
           unreadUnitForStaff: (Number(selectedUnit.unreadUnitForStaff) || 0) + 1,
           unreadUnitForPartner: 0,
           updatedAt: nowIso
         };
+        const realMsgsNow = getRealUnitChatMessages(updatedUnitBase);
+        const instantRecap = buildClientChatRecapFallback(updatedUnitBase, portalType);
+        const updatedUnit = {
+          ...updatedUnitBase,
+          chatAiRecap: instantRecap
+            ? { text: instantRecap, messageCount: realMsgsNow.length, updatedAt: nowIso, source: 'client_fallback' }
+            : updatedUnitBase.chatAiRecap
+        };
 
         setUnitChatInput('');
         await onUpdateInquiry(updatedUnit);
+
+        requestUnitChatAiRecap(updatedUnit, realMsgsNow, portalType).then((aiRecap) => {
+          if (aiRecap && aiRecap.text) {
+            onUpdateInquiry({ ...updatedUnit, chatAiRecap: aiRecap });
+          }
+        });
 
         const unitTitle = [selectedUnit.unit?.year, selectedUnit.unit?.make, selectedUnit.unit?.model].filter(Boolean).join(' ') || 'Submitted Unit';
         const sr1Recipients = getPartnerPortalNotificationEmails(portalType, emailRoutingConfig);
         await dispatchPartnerEmailNotification({
           recipients: sr1Recipients,
           partnerType: portalType,
-          subject: `[Unit Chat #${selectedUnit.referenceId}] ${activePartner.organizationName} — ${unitTitle}`,
-          heading: `New Unit Chat Message from ${activePartner.organizationName}`,
+          subject: `[Deal Chat #${selectedUnit.referenceId}] ${activePartner.organizationName} — ${unitTitle}`,
+          heading: `New Deal Chat Message from ${activePartner.organizationName}`,
           partnerOrgName: activePartner.organizationName,
           partnerContactName: activePartner.contactName,
           partnerEmail: activePartner.email,
@@ -10403,58 +10524,10 @@
           senderName: `${activePartner.contactName} (${activePartner.organizationName})`,
           messageText: text,
           ctaLabel: 'Reply in SR1 Staff Portal →',
-          ctaUrl: 'https://selltosr1.com/?view=portal'
+          ctaUrl: `https://selltosr1.com/?view=portal&inquiry=${encodeURIComponent(selectedUnit.id)}`
         });
 
         setSendingUnitChat(false);
-      };
-
-      // General relationship chat send handler (Partner -> SR1)
-      const handleSendGeneralChatMessage = async (e) => {
-        e.preventDefault();
-        if (!activePartner) return;
-        const text = (generalChatInput || '').trim();
-        if (!text) return;
-
-        setSendingGeneralChat(true);
-        const nowIso = new Date().toISOString();
-        const newMsg = {
-          id: 'gmsg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
-          senderRole: 'partner',
-          senderName: `${activePartner.contactName} (${activePartner.organizationName})`,
-          senderEmail: activePartner.email,
-          text,
-          createdAt: nowIso
-        };
-
-        const updatedPartner = {
-          ...activePartner,
-          generalMessages: [...(activePartner.generalMessages || []), newMsg],
-          unreadGeneralForStaff: (Number(activePartner.unreadGeneralForStaff) || 0) + 1,
-          unreadGeneralForPartner: 0,
-          updatedAt: nowIso
-        };
-
-        setGeneralChatInput('');
-        await onSavePartner(updatedPartner);
-
-        const sr1Recipients = getPartnerPortalNotificationEmails(portalType, emailRoutingConfig);
-        await dispatchPartnerEmailNotification({
-          recipients: sr1Recipients,
-          partnerType: portalType,
-          subject: `[General Partner Chat] Message from ${activePartner.organizationName}`,
-          heading: `New General Relationship Message from ${activePartner.organizationName}`,
-          partnerOrgName: activePartner.organizationName,
-          partnerContactName: activePartner.contactName,
-          partnerEmail: activePartner.email,
-          partnerPhone: activePartner.phone,
-          senderName: `${activePartner.contactName} (${activePartner.organizationName})`,
-          messageText: text,
-          ctaLabel: 'Reply in SR1 Staff Portal →',
-          ctaUrl: 'https://selltosr1.com/?view=portal'
-        });
-
-        setSendingGeneralChat(false);
       };
 
       // Save updated unit details from Partner Unit Modal
@@ -10807,24 +10880,6 @@
                   <span>➕</span>
                   <span>Submit Units</span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('chat')}
-                  className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    activeTab === 'chat'
-                      ? 'bg-neutral-100 text-neutral-950 shadow-sm'
-                      : 'text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <span>💬</span>
-                  <span>General SR1 Chat</span>
-                  {unreadGeneralMsgs > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-amber-400 text-neutral-950 animate-pulse">
-                      {unreadGeneralMsgs}
-                    </span>
-                  )}
-                </button>
               </div>
 
               <button
@@ -10951,16 +11006,17 @@
               ) : (
                 <div className="bg-neutral-700 border border-neutral-600 rounded-2xl overflow-hidden shadow-xl">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[1040px] text-xs">
+                    <table className="w-full text-left border-collapse min-w-[1220px] text-xs">
                       <thead className="bg-neutral-800 text-neutral-200 uppercase font-semibold border-b border-neutral-600 text-[10px] tracking-wider">
                         <tr>
                           <th className="p-3.5 whitespace-nowrap">Submitted</th>
-                          <th className="p-3.5 min-w-[230px]">Unit Overview</th>
-                          <th className="p-3.5 whitespace-nowrap min-w-[140px]">Info Completeness</th>
+                          <th className="p-3.5 min-w-[220px]">Unit Overview</th>
+                          <th className="p-3.5 whitespace-nowrap min-w-[135px]">Info Completeness</th>
                           <th className="p-3.5 whitespace-nowrap min-w-[155px]">Seen By SR1 Staff? (yes/no)</th>
-                          <th className="p-3.5 whitespace-nowrap min-w-[135px]">SR1 Offer</th>
-                          <th className="p-3.5 whitespace-nowrap min-w-[145px]">Acceptance</th>
-                          <th className="p-3.5 min-w-[200px]">Status</th>
+                          <th className="p-3.5 whitespace-nowrap min-w-[130px]">SR1 Offer</th>
+                          <th className="p-3.5 whitespace-nowrap min-w-[140px]">Acceptance</th>
+                          <th className="p-3.5 min-w-[185px]">Status</th>
+                          <th className="p-3.5 min-w-[210px]">Chat</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-neutral-600/80">
@@ -11161,6 +11217,43 @@
                                 <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold border inline-block leading-snug ${processStatus.badgeClass}`}>
                                   {processStatus.displayLabel}
                                 </span>
+                              </td>
+
+                              {/* 8. Chat (No messages or AI recap of deal chat status) */}
+                              <td className="p-3.5">
+                                {(() => {
+                                  const realMsgs = getRealUnitChatMessages(item);
+                                  const unreadPartner = Number(item.unreadUnitForPartner) || 0;
+                                  if (realMsgs.length === 0) {
+                                    return (
+                                      <span className="text-[11px] text-neutral-300">No messages</span>
+                                    );
+                                  }
+                                  const recapText =
+                                    (item.chatAiRecap?.text && Number(item.chatAiRecap?.messageCount) === realMsgs.length)
+                                      ? item.chatAiRecap.text
+                                      : (item.chatAiRecap?.text || buildClientChatRecapFallback(item, portalType));
+                                  return (
+                                    <div className="space-y-1 max-w-[240px]">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wide bg-neutral-900 border border-neutral-600 text-sky-300">
+                                          ✨ AI Recap
+                                        </span>
+                                        <span className="text-[10px] text-neutral-300 font-medium">
+                                          {realMsgs.length} {realMsgs.length === 1 ? 'msg' : 'msgs'}
+                                        </span>
+                                        {unreadPartner > 0 && (
+                                          <span className="px-1.5 py-0.2 rounded-full bg-emerald-400 text-neutral-950 font-black text-[9px]">
+                                            {unreadPartner} new
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-[11px] text-neutral-100 leading-snug">
+                                        {recapText}
+                                      </p>
+                                    </div>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           );
@@ -11699,74 +11792,7 @@
           )}
 
           {/* =============================================================== */}
-          {/* TAB 3: GENERAL RELATIONSHIP CHAT WITH SR1                       */}
-          {/* =============================================================== */}
-          {activeTab === 'chat' && (
-            <div className="bg-neutral-700 border border-neutral-600 rounded-2xl overflow-hidden flex flex-col h-[620px] shadow-xl">
-              <div className="p-4 bg-neutral-800 border-b border-neutral-600 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                    <span>💬</span>
-                    <span>General Relationship Chat — {activePartner.organizationName} &amp; SR1 Purchasing Desk</span>
-                  </h2>
-                  <p className="text-[11px] text-neutral-300 mt-0.5">
-                    Direct channel for general questions, portfolio/bulk discussions, pickup coordination, and account communication.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {(activePartner.generalMessages || []).length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-xs text-neutral-300">
-                    No messages yet. Start a conversation with the SR1 Purchasing Desk below!
-                  </div>
-                ) : (
-                  (activePartner.generalMessages || []).map(msg => {
-                    const isMe = msg.senderRole === 'partner';
-                    const timeInfo = formatInquiryDate(msg.createdAt);
-                    return (
-                      <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                        <div className={`max-w-[82%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 text-xs space-y-1 ${
-                          isMe
-                            ? 'bg-neutral-100 text-neutral-950'
-                            : 'bg-neutral-950 border border-neutral-800 text-neutral-100'
-                        }`}>
-                          <div className={`flex items-center gap-2 text-[10px] font-bold ${isMe ? 'text-neutral-600' : 'text-amber-400'}`}>
-                            <span>{msg.senderName || (isMe ? activePartner.contactName : 'SR1 Purchasing Desk')}</span>
-                            <span>•</span>
-                            <span>{timeInfo.date} {timeInfo.time}</span>
-                          </div>
-                          <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <form onSubmit={handleSendGeneralChatMessage} className="p-3.5 bg-neutral-950 border-t border-neutral-800 flex gap-2">
-                <input
-                  type="text"
-                  value={generalChatInput}
-                  onChange={(e) => setGeneralChatInput(e.target.value)}
-                  placeholder="Type a general message to SR1 Purchasing Desk..."
-                  className="flex-1 bg-neutral-900 border border-neutral-750 rounded-xl px-4 py-2.5 text-white text-xs focus:outline-none focus:border-neutral-500"
-                />
-                <button
-                  type="submit"
-                  disabled={sendingGeneralChat}
-                  className={`px-5 py-2.5 rounded-xl font-extrabold text-xs cursor-pointer ${
-                    isBankPortal ? 'bg-amber-400 hover:bg-amber-300 text-neutral-950' : 'bg-neutral-100 hover:bg-white text-neutral-950'
-                  }`}
-                >
-                  {sendingGeneralChat ? 'Sending...' : 'Send Message'}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* =============================================================== */}
-          {/* PARTNER UNIT DETAIL & UNIT-SPECIFIC CHAT MODAL                  */}
+          {/* PARTNER UNIT DETAIL & INDIVIDUAL DEAL CHAT MODAL                */}
           {/* =============================================================== */}
           {selectedUnit && (
             <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
@@ -12081,12 +12107,12 @@
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-3.5 space-y-2.5">
-                      {(selectedUnit.unitMessages || []).length === 0 ? (
+                      {getRealUnitChatMessages(selectedUnit).length === 0 ? (
                         <div className="h-full flex items-center justify-center text-neutral-500 text-xs text-center px-4">
                           No messages on this unit yet. Send a message below to discuss valuation, offers, or pickup details for this unit.
                         </div>
                       ) : (
-                        (selectedUnit.unitMessages || []).map(msg => {
+                        getRealUnitChatMessages(selectedUnit).map(msg => {
                           const isPartnerMsg = msg.senderRole === 'partner';
                           const tInfo = formatInquiryDate(msg.createdAt);
                           return (
@@ -14671,19 +14697,14 @@
                       onClick={() => setPartnerSubTab('chat')}
                       className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${partnerSubTab === 'chat' ? 'bg-white text-neutral-950 shadow-sm' : 'text-neutral-300 hover:text-white'}`}
                     >
-                      <span>💬</span>
-                      <span>Partner Accounts & General Relationship Chat ({currentPartnersList.length})</span>
-                      {(activePartnerType === 'bank' ? sectionMetrics.bankUnreadGeneral : sectionMetrics.dealerUnreadGeneral) > 0 && (
-                        <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-red-500 text-white animate-pulse">
-                          {activePartnerType === 'bank' ? sectionMetrics.bankUnreadGeneral : sectionMetrics.dealerUnreadGeneral} New
-                        </span>
-                      )}
+                      <span>🏢</span>
+                      <span>Partner Accounts ({currentPartnersList.length})</span>
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* SUB-VIEW 2: PARTNER ACCOUNTS & GENERAL RELATIONSHIP CHAT */}
+              {/* SUB-VIEW 2: PARTNER ACCOUNTS */}
               {activePartnerType && partnerSubTab === 'chat' ? (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                   {/* Left Column: Partner Organizations List */}
@@ -14694,7 +14715,7 @@
                           {activePartnerType === 'bank' ? 'Registered Banks & Credit Unions' : 'Registered Dealer Partners'}
                         </h3>
                         <p className="text-[11px] text-neutral-400">
-                          Select an organization to open General Relationship Chat
+                          Select an organization to manage account access or view submitted units
                         </p>
                       </div>
                       <span className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-800 text-xs font-mono font-bold text-white">
@@ -14829,61 +14850,16 @@
                           </div>
                         </div>
 
-                        {/* General Relationship Chat Messages */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-neutral-950/50">
-                          <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-3 text-[11px] text-neutral-400 flex items-center justify-between">
-                            <span>
-                              💬 <strong>General Relationship Chat</strong> with <strong>{selectedPartner.organizationName}</strong>. Replies automatically email <strong>{selectedPartner.email}</strong>.
-                            </span>
-                          </div>
-
-                          {(!Array.isArray(selectedPartner.generalMessages) || selectedPartner.generalMessages.length === 0) ? (
-                            <div className="p-8 text-center text-neutral-500 text-xs">
-                              No general relationship messages with {selectedPartner.organizationName} yet. Send a message below to start the conversation!
-                            </div>
-                          ) : (
-                            selectedPartner.generalMessages.map((msg, idx) => {
-                              const isStaff = msg.senderRole === 'staff';
-                              return (
-                                <div key={msg.id || idx} className={`flex flex-col ${isStaff ? 'items-end' : 'items-start'}`}>
-                                  <div className="flex items-center gap-1.5 mb-1 px-1">
-                                    <span className="text-[10px] font-bold text-neutral-300">
-                                      {msg.senderName || (isStaff ? 'SR1 Buying Team' : selectedPartner.organizationName)}
-                                    </span>
-                                    <span className="text-[10px] text-neutral-500">
-                                      {msg.createdAt ? new Date(msg.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
-                                    </span>
-                                  </div>
-                                  <div className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed whitespace-pre-wrap ${
-                                    isStaff
-                                      ? 'bg-white text-neutral-950 font-medium rounded-br-xs shadow-sm'
-                                      : 'bg-neutral-850 border border-neutral-750 text-neutral-100 rounded-bl-xs'
-                                  }`}>
-                                    {msg.text}
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
+                        {/* Account Info Note (Individual Deal Chats Only) */}
+                        <div className="flex-1 p-6 flex flex-col items-center justify-center text-center space-y-2 bg-neutral-950/50">
+                          <div className="text-2xl">📋</div>
+                          <p className="text-xs font-semibold text-neutral-200">
+                            Individual Deal Chats Only
+                          </p>
+                          <p className="text-[11px] text-neutral-400 max-w-md">
+                            To message <strong>{selectedPartner.organizationName}</strong>, click <strong>View Units</strong> above and open the specific unit to use its dedicated Deal Chat box.
+                          </p>
                         </div>
-
-                        {/* Message Input Form */}
-                        <form onSubmit={handleSendStaffGeneralMessage} className="p-3.5 bg-neutral-950 border-t border-neutral-800 flex items-center gap-2.5">
-                          <input
-                            type="text"
-                            value={staffGeneralMsgText}
-                            onChange={(e) => setStaffGeneralMsgText(e.target.value)}
-                            placeholder={`Message ${selectedPartner.organizationName} (${selectedPartner.contactName})...`}
-                            className="flex-1 bg-neutral-900 border border-neutral-750 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-white"
-                          />
-                          <button
-                            type="submit"
-                            disabled={!staffGeneralMsgText.trim() || sendingStaffGeneralMsg}
-                            className="px-4 py-2.5 rounded-xl bg-white hover:bg-neutral-200 disabled:opacity-40 text-neutral-950 font-extrabold text-xs transition-all cursor-pointer shrink-0"
-                          >
-                            {sendingStaffGeneralMsg ? 'Sending...' : 'Send & Email Partner →'}
-                          </button>
-                        </form>
                       </>
                     )}
                   </div>
@@ -15464,21 +15440,6 @@
                                 item.customer?.email || 'No contact'
                               )}
                             </div>
-                            {item.partnerId && (
-                              <div className="flex items-center gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedPartnerId(item.partnerId);
-                                    setPartnerSubTab('chat');
-                                  }}
-                                  className="px-2 py-0.5 bg-neutral-950 hover:bg-neutral-800 text-blue-300 hover:text-white rounded text-[10px] border border-blue-800/60 font-semibold transition-colors"
-                                  title="Open General Relationship Chat with this organization"
-                                >
-                                  💬 Org Chat
-                                </button>
-                              </div>
-                            )}
                           </td>
 
                           {/* Store Location */}
@@ -15674,6 +15635,70 @@
       );
       const [offerNotes, setOfferNotes] = useState(latestOffer?.notes || 'Subject to physical inspection and title verification.');
       const [newNoteText, setNewNoteText] = useState('');
+      const [staffDealChatInput, setStaffDealChatInput] = useState('');
+      const [sendingStaffDealChat, setSendingStaffDealChat] = useState(false);
+      const isPartnerDeal = inquiry.submissionSource === 'dealer' || inquiry.submissionSource === 'bank';
+
+      const handleSendStaffDealChat = async (e) => {
+        e.preventDefault();
+        const text = (staffDealChatInput || '').trim();
+        if (!text || sendingStaffDealChat || !isPartnerDeal) return;
+        setSendingStaffDealChat(true);
+        const nowIso = new Date().toISOString();
+        const pType = inquiry.submissionSource === 'bank' ? 'bank' : 'dealer';
+        const newMsg = {
+          id: 'umsg-staff-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5),
+          senderRole: 'staff',
+          senderName: staffUser?.name || 'SR1 Buying Team',
+          senderEmail: staffUser?.email || '',
+          text,
+          createdAt: nowIso
+        };
+        const updatedBase = {
+          ...inquiry,
+          unitMessages: [...(Array.isArray(inquiry.unitMessages) ? inquiry.unitMessages : []), newMsg],
+          unreadUnitForPartner: (Number(inquiry.unreadUnitForPartner) || 0) + 1,
+          unreadUnitForStaff: 0,
+          updatedAt: nowIso
+        };
+        const realMsgsNow = getRealUnitChatMessages(updatedBase);
+        const instantRecap = buildClientChatRecapFallback(updatedBase, pType);
+        const updated = {
+          ...updatedBase,
+          chatAiRecap: instantRecap
+            ? { text: instantRecap, messageCount: realMsgsNow.length, updatedAt: nowIso, source: 'client_fallback' }
+            : updatedBase.chatAiRecap
+        };
+        setStaffDealChatInput('');
+        onUpdateInquiry(updated);
+
+        requestUnitChatAiRecap(updated, realMsgsNow, pType).then((aiRecap) => {
+          if (aiRecap && aiRecap.text) {
+            onUpdateInquiry({ ...updated, chatAiRecap: aiRecap });
+          }
+        });
+
+        const targetEmail = (inquiry.partnerEmail || inquiry.customer?.email || '').trim();
+        if (targetEmail) {
+          const unitTitle = [inquiry.unit?.year, inquiry.unit?.make, inquiry.unit?.model].filter(Boolean).join(' ') || 'Submitted Unit';
+          dispatchPartnerEmailNotification({
+            notificationKind: 'unit_chat',
+            partnerType: pType,
+            organizationName: inquiry.partnerOrgName || `${inquiry.customer?.firstName || ''} ${inquiry.customer?.lastName || ''}`.trim(),
+            contactName: inquiry.partnerContactName || `${inquiry.customer?.firstName || ''} ${inquiry.customer?.lastName || ''}`.trim(),
+            partnerEmail: targetEmail,
+            partnerPhone: inquiry.partnerPhone || inquiry.customer?.phone || '',
+            referenceId: inquiry.referenceId,
+            unitSummary: unitTitle,
+            senderName: staffUser?.name || 'SR1 Buying Team',
+            senderRole: 'staff',
+            messageText: text,
+            recipientEmails: [targetEmail],
+            portalUrl: `https://selltosr1.com/?view=${pType}`
+          });
+        }
+        setSendingStaffDealChat(false);
+      };
       const mediaItems = Array.isArray(inquiry.photos) ? inquiry.photos : [];
       const [activeMediaIndex, setActiveMediaIndex] = useState(0);
       const [isLightboxOpen, setIsLightboxOpen] = useState(false);
@@ -15953,7 +15978,25 @@
         };
 
         setCurrentStage('offer_sent');
-        onUpdateInquiry(updated);
+        if (isPartnerUnit) {
+          const pTypeOffer = inquiry.submissionSource === 'bank' ? 'bank' : 'dealer';
+          const realMsgsOffer = getRealUnitChatMessages(updated);
+          const instantOfferRecap = buildClientChatRecapFallback(updated, pTypeOffer);
+          const updatedWithOfferRecap = {
+            ...updated,
+            chatAiRecap: instantOfferRecap
+              ? { text: instantOfferRecap, messageCount: realMsgsOffer.length, updatedAt: nowIso, source: 'client_fallback' }
+              : updated.chatAiRecap
+          };
+          onUpdateInquiry(updatedWithOfferRecap);
+          requestUnitChatAiRecap(updatedWithOfferRecap, realMsgsOffer, pTypeOffer).then((aiRecap) => {
+            if (aiRecap && aiRecap.text) {
+              onUpdateInquiry({ ...updatedWithOfferRecap, chatAiRecap: aiRecap });
+            }
+          });
+        } else {
+          onUpdateInquiry(updated);
+        }
 
         const targetEmail = (inquiry.partnerEmail || inquiry.customer?.email || '').trim();
         if (isPartnerUnit && targetEmail) {
@@ -16075,15 +16118,6 @@
                     >
                       <span>✉️</span> Email
                     </a>
-                  )}
-                  {inquiry.partnerId && onOpenPartnerGeneralChat && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenPartnerGeneralChat(inquiry.partnerId, inquiry.submissionSource)}
-                      className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-purple-950/80 border border-purple-700/80 hover:bg-purple-900 text-purple-200 font-semibold rounded-md text-[11px] transition-colors cursor-pointer"
-                    >
-                      <span>💬</span> General Relationship Chat with {inquiry.partnerOrgName || 'Partner'}
-                    </button>
                   )}
                 </div>
               </div>
@@ -16740,6 +16774,70 @@
                   </button>
                 </div>
               </div>
+
+              {/* INDIVIDUAL DEAL CHAT BOX (DEALER & BANK PORTAL UNITS ONLY) */}
+              {isPartnerDeal && (
+                <div className="bg-neutral-950 rounded-xl border border-neutral-800 overflow-hidden flex flex-col">
+                  <div className="px-4 py-3 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[11px] font-bold uppercase text-neutral-200 flex items-center gap-1.5">
+                        <span>💬</span>
+                        <span>Deal Chat with {inquiry.partnerOrgName || (inquiry.submissionSource === 'bank' ? 'Bank Partner' : 'Dealer Partner')}</span>
+                      </span>
+                      <span className="text-[10px] text-neutral-400">
+                        Individual deal conversation — replies automatically update the AI chat recap in the partner portal.
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold text-neutral-400">
+                      {getRealUnitChatMessages(inquiry).length} {getRealUnitChatMessages(inquiry).length === 1 ? 'message' : 'messages'}
+                    </span>
+                  </div>
+                  <div className="p-3.5 space-y-2.5 max-h-60 overflow-y-auto">
+                    {getRealUnitChatMessages(inquiry).length === 0 ? (
+                      <div className="py-6 text-center text-neutral-500 text-xs">
+                        No messages on this unit yet.
+                      </div>
+                    ) : (
+                      getRealUnitChatMessages(inquiry).map((msg, idx) => {
+                        const isStaff = msg.senderRole === 'staff';
+                        const tInfo = formatInquiryDate(msg.createdAt);
+                        return (
+                          <div key={msg.id || idx} className={`flex flex-col ${isStaff ? 'items-end' : 'items-start'}`}>
+                            <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs space-y-1 ${
+                              isStaff
+                                ? 'bg-neutral-100 text-neutral-950'
+                                : 'bg-neutral-900 border border-neutral-750 text-neutral-100'
+                            }`}>
+                              <div className={`flex items-center gap-1.5 text-[10px] font-bold ${isStaff ? 'text-neutral-600' : 'text-sky-400'}`}>
+                                <span>{msg.senderName || (isStaff ? 'SR1 Buying Team' : inquiry.partnerOrgName || 'Partner')}</span>
+                                <span>•</span>
+                                <span>{tInfo.date} {tInfo.time}</span>
+                              </div>
+                              <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                  <form onSubmit={handleSendStaffDealChat} className="p-3 bg-neutral-900 border-t border-neutral-800 flex gap-2">
+                    <input
+                      type="text"
+                      value={staffDealChatInput}
+                      onChange={(e) => setStaffDealChatInput(e.target.value)}
+                      placeholder={`Reply to ${inquiry.partnerOrgName || 'partner'} about this unit...`}
+                      className="flex-1 bg-neutral-950 border border-neutral-750 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-neutral-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!staffDealChatInput.trim() || sendingStaffDealChat}
+                      className="px-4 py-2 rounded-lg bg-white hover:bg-neutral-200 disabled:opacity-40 text-neutral-950 font-bold text-xs cursor-pointer shrink-0"
+                    >
+                      {sendingStaffDealChat ? 'Sending...' : 'Send'}
+                    </button>
+                  </form>
+                </div>
+              )}
 
               {/* NOTES */}
               <div className="space-y-3">
