@@ -4339,6 +4339,14 @@
         mobileTextClass: 'text-sky-400'
       },
       {
+        id: 'need_more_time',
+        label: 'Need More Time',
+        shortIcon: '🕒',
+        badgeClass: 'bg-violet-950/80 border-violet-700/80 text-violet-300',
+        activeBtnClass: 'bg-violet-500/20 border-violet-400 text-violet-200 ring-1 ring-violet-400/50',
+        mobileTextClass: 'text-violet-400'
+      },
+      {
         id: 'deal_pending',
         label: 'Deal Pending',
         shortIcon: '⏳',
@@ -14178,7 +14186,7 @@
                                       </span>
                                       {dealStatusMeta && (
                                         <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-neutral-900 text-neutral-300 border border-neutral-800">
-                                          {dealStatusMeta.icon} {dealStatusMeta.label}
+                                          {dealStatusMeta.shortIcon} {dealStatusMeta.label}
                                         </span>
                                       )}
                                       {isArch && (
@@ -15939,7 +15947,7 @@
                     <label className="text-neutral-400 text-[10px] block mb-1.5">
                       Select Status <span className="text-neutral-500">(click active status again to clear)</span>
                     </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {STAFF_DEAL_STATUSES.map(st => {
                         const isSelected = dealStatus === st.id;
                         return (
