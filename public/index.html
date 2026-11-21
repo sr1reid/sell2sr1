@@ -9670,28 +9670,38 @@
       const [uploadingExtraPhotos, setUploadingExtraPhotos] = useState(false);
       const chatRecapRequestedRef = useRef(new Set());
 
-      // Live partner record from synced partners list
+      // Live partner record from synced partners list (strictly isolated to the matching portalType)
       const activePartner = useMemo(() => {
         if (!partnerUser) return null;
         const found = (Array.isArray(partners) ? partners : []).find(
           p => p && (p.id === partnerUser.id || (p.email && partnerUser.email && p.email.toLowerCase() === partnerUser.email.toLowerCase()))
         );
-        return found || partnerUser;
-      }, [partnerUser, partners]);
+        const resolved = found || partnerUser;
+        if (!resolved || resolved.status === 'disabled') return null;
+        const resolvedType = resolved.partnerType === 'bank' ? 'bank' : 'dealer';
+        if (resolvedType !== portalType) return null;
+        return resolved;
+      }, [partnerUser, partners, portalType]);
 
-      // Units belonging to this partner
+      useEffect(() => {
+        setAuthError('');
+      }, [portalType]);
+
+      // Units belonging to this partner (strictly scoped to current portalType)
       const myUnits = useMemo(() => {
         if (!activePartner) return [];
         const pId = activePartner.id;
         const pEmail = (activePartner.email || '').toLowerCase();
         return (Array.isArray(inquiries) ? inquiries : []).filter(inq => {
           if (!inq) return false;
+          const inqSrc = inq.submissionSource || inq.partnerType || '';
+          if (inqSrc !== portalType) return false;
           if (inq.partnerId && inq.partnerId === pId) return true;
           if (pEmail && inq.partnerEmail && inq.partnerEmail.toLowerCase() === pEmail) return true;
-          if (pEmail && inq.customer?.email && inq.customer.email.toLowerCase() === pEmail && (inq.submissionSource === 'dealer' || inq.submissionSource === 'bank')) return true;
+          if (pEmail && inq.customer?.email && inq.customer.email.toLowerCase() === pEmail) return true;
           return false;
         });
-      }, [inquiries, activePartner]);
+      }, [inquiries, activePartner, portalType]);
 
       const hubStatusCounts = useMemo(() => {
         const counts = {
@@ -9913,6 +9923,16 @@
             setAuthLoading(false);
             return;
           }
+          const matchedType = matched.partnerType === 'bank' ? 'bank' : 'dealer';
+          if (matchedType !== portalType) {
+            setAuthError(
+              matchedType === 'bank'
+                ? 'This account is registered for the Bank / Credit Union Portal and cannot log into the Dealer Portal. Please sign in on the Bank / Credit Union Portal instead.'
+                : 'This account is registered for the Dealer Portal and cannot log into the Bank / Credit Union Portal. Please sign in on the Dealer Portal instead.'
+            );
+            setAuthLoading(false);
+            return;
+          }
           if (matched.status === 'disabled') {
             setAuthError('This partner account has been disabled by SR1 Administration. Please contact appraisals@sr1companies.com.');
             setAuthLoading(false);
@@ -9924,9 +9944,6 @@
           };
           await onSavePartner(updatedPartner);
           onSetPartnerUser(updatedPartner);
-          if (updatedPartner.partnerType && updatedPartner.partnerType !== portalType) {
-            onSwitchPortalType(updatedPartner.partnerType);
-          }
         } catch (err) {
           setAuthError('Unable to sign in right now. Please try again.');
         } finally {
@@ -9963,7 +9980,16 @@
           }
           const existing = pool.find(p => p && p.email === emailClean);
           if (existing) {
-            setAuthError('An account with this email address already exists. Please switch to Sign In.');
+            const existingType = existing.partnerType === 'bank' ? 'bank' : 'dealer';
+            if (existingType !== portalType) {
+              setAuthError(
+                existingType === 'bank'
+                  ? 'This email is already registered on the Bank / Credit Union Portal and cannot be used on the Dealer Portal.'
+                  : 'This email is already registered on the Dealer Portal and cannot be used on the Bank / Credit Union Portal.'
+              );
+            } else {
+              setAuthError('An account with this email address already exists. Please switch to Sign In.');
+            }
             setAuthLoading(false);
             return;
           }
