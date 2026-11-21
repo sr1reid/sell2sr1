@@ -4301,7 +4301,9 @@
           knownIssuesOrDamage: unit.knownIssuesOrDamage || ''
         },
         financials: {
-          titleStatus: financials.titleStatus || 'Owned outright',
+          titleStatus: financials.titleStatus !== undefined
+            ? financials.titleStatus
+            : ((inq.submissionSource === 'dealer' || inq.submissionSource === 'bank') ? '' : 'Owned outright'),
           lienHolderName: financials.lienHolderName || financials.lienHolder || inq.lienHolderName || inq.lienHolder || '',
           estimatedPayoff: Number(financials.estimatedPayoff) || 0,
           askingPrice: Number(financials.askingPrice) || 0
@@ -9288,11 +9290,11 @@
         tireOrTrackCondition: 'good',
         conditionNotes: '',
         knownIssuesOrDamage: '',
-        titleStatus: partnerType === 'bank' ? 'Repo Affidavit / Title Pending' : 'Clean Title / Dealer Reassignment',
+        titleStatus: '',
         lienHolderName: '',
         estimatedPayoff: '',
         askingPrice: '',
-        preferredLocation: 'pickup_requested',
+        preferredLocation: '',
         salespersonName: '',
         photos: [],
         uploadingPhotos: false
@@ -10330,6 +10332,11 @@
           alert('Please wait a moment for photos and VIN/Serial scans to finish before submitting.');
           return;
         }
+        const missingLocationIdx = batchUnits.findIndex(u => !u.preferredLocation);
+        if (missingLocationIdx !== -1) {
+          alert(`Please select a Pickup or Drop Off option for Unit #${missingLocationIdx + 1} before submitting.`);
+          return;
+        }
 
         setSubmittingBatch(true);
         try {
@@ -10372,7 +10379,7 @@
               partnerPhone: activePartner.phone,
               workingWithSalesperson: u.salespersonName?.trim() ? 'yes' : 'no',
               salespersonName: (u.salespersonName || '').trim(),
-              preferredLocation: u.preferredLocation || 'pickup_requested',
+              preferredLocation: u.preferredLocation || '',
               customer: {
                 firstName: `${activePartner.organizationName} — ${firstName}`,
                 lastName,
@@ -10405,7 +10412,7 @@
                 knownIssuesOrDamage: (u.knownIssuesOrDamage || '').trim()
               },
               financials: {
-                titleStatus: u.titleStatus || (isBankPortal ? 'Repo Affidavit / Title Pending' : 'Clean Title / Dealer Reassignment'),
+                titleStatus: (u.titleStatus || '').trim(),
                 lienHolderName: (u.lienHolderName || '').trim(),
                 estimatedPayoff: Number(u.estimatedPayoff) || 0,
                 askingPrice: Number(u.askingPrice) || 0
@@ -11347,7 +11354,7 @@
                               updateBatchUnit(u.tempId, {
                                 category: nextCat,
                                 subcategory: '',
-                                preferredLocation: locStillValid ? u.preferredLocation : 'pickup_requested',
+                                preferredLocation: locStillValid ? u.preferredLocation : '',
                                 ...(nextUsage.show ? {} : { mileageOrHours: '' })
                               });
                             }}
@@ -11417,15 +11424,17 @@
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-semibold uppercase text-neutral-200 mb-1">PICKUP OR DROP OFF?</label>
+                          <label className="block text-[11px] font-semibold uppercase text-neutral-200 mb-1">PICKUP OR DROP OFF? *</label>
                           <select
+                            required
                             value={u.preferredLocation}
                             onChange={(e) => updateBatchUnit(u.tempId, { preferredLocation: e.target.value })}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
+                            className={`w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 ${u.preferredLocation ? 'text-white' : 'text-neutral-400'}`}
                           >
-                            <option value="pickup_requested">On-Site Pickup Requested (will factor into offer)</option>
+                            <option value="" disabled>Select pickup or drop off...</option>
+                            <option value="pickup_requested" className="text-white">On-Site Pickup Requested (will factor into offer)</option>
                             {storeLocations.map(loc => (
-                              <option key={loc.id} value={loc.id}>Dropped off to {loc.name}</option>
+                              <option key={loc.id} value={loc.id} className="text-white">Dropped off to {loc.name}</option>
                             ))}
                           </select>
                         </div>
