@@ -832,7 +832,7 @@ async function sendResendEmail(resendKey, payload) {
   return { ok: res.ok, status: res.status, data };
 }
 
-export async function runScheduledStatusReminders(env, { dryRun = false } = {}) {
+export async function runScheduledStatusReminders(env, { dryRun = false, allActiveContacted = false } = {}) {
   const resendKey = getResendApiKey(env);
   if (!resendKey && !dryRun) {
     console.warn('RESEND_API_KEY missing; skipping scheduled status reminders');
@@ -857,7 +857,19 @@ export async function runScheduledStatusReminders(env, { dryRun = false } = {}) 
   };
 
   for (const inq of inquiries) {
-    const check = evaluateReminderEligibility(inq, nowMs);
+    let check;
+    if (allActiveContacted) {
+      const isArch = Boolean(inq?.isArchived || inq?.stage === 'archived');
+      const statusId = getInquiryStatusId(inq);
+      const alreadyCount = Number(inq?.statusReminders?.count) || 0;
+      if (!isArch && statusId === 'contacted' && alreadyCount === 0) {
+        check = { due: true, reminderNumber: 1, statusId };
+      } else {
+        check = { due: false };
+      }
+    } else {
+      check = evaluateReminderEligibility(inq, nowMs);
+    }
     if (!check.due) continue;
     results.eligible += 1;
 
@@ -912,10 +924,14 @@ export async function runScheduledStatusReminders(env, { dryRun = false } = {}) 
       results.sent += 1;
       results.details.push({
         id: inq.id,
+        unit: [inq.unit?.year, inq.unit?.make, inq.unit?.model].filter(Boolean).join(' '),
         reminderNumber: check.reminderNumber,
         recipients,
         resendId: sendRes.data?.id || null
       });
+
+      // Pace Resend API calls gently (~3/sec) to avoid rate limits on bulk sweeps
+      await new Promise((r) => setTimeout(r, 350));
     } catch (err) {
       console.error('Error sending reminder for', inq.id, err);
       results.errors += 1;
@@ -948,7 +964,21 @@ export async function handleStatusReminderApi(context) {
     const action = body.action || 'send_test';
 
     if (action === 'dry_run') {
-      const summary = await runScheduledStatusReminders(env, { dryRun: true });
+      const summary = await runScheduledStatusReminders(env, {
+        dryRun: true,
+        allActiveContacted: Boolean(body.allActiveContacted)
+      });
+      return new Response(JSON.stringify({ success: true, ...summary }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    if (action === 'send_all_contacted') {
+      const summary = await runScheduledStatusReminders(env, {
+        dryRun: false,
+        allActiveContacted: true
+      });
       return new Response(JSON.stringify({ success: true, ...summary }), {
         status: 200,
         headers: { 'Content-Type': 'application/json', ...corsHeaders }

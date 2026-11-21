@@ -12,4 +12,5 @@ CONFIRMATION_FROM_EMAIL = "appraisals@sr1companies.com"
 CONFIRMATION_FROM_NAME = "SR1 Companies Appraisals"
 
 [triggers]
-crons = ["0 */2 * * *"]
+# Fires at 11:00 and 12:00 UTC daily; worker checks America/New_York hour === 7 so it always runs at 7:00 AM ET (EST & EDT)
+crons = ["0 11,12 * * *"]

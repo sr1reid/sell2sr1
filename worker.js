@@ -50,6 +50,16 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runScheduledStatusReminders(env));
+    // Only execute at 7:00 AM America/New_York (handles both EST and EDT automatically)
+    const easternHour = Number(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hour: "numeric",
+        hour12: false
+      }).format(new Date())
+    );
+    if (easternHour === 7) {
+      ctx.waitUntil(runScheduledStatusReminders(env));
+    }
   }
 };
