@@ -9605,7 +9605,8 @@
               text: data.recap,
               messageCount: msgs.length,
               updatedAt: new Date().toISOString(),
-              source: data.source || 'ai'
+              source: data.source || 'ai',
+              promptVersion: Number(data.promptVersion) || 2
             };
           }
         }
@@ -9874,8 +9875,8 @@
           const realMsgs = getRealUnitChatMessages(u);
           if (realMsgs.length === 0) return;
           const cachedCount = Number(u.chatAiRecap?.messageCount) || 0;
-          const alreadyAi = u.chatAiRecap?.source === 'workers_ai' || u.chatAiRecap?.source === 'openai';
-          const reqKey = `${u.id}:${realMsgs.length}`;
+          const alreadyAi = (u.chatAiRecap?.source === 'workers_ai' || u.chatAiRecap?.source === 'openai') && Number(u.chatAiRecap?.promptVersion) >= 2;
+          const reqKey = `${u.id}:${realMsgs.length}:v2`;
           if ((cachedCount === realMsgs.length && alreadyAi) || chatRecapRequestedRef.current.has(reqKey)) {
             return;
           }

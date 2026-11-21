@@ -100,25 +100,18 @@ export async function handleChatRecapApi(context) {
     const partnerLabel = partnerType === 'bank' ? 'Bank' : 'Dealer';
     const transcript = recentMessages
       .map((m) => {
-        const who = m.senderRole === 'staff' ? `SR1 (${m.senderName || 'Staff'})` : `${partnerLabel} (${m.senderName || partnerLabel})`;
+        const who = m.senderRole === 'staff' ? 'SR1' : partnerLabel;
         return `${who}: ${String(m.text || '').replace(/\s+/g, ' ').trim()}`;
       })
       .join('\n');
 
     const systemPrompt =
-      'You summarize vehicle/equipment acquisition deal chats between SR1 Companies and partner dealers/banks. ' +
-      'Write ONE crisp, clear sentence (max 18 words) summarizing the current status of the chat: what was last discussed or agreed upon and who is waiting on whom. ' +
+      'You summarize ONLY the messages in this chat thread in ONE short, direct sentence (max 18 words). ' +
+      'Focus specifically on the actual question, request, or answer in the chat — do NOT mention unit make/model/year or overall deal status. ' +
+      'Be exact about who asked or said what (SR1 vs Dealer/Bank). ' +
       'Plain text only. No quotes, no bullet points, no preamble.';
 
-    const userPrompt = [
-      `Unit: ${unitTitle}`,
-      currentStatus ? `Process Status: ${currentStatus}` : '',
-      offerAmount > 0 ? `Latest SR1 Offer: $${offerAmount.toLocaleString()}` : '',
-      acceptanceDecision ? `${partnerLabel} Decision: ${acceptanceDecision}` : '',
-      '',
-      'Chat transcript:',
-      transcript
-    ].filter(Boolean).join('\n');
+    const userPrompt = `Chat messages (oldest to newest):\n${transcript}`;
 
     // 1. Primary: Cloudflare Workers AI binding
     if (env && env.AI && typeof env.AI.run === 'function') {
@@ -134,12 +127,12 @@ export async function handleChatRecapApi(context) {
               { role: 'user', content: userPrompt }
             ],
             max_tokens: 60,
-            temperature: 0.2
+            temperature: 0.1
           });
           const rawText = aiRes?.response || aiRes?.choices?.[0]?.message?.content || '';
           const cleaned = cleanAiRecapText(rawText);
           if (cleaned && cleaned.length >= 10) {
-            return new Response(JSON.stringify({ success: true, recap: cleaned, source: 'workers_ai' }), {
+            return new Response(JSON.stringify({ success: true, recap: cleaned, source: 'workers_ai', promptVersion: 2 }), {
               status: 200,
               headers: corsHeaders
             });
@@ -166,14 +159,14 @@ export async function handleChatRecapApi(context) {
               { role: 'user', content: userPrompt }
             ],
             max_tokens: 60,
-            temperature: 0.2
+            temperature: 0.1
           })
         });
         if (res.ok) {
           const data = await res.json();
           const cleaned = cleanAiRecapText(data?.choices?.[0]?.message?.content || '');
           if (cleaned && cleaned.length >= 10) {
-            return new Response(JSON.stringify({ success: true, recap: cleaned, source: 'openai' }), {
+            return new Response(JSON.stringify({ success: true, recap: cleaned, source: 'openai', promptVersion: 2 }), {
               status: 200,
               headers: corsHeaders
             });
@@ -191,7 +184,7 @@ export async function handleChatRecapApi(context) {
       offerAmount,
       acceptanceDecision
     });
-    return new Response(JSON.stringify({ success: true, recap: fallbackRecap, source: 'smart_fallback' }), {
+    return new Response(JSON.stringify({ success: true, recap: fallbackRecap, source: 'smart_fallback', promptVersion: 2 }), {
       status: 200,
       headers: corsHeaders
     });
