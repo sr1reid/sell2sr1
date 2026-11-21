@@ -1,5 +1,10 @@
 import { onRequest as sendConfirmation } from "./functions/api/send-confirmation.js";
 import { onRequest as marketplaceComps } from "./functions/api/marketplace-comps.js";
+import {
+  handleStatusReminderApi,
+  handleOneClickStatusUpdate,
+  runScheduledStatusReminders
+} from "./functions/api/status-reminders.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -28,11 +33,23 @@ export default {
       return marketplaceComps({ request, env, ctx });
     }
 
+    if (url.pathname === "/api/status-reminders" || url.pathname === "/api/status-reminders/") {
+      return handleStatusReminderApi({ request, env, ctx });
+    }
+
+    if (url.pathname === "/api/update-status" || url.pathname === "/api/update-status/") {
+      return handleOneClickStatusUpdate({ request, env, ctx });
+    }
+
     // Pass through all other requests to static assets in ./public
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
     }
 
     return new Response("Asset binding not found", { status: 500 });
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runScheduledStatusReminders(env));
   }
 };
