@@ -9268,7 +9268,14 @@
         trimOrFloorplan: '',
         vinOrSerial: '',
         vinScanSource: '',
+        vinPhotoChoice: '',
+        vinPhotoItem: null,
+        vinPhotoUploading: false,
         scanningVin: false,
+        vinPhotoScanFailed: false,
+        isEditingDetectedVin: false,
+        overrideVinInput: '',
+        isDraggingVinPhoto: false,
         mileageOrHours: '',
         lengthFeet: '',
         slidesCount: '',
@@ -9409,6 +9416,7 @@
       // Active portal tab once logged in: 'hub' | 'submit' | 'chat'
       const [activeTab, setActiveTab] = useState('hub');
       const [batchUnits, setBatchUnits] = useState(() => [createBlankBatchUnit('rv', portalType)]);
+      const partnerVinScanIdRef = useRef({});
       const [submittingBatch, setSubmittingBatch] = useState(false);
       const [bannerNotice, setBannerNotice] = useState('');
 
@@ -9659,6 +9667,14 @@
           tempId: 'u-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
           vinOrSerial: '',
           vinScanSource: '',
+          vinPhotoChoice: '',
+          vinPhotoItem: null,
+          vinPhotoUploading: false,
+          scanningVin: false,
+          vinPhotoScanFailed: false,
+          isEditingDetectedVin: false,
+          overrideVinInput: '',
+          isDraggingVinPhoto: false,
           photos: []
         };
         setBatchUnits(prev => [...prev, copy]);
@@ -9668,7 +9684,201 @@
         setBatchUnits(prev => (prev.length <= 1 ? prev : prev.filter(u => u.tempId !== tempId)));
       };
 
-      const handleBatchUnitPhotos = async (tempId, fileList, unitCategory) => {
+      const handleSelectBatchVinPhotoChoice = (tempId, choice) => {
+        partnerVinScanIdRef.current[tempId] = (partnerVinScanIdRef.current[tempId] || 0) + 1;
+        setBatchUnits(prev => prev.map(u => {
+          if (u.tempId !== tempId) return u;
+          if (choice === 'no_photo') {
+            return {
+              ...u,
+              vinPhotoChoice: 'no_photo',
+              vinPhotoItem: null,
+              vinPhotoUploading: false,
+              scanningVin: false,
+              vinPhotoScanFailed: false,
+              isEditingDetectedVin: false,
+              overrideVinInput: '',
+              vinScanSource: 'manual',
+              photos: (u.photos || []).filter(p => !p.isVinPhoto)
+            };
+          }
+          return {
+            ...u,
+            vinPhotoChoice: 'has_photo',
+            vinPhotoScanFailed: false,
+            isEditingDetectedVin: false
+          };
+        }));
+      };
+
+      const handleRemoveBatchVinPhoto = (tempId) => {
+        partnerVinScanIdRef.current[tempId] = (partnerVinScanIdRef.current[tempId] || 0) + 1;
+        setBatchUnits(prev => prev.map(u => {
+          if (u.tempId !== tempId) return u;
+          return {
+            ...u,
+            vinPhotoItem: null,
+            vinPhotoUploading: false,
+            scanningVin: false,
+            vinPhotoScanFailed: false,
+            isEditingDetectedVin: false,
+            overrideVinInput: '',
+            vinScanSource: '',
+            vinOrSerial: '',
+            photos: (u.photos || []).filter(p => !p.isVinPhoto)
+          };
+        }));
+      };
+
+      const handleBatchUnitVinPhoto = async (tempId, file, unitCategory) => {
+        if (!file) return;
+        const isImage = file.type?.startsWith('image/') || /\.(heic|heif|jpg|jpeg|png|webp)$/i.test(file.name || '');
+        if (!isImage) {
+          alert('Please select a photo image file.');
+          return;
+        }
+
+        const scanId = (partnerVinScanIdRef.current[tempId] || 0) + 1;
+        partnerVinScanIdRef.current[tempId] = scanId;
+        const mediaId = 'pm-vin-' + Math.random().toString(36).substr(2, 9);
+        const idMeta = getPartnerPortalIdFieldMeta(unitCategory);
+        const photoLabel = idMeta.tagLabel || 'VIN / Serial Tag';
+
+        updateBatchUnit(tempId, {
+          vinPhotoChoice: 'has_photo',
+          vinPhotoUploading: true,
+          scanningVin: true,
+          vinPhotoScanFailed: false,
+          isEditingDetectedVin: false,
+          overrideVinInput: '',
+          vinScanSource: '',
+          vinOrSerial: ''
+        });
+
+        let uploadedPhotoObj = null;
+
+        const uploadTask = (async () => {
+          try {
+            const uploadableFile = (await ensureDecodableImageBlob(file)) || file;
+            let cloudUrl = null;
+            try {
+              cloudUrl = await uploadMediaFileToStorage(uploadableFile);
+            } catch (storageErr) {
+              console.warn('Partner VIN photo storage upload notice, falling back:', storageErr);
+            }
+            if (!cloudUrl) {
+              cloudUrl = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (ev) => resolve(ev.target.result || '');
+                reader.onerror = () => resolve('');
+                reader.readAsDataURL(uploadableFile);
+              });
+            }
+            if (partnerVinScanIdRef.current[tempId] !== scanId) return null;
+            if (cloudUrl) {
+              uploadedPhotoObj = {
+                id: mediaId,
+                url: cloudUrl,
+                thumbUrl: cloudUrl,
+                isVideo: false,
+                isVinPhoto: true,
+                fileSize: uploadableFile.size || file.size,
+                fileType: uploadableFile.type || file.type || 'image/jpeg',
+                label: photoLabel,
+                detectedVin: '',
+                unreadableVinTag: false,
+                uploadedAt: new Date().toISOString()
+              };
+              setBatchUnits(prev => prev.map(u => {
+                if (u.tempId !== tempId) return u;
+                return {
+                  ...u,
+                  vinPhotoItem: uploadedPhotoObj,
+                  photos: [...(u.photos || []).filter(p => !p.isVinPhoto), uploadedPhotoObj]
+                };
+              }));
+            }
+          } catch (err) {
+            console.error('Partner VIN photo upload error:', err);
+          } finally {
+            if (partnerVinScanIdRef.current[tempId] === scanId) {
+              updateBatchUnit(tempId, { vinPhotoUploading: false });
+            }
+          }
+          return uploadedPhotoObj;
+        })();
+
+        const scanTask = (async () => {
+          try {
+            const scanRes = await scanImageFileForVin(
+              file,
+              unitCategory,
+              () => partnerVinScanIdRef.current[tempId] !== scanId,
+              null,
+              { directVinTagPhoto: true }
+            );
+            if (partnerVinScanIdRef.current[tempId] !== scanId) return '';
+            const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
+            if (detected) {
+              setBatchUnits(prev => prev.map(u => {
+                if (u.tempId !== tempId) return u;
+                return {
+                  ...u,
+                  vinOrSerial: detected,
+                  vinScanSource: 'ocr',
+                  vinPhotoScanFailed: false,
+                  vinPhotoItem: u.vinPhotoItem && u.vinPhotoItem.id === mediaId
+                    ? { ...u.vinPhotoItem, detectedVin: detected, unreadableVinTag: false }
+                    : u.vinPhotoItem,
+                  photos: (u.photos || []).map(p => (p.id === mediaId ? { ...p, detectedVin: detected, unreadableVinTag: false } : p))
+                };
+              }));
+            } else {
+              setBatchUnits(prev => prev.map(u => {
+                if (u.tempId !== tempId) return u;
+                return {
+                  ...u,
+                  vinPhotoScanFailed: true,
+                  vinScanSource: 'manual',
+                  vinPhotoItem: u.vinPhotoItem && u.vinPhotoItem.id === mediaId
+                    ? { ...u.vinPhotoItem, detectedVin: '', unreadableVinTag: true }
+                    : u.vinPhotoItem,
+                  photos: (u.photos || []).map(p => (p.id === mediaId ? { ...p, detectedVin: '', unreadableVinTag: true } : p))
+                };
+              }));
+            }
+            return detected;
+          } catch (err) {
+            if (partnerVinScanIdRef.current[tempId] === scanId) {
+              updateBatchUnit(tempId, { vinPhotoScanFailed: true, vinScanSource: 'manual' });
+            }
+            return '';
+          } finally {
+            if (partnerVinScanIdRef.current[tempId] === scanId) {
+              updateBatchUnit(tempId, { scanningVin: false });
+            }
+          }
+        })();
+
+        const [finalPhoto, detectedVin] = await Promise.all([uploadTask, scanTask]);
+        if (partnerVinScanIdRef.current[tempId] === scanId && finalPhoto) {
+          const updatedPhoto = {
+            ...finalPhoto,
+            detectedVin: detectedVin || '',
+            unreadableVinTag: !detectedVin
+          };
+          setBatchUnits(prev => prev.map(u => {
+            if (u.tempId !== tempId) return u;
+            return {
+              ...u,
+              vinPhotoItem: updatedPhoto,
+              photos: (u.photos || []).map(p => (p.id === mediaId ? updatedPhoto : p))
+            };
+          }));
+        }
+      };
+
+      const handleBatchUnitPhotos = async (tempId, fileList) => {
         const files = Array.from(fileList || []).filter(file =>
           file.type.startsWith('image/') ||
           file.type.startsWith('video/') ||
@@ -9684,82 +9894,9 @@
             file,
             isVideo,
             mediaId: 'pm-' + Math.random().toString(36).substr(2, 9),
-            label: file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo'),
-            resolvedDetectedVin: ''
+            label: file.name || (isVideo ? 'Uploaded Video' : 'Uploaded Photo')
           };
         });
-
-        // Kick off VIN screening across all image files in parallel upfront and abort remaining photos once a VIN is found
-        const existingUnit = (batchUnits || []).find((u) => u.tempId === tempId);
-        let batchVinFound = Boolean(existingUnit?.vinOrSerial && existingUnit.vinOrSerial.trim());
-        let pendingUnitScans = 0;
-        let activeUnitIdentifiedTags = 0;
-        let unitManualEntryTriggered = false;
-
-        if (unitCategory !== 'container' && !batchVinFound) {
-          for (let s = 0; s < batchEntries.length; s++) {
-            const entry = batchEntries[s];
-            if (entry.isVideo) continue;
-            entry.isIdentifiedVinTag = false;
-            pendingUnitScans++;
-            updateBatchUnit(tempId, { scanningVin: true });
-            const shouldAbortUnitEntry = () =>
-              Boolean(batchVinFound || (unitManualEntryTriggered && !entry.isIdentifiedVinTag));
-            const handleUnitTagIdentified = () => {
-              if (!entry.isIdentifiedVinTag) {
-                entry.isIdentifiedVinTag = true;
-                activeUnitIdentifiedTags += 1;
-              }
-            };
-            scanImageFileForVin(entry.file, unitCategory, shouldAbortUnitEntry, handleUnitTagIdentified)
-              .then((scanRes) => {
-                if (entry.isIdentifiedVinTag) {
-                  activeUnitIdentifiedTags = Math.max(0, activeUnitIdentifiedTags - 1);
-                }
-                const detected = typeof scanRes === 'string' ? scanRes : (scanRes?.vin || '');
-                const unreadableTag = Boolean(typeof scanRes === 'object' && scanRes?.unreadableVinTag && !detected);
-                if (detected) {
-                  entry.resolvedDetectedVin = detected;
-                  batchVinFound = true;
-                  pumpOcrQueue();
-                  setBatchUnits((prev) =>
-                    prev.map((u) => {
-                      if (u.tempId !== tempId) return u;
-                      const updatedPhotos = (u.photos || []).map((p) =>
-                        p.id === entry.mediaId ? { ...p, detectedVin: detected } : p
-                      );
-                      if (u.vinScanSource === 'manual' && u.vinOrSerial && u.vinOrSerial.trim()) {
-                        return { ...u, scanningVin: false, unreadableVinTag: false, photos: updatedPhotos };
-                      }
-                      return {
-                        ...u,
-                        scanningVin: false,
-                        unreadableVinTag: false,
-                        vinOrSerial: u.vinOrSerial && u.vinOrSerial.trim() ? u.vinOrSerial : detected,
-                        vinScanSource: u.vinOrSerial && u.vinOrSerial.trim() ? u.vinScanSource : 'ocr',
-                        photos: updatedPhotos
-                      };
-                    })
-                  );
-                } else if (unreadableTag && !batchVinFound) {
-                  if (activeUnitIdentifiedTags === 0) {
-                    unitManualEntryTriggered = true;
-                    pumpOcrQueue();
-                    updateBatchUnit(tempId, { scanningVin: false, unreadableVinTag: true });
-                  } else {
-                    updateBatchUnit(tempId, { unreadableVinTag: true });
-                  }
-                }
-              })
-              .catch(() => {})
-              .finally(() => {
-                pendingUnitScans = Math.max(0, pendingUnitScans - 1);
-                if (pendingUnitScans === 0) {
-                  updateBatchUnit(tempId, { scanningVin: false });
-                }
-              });
-          }
-        }
 
         for (let i = 0; i < batchEntries.length; i++) {
           const entry = batchEntries[i];
@@ -9796,7 +9933,6 @@
                       fileSize: uploadableFile.size || file.size,
                       fileType: uploadableFile.type || file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
                       label,
-                      detectedVin: entry.resolvedDetectedVin || '',
                       uploadedAt: new Date().toISOString()
                     }
                   ]
@@ -9814,9 +9950,9 @@
       const handleSubmitBatchUnits = async (e) => {
         e.preventDefault();
         if (!activePartner) return;
-        const anyUploading = batchUnits.some(u => u.uploadingPhotos);
+        const anyUploading = batchUnits.some(u => u.uploadingPhotos || u.vinPhotoUploading || u.scanningVin);
         if (anyUploading) {
-          alert('Please wait a moment for photos to finish uploading before submitting.');
+          alert('Please wait a moment for photos and VIN/Serial scans to finish before submitting.');
           return;
         }
 
@@ -10730,8 +10866,8 @@
                         </div>
                       </div>
 
-                      {/* Row 1: Category, Year, Make, Model */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 text-xs">
+                      {/* Row 1: Category, Year, Make, Model (+ Mileage / Hours if applicable) */}
+                      <div className={`grid grid-cols-1 sm:grid-cols-2 ${usageMeta.show ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3.5 text-xs`}>
                         <div>
                           <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">Category</label>
                           <select
@@ -10739,9 +10875,14 @@
                             onChange={(e) => {
                               const nextCat = e.target.value;
                               const nextUsage = getPartnerPortalUsageFieldMeta(nextCat);
+                              const nextLocs = getLocationsForCategory(nextCat);
+                              const locStillValid =
+                                u.preferredLocation === 'pickup_requested' ||
+                                nextLocs.some(loc => loc.id === u.preferredLocation);
                               updateBatchUnit(u.tempId, {
                                 category: nextCat,
                                 subcategory: '',
+                                preferredLocation: locStillValid ? u.preferredLocation : 'pickup_requested',
                                 ...(nextUsage.show ? {} : { mileageOrHours: '' })
                               });
                             }}
@@ -10759,7 +10900,6 @@
                             type="number"
                             value={u.year}
                             onChange={(e) => updateBatchUnit(u.tempId, { year: e.target.value })}
-                            placeholder=""
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
                           />
                         </div>
@@ -10770,7 +10910,6 @@
                             type="text"
                             value={u.make}
                             onChange={(e) => updateBatchUnit(u.tempId, { make: e.target.value })}
-                            placeholder=""
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
                           />
                         </div>
@@ -10781,59 +10920,26 @@
                             type="text"
                             value={u.model}
                             onChange={(e) => updateBatchUnit(u.tempId, { model: e.target.value })}
-                            placeholder=""
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
                           />
                         </div>
-                      </div>
 
-                      {/* Row 2: VIN Number / Serial Number & Mileage / Hours (Not needed for Containers) */}
-                      {u.category !== 'container' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
-                          <div className={usageMeta.show ? 'sm:col-span-2' : 'sm:col-span-3'}>
-                            <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1 flex items-center justify-between gap-2">
-                              <span>{idMeta.label}</span>
-                              {u.scanningVin && (
-                                <span className="text-emerald-400 text-[10px] font-normal">{idMeta.scanningText}</span>
-                              )}
-                              {!u.scanningVin && u.vinScanSource === 'ocr' && u.vinOrSerial && (
-                                <span className="text-emerald-400 text-[10px] font-semibold">✓ Auto-detected from photo (editable)</span>
-                              )}
-                              {!u.scanningVin && (!u.vinOrSerial || !u.vinOrSerial.trim()) && u.unreadableVinTag && (
-                                <span className="text-amber-400 text-[10px] font-semibold normal-case">⚠️ Couldn't read with full confidence — please enter manually</span>
-                              )}
+                        {usageMeta.show && (
+                          <div>
+                            <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">
+                              {usageMeta.label}
                             </label>
                             <input
-                              type="text"
-                              value={u.vinOrSerial}
-                              onChange={(e) => updateBatchUnit(u.tempId, { vinOrSerial: e.target.value.toUpperCase(), vinScanSource: 'manual', unreadableVinTag: false })}
-                              placeholder={idMeta.placeholder}
-                              className={`w-full bg-neutral-950 border rounded-xl px-3 py-2 text-white font-mono ${
-                                !u.scanningVin && (!u.vinOrSerial || !u.vinOrSerial.trim()) && u.unreadableVinTag
-                                  ? 'border-amber-500/60 focus:ring-1 focus:ring-amber-400 focus:outline-none'
-                                  : 'border-neutral-800'
-                              }`}
+                              type="number"
+                              value={u.mileageOrHours}
+                              onChange={(e) => updateBatchUnit(u.tempId, { mileageOrHours: e.target.value })}
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
                             />
                           </div>
+                        )}
+                      </div>
 
-                          {usageMeta.show && (
-                            <div>
-                              <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">
-                                {usageMeta.label}
-                              </label>
-                              <input
-                                type="number"
-                                value={u.mileageOrHours}
-                                onChange={(e) => updateBatchUnit(u.tempId, { mileageOrHours: e.target.value })}
-                                placeholder=""
-                                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Row 3: Title Status, Location, SR1 Buyer */}
+                      {/* Row 2: Title Status, Pickup or Drop Off, SR1 Buyer */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
                         <div>
                           <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">Title / Paperwork Status</label>
@@ -10841,21 +10947,20 @@
                             type="text"
                             value={u.titleStatus}
                             onChange={(e) => updateBatchUnit(u.tempId, { titleStatus: e.target.value })}
-                            placeholder={isBankPortal ? 'Repo Affidavit / Clean Title' : 'Clean Title / Dealer Reassignment'}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">Preferred SR1 Location / Pickup</label>
+                          <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">PICKUP OR DROP OFF?</label>
                           <select
                             value={u.preferredLocation}
                             onChange={(e) => updateBatchUnit(u.tempId, { preferredLocation: e.target.value })}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
                           >
-                            <option value="pickup_requested">On-Site Pickup Requested</option>
+                            <option value="pickup_requested">On-Site Pickup Requested (will factor into offer)</option>
                             {storeLocations.map(loc => (
-                              <option key={loc.id} value={loc.id}>{loc.name}</option>
+                              <option key={loc.id} value={loc.id}>Dropped off to {loc.name}</option>
                             ))}
                           </select>
                         </div>
@@ -10866,13 +10971,12 @@
                             type="text"
                             value={u.salespersonName}
                             onChange={(e) => updateBatchUnit(u.tempId, { salespersonName: e.target.value })}
-                            placeholder="If working with specific SR1 buyer"
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
                           />
                         </div>
                       </div>
 
-                      {/* Row 4: Condition Notes + Known Issues */}
+                      {/* Row 3: Condition Notes + Known Issues */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
                         <div>
                           <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">Condition Notes / Equipment / Options</label>
@@ -10880,7 +10984,6 @@
                             rows="2"
                             value={u.conditionNotes}
                             onChange={(e) => updateBatchUnit(u.tempId, { conditionNotes: e.target.value })}
-                            placeholder="Describe overall condition, extra attachments/options, location of unit..."
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
                           />
                         </div>
@@ -10890,62 +10993,308 @@
                             rows="2"
                             value={u.knownIssuesOrDamage}
                             onChange={(e) => updateBatchUnit(u.tempId, { knownIssuesOrDamage: e.target.value })}
-                            placeholder="Any known mechanical, cosmetic, water, or repo damage..."
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white"
                           />
                         </div>
                       </div>
 
-                      {/* Row 5: Photos & Videos Upload Box */}
-                      <div className="bg-neutral-950 border border-dashed border-neutral-750 rounded-xl p-4 space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <div>
-                            <div className="text-xs font-bold text-neutral-200">
-                              Photos & Walkaround Videos ({(u.photos || []).length} uploaded — Optional)
+                      {/* Row 4: Photos & Videos Upload Box (General Unit Media Only) */}
+                      {(() => {
+                        const generalPhotos = (u.photos || []).filter(p => !p.isVinPhoto);
+                        return (
+                          <div className="bg-neutral-950 border border-dashed border-neutral-750 rounded-xl p-4 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <div className="text-xs font-bold text-neutral-200">
+                                  Photos &amp; Walkaround Videos ({generalPhotos.length} uploaded — Optional)
+                                </div>
+                              </div>
+                              <label className="inline-flex items-center justify-center px-3.5 py-2 bg-neutral-850 hover:bg-neutral-800 border border-neutral-700 rounded-xl text-xs font-bold text-white cursor-pointer shrink-0">
+                                <span>{u.uploadingPhotos ? 'Uploading...' : '📷 Choose Photos / Videos'}</span>
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept="image/*,video/*,.heic,.heif,.mov,.mp4"
+                                  onChange={(e) => {
+                                    handleBatchUnitPhotos(u.tempId, e.target.files);
+                                    if (e.target) e.target.value = '';
+                                  }}
+                                  className="hidden"
+                                />
+                              </label>
                             </div>
-                            {u.category !== 'container' && (
-                              <div className="text-[11px] text-neutral-400">
-                                {idMeta.photoHint}
+
+                            {generalPhotos.length > 0 && (
+                              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
+                                {generalPhotos.map(p => (
+                                  <div key={p.id} className="relative group aspect-video rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800">
+                                    <img src={p.thumbUrl || p.url} alt={p.label} className="w-full h-full object-cover" />
+                                    <button
+                                      type="button"
+                                      onClick={() => updateBatchUnit(u.tempId, { photos: (u.photos || []).filter(item => item.id !== p.id) })}
+                                      className="absolute top-1 right-1 px-1.5 py-0.5 bg-red-600/90 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>
-                          <label className="inline-flex items-center justify-center px-3.5 py-2 bg-neutral-850 hover:bg-neutral-800 border border-neutral-700 rounded-xl text-xs font-bold text-white cursor-pointer shrink-0">
-                            <span>{u.uploadingPhotos ? 'Uploading...' : '📷 Choose Photos / Videos'}</span>
-                            <input
-                              type="file"
-                              multiple
-                              accept="image/*,video/*,.heic,.heif,.mov,.mp4"
-                              onChange={(e) => {
-                                handleBatchUnitPhotos(u.tempId, e.target.files, u.category);
-                                if (e.target) e.target.value = '';
-                              }}
-                              className="hidden"
-                            />
-                          </label>
-                        </div>
+                        );
+                      })()}
 
-                        {Array.isArray(u.photos) && u.photos.length > 0 && (
-                          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
-                            {u.photos.map(p => (
-                              <div key={p.id} className="relative group aspect-video rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800">
-                                <img src={p.thumbUrl || p.url} alt={p.label} className="w-full h-full object-cover" />
-                                {p.detectedVin && (
-                                  <span className="absolute top-1 left-1 px-1 py-0.2 bg-emerald-600 text-[8px] font-bold text-white rounded">
-                                    {idMeta.badgeText}
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => updateBatchUnit(u.tempId, { photos: u.photos.filter(item => item.id !== p.id) })}
-                                  className="absolute top-1 right-1 px-1.5 py-0.5 bg-red-600/90 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ))}
+                      {/* Row 5: Dedicated VIN / Serial Number Section (All Categories Except Shipping Containers) */}
+                      {u.category !== 'container' && (
+                        <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 space-y-3.5 text-xs">
+                          <div>
+                            <label className="block text-[11px] font-semibold uppercase text-neutral-300 mb-2">
+                              {idMeta.label}
+                            </label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectBatchVinPhotoChoice(u.tempId, 'has_photo')}
+                                className={`flex items-center space-x-2.5 p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                                  u.vinPhotoChoice === 'has_photo'
+                                    ? 'bg-neutral-900 border-neutral-300 text-white font-bold ring-1 ring-neutral-300'
+                                    : 'bg-neutral-950/60 border-neutral-800 text-neutral-300 hover:border-neutral-600'
+                                }`}
+                              >
+                                <span className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                  u.vinPhotoChoice === 'has_photo' ? 'border-white bg-white' : 'border-neutral-600'
+                                }`}>
+                                  {u.vinPhotoChoice === 'has_photo' && <span className="w-1.5 h-1.5 rounded-full bg-neutral-950"></span>}
+                                </span>
+                                <span className="text-xs font-semibold">
+                                  I have a photo of the {idMeta.choiceNoun}
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleSelectBatchVinPhotoChoice(u.tempId, 'no_photo')}
+                                className={`flex items-center space-x-2.5 p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                                  u.vinPhotoChoice === 'no_photo'
+                                    ? 'bg-neutral-900 border-neutral-300 text-white font-bold ring-1 ring-neutral-300'
+                                    : 'bg-neutral-950/60 border-neutral-800 text-neutral-300 hover:border-neutral-600'
+                                }`}
+                              >
+                                <span className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                  u.vinPhotoChoice === 'no_photo' ? 'border-white bg-white' : 'border-neutral-600'
+                                }`}>
+                                  {u.vinPhotoChoice === 'no_photo' && <span className="w-1.5 h-1.5 rounded-full bg-neutral-950"></span>}
+                                </span>
+                                <span className="text-xs font-semibold">
+                                  Enter {idMeta.choiceNoun} manually
+                                </span>
+                              </button>
+                            </div>
                           </div>
-                        )}
-                      </div>
+
+                          {u.vinPhotoChoice === 'has_photo' && (
+                            <div className="space-y-3 pt-1">
+                              <input
+                                type="file"
+                                accept="image/*,.heic,.heif"
+                                onChange={(e) => {
+                                  const f = e.target?.files?.[0];
+                                  if (e.target) e.target.value = '';
+                                  if (f) handleBatchUnitVinPhoto(u.tempId, f, u.category);
+                                }}
+                                id={`partner-vin-photo-${u.tempId}`}
+                                disabled={u.vinPhotoUploading || u.scanningVin}
+                                className="hidden"
+                              />
+
+                              {!u.vinPhotoItem ? (
+                                <div
+                                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); updateBatchUnit(u.tempId, { isDraggingVinPhoto: true }); }}
+                                  onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); updateBatchUnit(u.tempId, { isDraggingVinPhoto: true }); }}
+                                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); updateBatchUnit(u.tempId, { isDraggingVinPhoto: false }); }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    updateBatchUnit(u.tempId, { isDraggingVinPhoto: false });
+                                    const f = e.dataTransfer?.files?.[0];
+                                    if (f) handleBatchUnitVinPhoto(u.tempId, f, u.category);
+                                  }}
+                                  className={`border-2 border-dashed rounded-xl p-4 text-center transition-all ${
+                                    u.isDraggingVinPhoto
+                                      ? 'border-emerald-400 bg-emerald-950/30'
+                                      : 'border-neutral-700 hover:border-neutral-500 bg-neutral-900/50'
+                                  }`}
+                                >
+                                  <div className="flex flex-col items-center justify-center space-y-1 pointer-events-none">
+                                    <div className="text-lg">📷</div>
+                                    <p className="text-xs font-semibold text-neutral-200">
+                                      Upload a clear close-up photo of the {idMeta.tagLabelLower}
+                                    </p>
+                                    <p className="text-[11px] text-emerald-400 font-medium">
+                                      Full-resolution upload — automatically scanned to read your {idMeta.label}
+                                    </p>
+                                  </div>
+                                  <label
+                                    htmlFor={`partner-vin-photo-${u.tempId}`}
+                                    className={`mt-3 inline-block px-4 py-2 text-xs font-semibold rounded-lg border transition-colors shadow-sm ${
+                                      u.vinPhotoUploading || u.scanningVin
+                                        ? 'bg-neutral-800 text-neutral-500 border-neutral-700 cursor-not-allowed pointer-events-none'
+                                        : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700 cursor-pointer'
+                                    }`}
+                                  >
+                                    {u.vinPhotoUploading || u.scanningVin
+                                      ? `Uploading & Scanning ${idMeta.tagLabel}...`
+                                      : `Choose Photo of ${idMeta.tagLabel}`}
+                                  </label>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-neutral-900 border border-neutral-800">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <img
+                                      src={u.vinPhotoItem.thumbUrl || u.vinPhotoItem.url}
+                                      alt={idMeta.tagLabel}
+                                      className="w-16 h-12 rounded-lg object-cover border border-neutral-700 shrink-0"
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold text-white truncate">{idMeta.tagLabel} Photo Attached</p>
+                                      <p className="text-[11px] text-neutral-400">Saved at full resolution to your unit gallery</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <label
+                                      htmlFor={`partner-vin-photo-${u.tempId}`}
+                                      className={`px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 text-[11px] font-semibold transition-colors ${
+                                        u.vinPhotoUploading || u.scanningVin ? 'opacity-50 pointer-events-none' : 'cursor-pointer'
+                                      }`}
+                                    >
+                                      Replace Photo
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveBatchVinPhoto(u.tempId)}
+                                      className="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/80 border border-red-800/70 text-red-300 hover:text-white text-[11px] font-semibold transition-colors"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {(u.vinPhotoUploading || u.scanningVin) ? (
+                                <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-300">
+                                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                                  <span>
+                                    {u.vinPhotoUploading && u.scanningVin
+                                      ? `Uploading full-resolution photo & scanning for ${idMeta.label}...`
+                                      : u.scanningVin
+                                      ? `Scanning full-resolution photo for ${idMeta.label}...`
+                                      : `Finishing full-resolution upload...`}
+                                  </span>
+                                </div>
+                              ) : u.vinPhotoScanFailed ? (
+                                <div className="p-3.5 rounded-xl bg-amber-950/35 border border-amber-500/40 space-y-2.5 text-xs">
+                                  <div className="flex items-start gap-2 text-amber-200">
+                                    <span className="text-amber-400 font-bold text-sm leading-none mt-0.5">⚠️</span>
+                                    <div className="space-y-0.5">
+                                      <p className="font-bold text-amber-200">
+                                        We couldn't read the {idMeta.label} from this photo with full confidence.
+                                      </p>
+                                      <p className="text-neutral-300">
+                                        Your full-resolution photo is still attached. Enter the full {idMeta.label} below:
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={u.vinOrSerial}
+                                    onChange={(e) => updateBatchUnit(u.tempId, { vinOrSerial: e.target.value.toUpperCase(), vinScanSource: 'manual' })}
+                                    className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2 text-white font-mono uppercase focus:ring-1 focus:ring-amber-400 focus:outline-none"
+                                  />
+                                </div>
+                              ) : (u.vinOrSerial && u.vinOrSerial.trim()) ? (
+                                <div className="px-3.5 py-2.5 rounded-xl bg-emerald-950/35 border border-emerald-600/40 text-xs space-y-2">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 text-emerald-300">
+                                      <span className="font-bold">✓</span>
+                                      <span>
+                                        {u.vinScanSource === 'ocr'
+                                          ? `${idMeta.label} detected from photo:`
+                                          : `${idMeta.label} saved:`}{' '}
+                                        <strong className="font-mono text-white tracking-wide">{u.vinOrSerial}</strong>
+                                      </span>
+                                    </div>
+                                    {!u.isEditingDetectedVin && (
+                                      <button
+                                        type="button"
+                                        onClick={() => updateBatchUnit(u.tempId, { overrideVinInput: u.vinOrSerial || '', isEditingDetectedVin: true })}
+                                        className="px-2.5 py-1 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 border border-emerald-500/40 text-emerald-200 hover:text-white font-semibold text-[11px] transition-all whitespace-nowrap"
+                                      >
+                                        Edit / Override
+                                      </button>
+                                    )}
+                                  </div>
+                                  {u.isEditingDetectedVin && (
+                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-emerald-700/30">
+                                      <input
+                                        type="text"
+                                        value={u.overrideVinInput}
+                                        onChange={(e) => updateBatchUnit(u.tempId, { overrideVinInput: e.target.value.toUpperCase() })}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const cleaned = (u.overrideVinInput || '').trim().toUpperCase();
+                                            if (cleaned) {
+                                              updateBatchUnit(u.tempId, { vinOrSerial: cleaned, vinScanSource: 'manual', isEditingDetectedVin: false });
+                                            }
+                                          } else if (e.key === 'Escape') {
+                                            e.preventDefault();
+                                            updateBatchUnit(u.tempId, { isEditingDetectedVin: false });
+                                          }
+                                        }}
+                                        className="flex-1 bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2 text-white font-mono text-xs uppercase focus:ring-1 focus:ring-emerald-400 focus:outline-none"
+                                      />
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const cleaned = (u.overrideVinInput || '').trim().toUpperCase();
+                                            if (!cleaned) return;
+                                            updateBatchUnit(u.tempId, { vinOrSerial: cleaned, vinScanSource: 'manual', isEditingDetectedVin: false });
+                                          }}
+                                          className="flex-1 sm:flex-none px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs rounded-xl transition-all whitespace-nowrap"
+                                        >
+                                          {idMeta.saveBtnText}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => updateBatchUnit(u.tempId, { isEditingDetectedVin: false })}
+                                          className="px-3 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white font-semibold text-xs rounded-xl transition-all whitespace-nowrap"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
+
+                          {u.vinPhotoChoice === 'no_photo' && (
+                            <div className="pt-1">
+                              <label className="block text-[11px] font-semibold uppercase text-neutral-400 mb-1">
+                                Full {idMeta.label}
+                              </label>
+                              <input
+                                type="text"
+                                value={u.vinOrSerial}
+                                onChange={(e) => updateBatchUnit(u.tempId, { vinOrSerial: e.target.value.toUpperCase(), vinScanSource: 'manual' })}
+                                className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3.5 py-2 text-white font-mono uppercase focus:ring-1 focus:ring-neutral-400 focus:outline-none"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
