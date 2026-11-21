@@ -11057,24 +11057,28 @@
                               </td>
 
                               {/* 4. Seen By SR1 Staff? (yes/no) */}
-                              <td className="p-3.5 whitespace-nowrap">
+                              <td className="p-3.5">
                                 {isSeenByStaff ? (
-                                  <div className="space-y-0.5">
+                                  <div className="space-y-0.5 max-w-[200px]">
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-950/90 border border-emerald-500/50 text-emerald-200">
                                       <span>✓</span>
                                       <span>Yes</span>
                                     </span>
-                                    <div className="text-[10px] text-emerald-200/90">
-                                      SR1 staff opened — being worked on
+                                    <div className="text-[10px] text-emerald-200/90 leading-snug">
+                                      {!lastOffer && completeness.percent < 100
+                                        ? 'An SR1 team member will make an offer after info completeness reaches 100%'
+                                        : 'SR1 staff opened — being worked on'}
                                     </div>
                                   </div>
                                 ) : (
-                                  <div className="space-y-0.5">
+                                  <div className="space-y-0.5 max-w-[200px]">
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-neutral-900 border border-neutral-600 text-neutral-300">
                                       <span>No</span>
                                     </span>
-                                    <div className="text-[10px] text-neutral-300">
-                                      Awaiting staff review
+                                    <div className="text-[10px] text-neutral-300 leading-snug">
+                                      {!lastOffer && completeness.percent < 100
+                                        ? 'An SR1 team member will make an offer after info completeness reaches 100%'
+                                        : 'Awaiting staff review'}
                                     </div>
                                   </div>
                                 )}
@@ -11802,6 +11806,7 @@
                     {(() => {
                       const comp = calculatePartnerUnitCompleteness(selectedUnit);
                       const isSeen = Array.isArray(selectedUnit.seenBy) && selectedUnit.seenBy.length > 0;
+                      const hasOffer = Array.isArray(selectedUnit.offers) && selectedUnit.offers.length > 0;
                       return (
                         <div className="grid grid-cols-2 gap-3">
                           <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800 space-y-1.5">
@@ -11831,7 +11836,9 @@
                                   ✓ Yes
                                 </span>
                                 <div className="text-[10px] text-emerald-300/90">
-                                  An SR1 staff member has opened this unit and is working on it.
+                                  {!hasOffer && comp.percent < 100
+                                    ? 'An SR1 team member will make an offer after info completeness reaches 100%.'
+                                    : 'An SR1 staff member has opened this unit and is working on it.'}
                                 </div>
                               </>
                             ) : (
@@ -11840,7 +11847,9 @@
                                   No
                                 </span>
                                 <div className="text-[10px] text-neutral-400">
-                                  Queued for SR1 appraisal staff review.
+                                  {!hasOffer && comp.percent < 100
+                                    ? 'An SR1 team member will make an offer after info completeness reaches 100%.'
+                                    : 'Queued for SR1 appraisal staff review.'}
                                 </div>
                               </>
                             )}
@@ -11907,9 +11916,9 @@
                         </div>
                       ) : (
                         <div>
-                          <div className="text-sm font-bold text-neutral-200">Waiting for SR1 Offer</div>
-                          <p className="text-[11px] text-neutral-400 mt-0.5">
-                            As soon as our appraisal team submits a subject-to-inspection offer, it will appear here so you can accept or decline.
+                          <div className="text-sm font-bold text-white">Waiting for SR1 Offer</div>
+                          <p className="text-[11px] text-neutral-300 mt-0.5">
+                            An SR1 team member will make an offer after info completeness reaches 100%. Once submitted, it will appear here so you can accept or decline.
                           </p>
                         </div>
                       )}
