@@ -10998,53 +10998,7 @@
                         </div>
                       </div>
 
-                      {/* Row 4: Photos & Videos Upload Box (General Unit Media Only) */}
-                      {(() => {
-                        const generalPhotos = (u.photos || []).filter(p => !p.isVinPhoto);
-                        return (
-                          <div className="bg-neutral-950 border border-dashed border-neutral-750 rounded-xl p-4 space-y-3">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                              <div>
-                                <div className="text-xs font-bold text-neutral-200">
-                                  Photos &amp; Walkaround Videos ({generalPhotos.length} uploaded — Optional)
-                                </div>
-                              </div>
-                              <label className="inline-flex items-center justify-center px-3.5 py-2 bg-neutral-850 hover:bg-neutral-800 border border-neutral-700 rounded-xl text-xs font-bold text-white cursor-pointer shrink-0">
-                                <span>{u.uploadingPhotos ? 'Uploading...' : '📷 Choose Photos / Videos'}</span>
-                                <input
-                                  type="file"
-                                  multiple
-                                  accept="image/*,video/*,.heic,.heif,.mov,.mp4"
-                                  onChange={(e) => {
-                                    handleBatchUnitPhotos(u.tempId, e.target.files);
-                                    if (e.target) e.target.value = '';
-                                  }}
-                                  className="hidden"
-                                />
-                              </label>
-                            </div>
-
-                            {generalPhotos.length > 0 && (
-                              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
-                                {generalPhotos.map(p => (
-                                  <div key={p.id} className="relative group aspect-video rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800">
-                                    <img src={p.thumbUrl || p.url} alt={p.label} className="w-full h-full object-cover" />
-                                    <button
-                                      type="button"
-                                      onClick={() => updateBatchUnit(u.tempId, { photos: (u.photos || []).filter(item => item.id !== p.id) })}
-                                      className="absolute top-1 right-1 px-1.5 py-0.5 bg-red-600/90 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Row 5: Dedicated VIN / Serial Number Section (All Categories Except Shipping Containers) */}
+                      {/* Row 4: Dedicated VIN / Serial Number Section (All Categories Except Shipping Containers) */}
                       {u.category !== 'container' && (
                         <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 space-y-3.5 text-xs">
                           <div>
@@ -11295,6 +11249,52 @@
                           )}
                         </div>
                       )}
+
+                      {/* Row 5: Photos & Videos Upload Box (General Unit Media Only) */}
+                      {(() => {
+                        const generalPhotos = (u.photos || []).filter(p => !p.isVinPhoto);
+                        return (
+                          <div className="bg-neutral-950 border border-dashed border-neutral-750 rounded-xl p-4 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <div className="text-xs font-bold text-neutral-200">
+                                  PHOTOS
+                                </div>
+                              </div>
+                              <label className="inline-flex items-center justify-center px-3.5 py-2 bg-neutral-850 hover:bg-neutral-800 border border-neutral-700 rounded-xl text-xs font-bold text-white cursor-pointer shrink-0">
+                                <span>{u.uploadingPhotos ? 'Uploading...' : '📷 Choose Photos / Videos'}</span>
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept="image/*,video/*,.heic,.heif,.mov,.mp4"
+                                  onChange={(e) => {
+                                    handleBatchUnitPhotos(u.tempId, e.target.files);
+                                    if (e.target) e.target.value = '';
+                                  }}
+                                  className="hidden"
+                                />
+                              </label>
+                            </div>
+
+                            {generalPhotos.length > 0 && (
+                              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
+                                {generalPhotos.map(p => (
+                                  <div key={p.id} className="relative group aspect-video rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800">
+                                    <img src={p.thumbUrl || p.url} alt={p.label} className="w-full h-full object-cover" />
+                                    <button
+                                      type="button"
+                                      onClick={() => updateBatchUnit(u.tempId, { photos: (u.photos || []).filter(item => item.id !== p.id) })}
+                                      className="absolute top-1 right-1 px-1.5 py-0.5 bg-red-600/90 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}
