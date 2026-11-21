@@ -12958,10 +12958,102 @@
       );
     }
 
+    const IGNORED_DUPLICATE_VIN_VALUES = new Set([
+      '',
+      'N/A',
+      'NA',
+      'NONE',
+      'UNKNOWN',
+      'PENDING',
+      'TBD',
+      'VIN-PENDING',
+      'SERIAL-PENDING',
+      'HIN-PENDING',
+      'VIN PENDING',
+      'SERIAL PENDING',
+      'HIN PENDING',
+      'NOT PROVIDED',
+      'UNREADABLE'
+    ]);
+
+    function normalizeVinOrSerialForDuplicateCheck(rawVal) {
+      const cleaned = String(rawVal || '').trim().toUpperCase();
+      if (!cleaned || IGNORED_DUPLICATE_VIN_VALUES.has(cleaned)) return '';
+      return cleaned;
+    }
+
     function StaffPortalView({ inquiries, partners = [], onSavePartner, onSubmitInquiry, onUpdateInquiry, onDeleteInquiry, selectedInquiryId, setSelectedInquiryId, staffUser, onSignOut, onRefreshPortalData, onSyncSamplesToCloud, emailRoutingConfig, onSaveEmailRoutingConfig, siteAnalytics }) {
       const canManageRouting = isSuperAdmin(staffUser);
       const canDeleteInquiries = isSuperAdmin(staffUser);
       const [refreshingPortal, setRefreshingPortal] = useState(false);
+      const [showDuplicatesPanel, setShowDuplicatesPanel] = useState(true);
+
+      // Identify exact duplicate units strictly by VIN or Serial Number across all submissions (active & archived)
+      const duplicateVinAnalysis = useMemo(() => {
+        const list = Array.isArray(inquiries) ? inquiries : [];
+        const bucketMap = new Map();
+
+        list.forEach((inq) => {
+          if (!inq) return;
+          const normKey = normalizeVinOrSerialForDuplicateCheck(inq.unit?.vinOrSerial);
+          if (!normKey) return;
+          if (!bucketMap.has(normKey)) {
+            bucketMap.set(normKey, []);
+          }
+          bucketMap.get(normKey).push(inq);
+        });
+
+        const groups = [];
+        const byInquiryId = new Map();
+        let totalFlaggedSubmissions = 0;
+
+        bucketMap.forEach((items, vin) => {
+          if (items.length < 2) return;
+          const oldestFirst = [...items].sort((a, b) => {
+            const ta = new Date(a.createdAt || 0).getTime() || 0;
+            const tb = new Date(b.createdAt || 0).getTime() || 0;
+            if (ta !== tb) return ta - tb;
+            return String(a.id || '').localeCompare(String(b.id || ''));
+          });
+          const newestFirst = [...oldestFirst].reverse();
+          const originalId = oldestFirst[0].id;
+          const hasActive = items.some((x) => !(x.isArchived || x.stage === 'archived'));
+          const latestCreatedAt = new Date(newestFirst[0].createdAt || 0).getTime() || 0;
+
+          const ordinalById = new Map();
+          oldestFirst.forEach((entry, idx) => {
+            ordinalById.set(entry.id, idx + 1);
+          });
+
+          totalFlaggedSubmissions += items.length;
+          groups.push({
+            vin,
+            items: newestFirst,
+            originalId,
+            ordinalById,
+            hasActive,
+            latestCreatedAt,
+            representative: newestFirst[0]
+          });
+
+          oldestFirst.forEach((entry, idx) => {
+            byInquiryId.set(entry.id, {
+              vin,
+              count: items.length,
+              ordinal: idx + 1,
+              isOriginal: entry.id === originalId,
+              peers: newestFirst.filter((other) => other.id !== entry.id)
+            });
+          });
+        });
+
+        groups.sort((a, b) => {
+          if (a.hasActive !== b.hasActive) return a.hasActive ? -1 : 1;
+          return b.latestCreatedAt - a.latestCreatedAt;
+        });
+
+        return { groups, byInquiryId, totalFlaggedSubmissions };
+      }, [inquiries]);
 
       const handleManualPortalRefresh = async () => {
         if (refreshingPortal) return;
@@ -13972,6 +14064,186 @@
                 </div>
               ) : (
                 <>
+              {/* FLAGGED DUPLICATE UNITS SECTION (EXACT VIN / SERIAL NUMBER MATCH) */}
+              {duplicateVinAnalysis.groups.length > 0 ? (
+                <div className="bg-amber-950/20 border border-amber-500/40 rounded-2xl overflow-hidden shadow-lg">
+                  <div
+                    onClick={() => setShowDuplicatesPanel(prev => !prev)}
+                    className="px-4 py-3 bg-amber-950/35 border-b border-amber-500/25 flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none hover:bg-amber-950/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-base shrink-0">⚠️</span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="text-xs sm:text-sm font-bold text-amber-200">
+                            Flagged Duplicate Submissions
+                          </h2>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/25 text-amber-200 border border-amber-400/40">
+                            {duplicateVinAnalysis.groups.length} {duplicateVinAnalysis.groups.length === 1 ? 'Exact VIN / Serial Match' : 'Exact VIN / Serial Matches'}
+                          </span>
+                          <span className="text-[11px] text-amber-300/80 font-medium">
+                            ({duplicateVinAnalysis.totalFlaggedSubmissions} total submissions)
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-neutral-400 mt-0.5">
+                          Units already submitted previously — matched strictly by exact VIN or Serial Number across active &amp; archived entries.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDuplicatesPanel(prev => !prev);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 border border-amber-500/35 text-amber-200 text-[11px] font-semibold transition-colors shrink-0"
+                    >
+                      {showDuplicatesPanel ? 'Hide ▲' : 'Show ▼'}
+                    </button>
+                  </div>
+
+                  {showDuplicatesPanel && (
+                    <div className="p-3 sm:p-4 space-y-3 max-h-[380px] overflow-y-auto">
+                      {duplicateVinAnalysis.groups.map((group) => {
+                        const rep = group.representative;
+                        const repTitle = [rep?.unit?.year, rep?.unit?.make, rep?.unit?.model].filter(Boolean).join(' ') || 'Unit Submission';
+                        const repCategory = CATEGORIES[rep?.unit?.category]?.label || rep?.unit?.subcategory || 'Unit';
+                        return (
+                          <div
+                            key={group.vin}
+                            className="bg-neutral-950/90 border border-neutral-800 rounded-xl overflow-hidden"
+                          >
+                            <div className="px-3 py-2 bg-neutral-900/90 border-b border-neutral-800 flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-200 font-mono text-[11px] font-bold tracking-wide">
+                                  {group.vin}
+                                </span>
+                                <span className="text-xs font-bold text-white truncate">
+                                  {repTitle}
+                                </span>
+                                <span className="text-[11px] text-neutral-400">
+                                  • {repCategory}
+                                </span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-950/80 text-red-300 border border-red-800/70 shrink-0">
+                                {group.items.length} submissions
+                              </span>
+                            </div>
+
+                            <div className="divide-y divide-neutral-800/70">
+                              {group.items.map((dupItem) => {
+                                const dInfo = formatInquiryDate(dupItem.createdAt);
+                                const isOrig = dupItem.id === group.originalId;
+                                const ordinal = group.ordinalById.get(dupItem.id) || 1;
+                                const isArch = dupItem.isArchived || dupItem.stage === 'archived';
+                                const dealStatusId = getInquiryDealStatusId(dupItem);
+                                const dealStatusMeta = STAFF_DEAL_STATUSES.find(s => s.id === dealStatusId);
+                                const customerDisplay = dupItem.partnerOrgName
+                                  ? `${dupItem.partnerOrgName}${dupItem.partnerContactName ? ` (${dupItem.partnerContactName})` : ''}`
+                                  : `${dupItem.customer?.firstName || ''} ${dupItem.customer?.lastName || ''}`.trim() || 'Unknown Customer';
+                                const sourceLabel = dupItem.submissionSource === 'dealer'
+                                  ? 'Dealer'
+                                  : dupItem.submissionSource === 'bank'
+                                  ? 'Bank / CU'
+                                  : (dupItem.intent === 'trade' ? 'Trade' : 'Sell');
+
+                                return (
+                                  <div
+                                    key={dupItem.id}
+                                    onClick={() => handleOpenInquiry(dupItem)}
+                                    className="px-3 py-2 flex flex-wrap items-center justify-between gap-2 hover:bg-neutral-900/70 cursor-pointer transition-colors text-xs"
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                      {isOrig ? (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-neutral-800 text-neutral-300 border border-neutral-700 shrink-0">
+                                          #1 Original
+                                        </span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-950/90 text-amber-300 border border-amber-700/80 shrink-0">
+                                          #{ordinal} Duplicate
+                                        </span>
+                                      )}
+                                      <span className="text-[11px] text-neutral-300 font-medium whitespace-nowrap">
+                                        {dInfo.date} <span className="text-neutral-500">{dInfo.time}</span>
+                                      </span>
+                                      <span className="text-neutral-600">•</span>
+                                      <span className="text-white font-semibold truncate max-w-[180px]">
+                                        {customerDisplay}
+                                      </span>
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-neutral-900 text-neutral-300 border border-neutral-800">
+                                        {sourceLabel}
+                                      </span>
+                                      <span className="text-[11px] text-neutral-400 truncate max-w-[160px]">
+                                        {getLocationName(dupItem.preferredLocation)}
+                                      </span>
+                                      {dealStatusMeta && (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-neutral-900 text-neutral-300 border border-neutral-800">
+                                          {dealStatusMeta.icon} {dealStatusMeta.label}
+                                        </span>
+                                      )}
+                                      {isArch && (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700">
+                                          📦 Archived
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenInquiry(dupItem)}
+                                        className="px-2 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-[11px] font-semibold border border-neutral-700 transition-colors"
+                                      >
+                                        Open
+                                      </button>
+                                      {isArch ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUnarchiveInquiry(dupItem)}
+                                          className="px-2 py-1 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-amber-400 hover:text-amber-300 text-[11px] font-semibold border border-neutral-800 transition-colors"
+                                        >
+                                          Restore
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleArchiveInquiry(dupItem)}
+                                          className="px-2 py-1 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white text-[11px] font-semibold border border-neutral-800 transition-colors"
+                                        >
+                                          Archive
+                                        </button>
+                                      )}
+                                      {canDeleteInquiries && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleConfirmDeleteInquiry(dupItem)}
+                                          className="px-2 py-1 rounded-lg bg-red-950/60 hover:bg-red-900 text-red-300 hover:text-white text-[11px] font-semibold border border-red-900/70 transition-colors"
+                                        >
+                                          Delete
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-neutral-900/70 border border-neutral-800 rounded-xl px-4 py-2.5 flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 text-neutral-400">
+                    <span className="text-emerald-400 font-bold">✓</span>
+                    <span>
+                      <strong className="text-neutral-200">Duplicate VIN / Serial Check:</strong> No exact duplicate units currently flagged.
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* SEARCH & FILTERS BAR */}
               <div className="bg-neutral-900 border border-neutral-800 p-3 sm:p-4 rounded-xl space-y-3 text-xs">
                 {/* Top row: search & dropdowns */}
@@ -14240,9 +14512,19 @@
                           )}
                         </p>
                         {item.unit.vinOrSerial && (
-                          <p className="text-[10px] text-neutral-500 font-mono truncate">
-                            VIN: {item.unit.vinOrSerial}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <p className="text-[10px] text-neutral-500 font-mono truncate">
+                              VIN: {item.unit.vinOrSerial}
+                            </p>
+                            {duplicateVinAnalysis.byInquiryId.has(item.id) && (
+                              <span
+                                className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-950/90 text-amber-300 border border-amber-600/60 shrink-0"
+                                title={`Exact VIN / Serial match with ${duplicateVinAnalysis.byInquiryId.get(item.id).count - 1} other submission(s)`}
+                              >
+                                ⚠️ Duplicate ({duplicateVinAnalysis.byInquiryId.get(item.id).count}×)
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -14494,8 +14776,18 @@
                                   )}
                                 </div>
                                 {item.unit?.vinOrSerial && (
-                                  <div className="text-[10px] text-neutral-500 font-mono mt-0.5 truncate">
-                                    VIN: {item.unit.vinOrSerial}
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                    <span className="text-[10px] text-neutral-500 font-mono truncate">
+                                      VIN: {item.unit.vinOrSerial}
+                                    </span>
+                                    {duplicateVinAnalysis.byInquiryId.has(item.id) && (
+                                      <span
+                                        className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-950/90 text-amber-300 border border-amber-600/60 shrink-0"
+                                        title={`Exact VIN / Serial match with ${duplicateVinAnalysis.byInquiryId.get(item.id).count - 1} other submission(s)`}
+                                      >
+                                        ⚠️ Duplicate ({duplicateVinAnalysis.byInquiryId.get(item.id).count}×)
+                                      </span>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -14633,6 +14925,11 @@
               inquiry={selectedInquiry}
               staffUser={staffUser}
               emailRoutingConfig={emailRoutingConfig}
+              duplicateMatches={duplicateVinAnalysis.byInquiryId.get(selectedInquiry.id)?.peers || []}
+              onSelectInquiry={(targetId) => {
+                const target = (Array.isArray(inquiries) ? inquiries : []).find(x => x && x.id === targetId);
+                if (target) handleOpenInquiry(target);
+              }}
               onOpenPartnerGeneralChat={(partnerId, partnerType) => {
                 setSelectedInquiryId(null);
                 setPortalTab(partnerType === 'bank' ? 'banks' : 'dealers');
@@ -14720,7 +15017,7 @@
     // ==========================================
     // 4. APPRAISAL WORKSPACE MODAL
     // ==========================================
-    function AppraisalWorkspaceModal({ inquiry, staffUser, emailRoutingConfig, onOpenPartnerGeneralChat, onClose, onUpdateInquiry, onDeleteInquiry }) {
+    function AppraisalWorkspaceModal({ inquiry, staffUser, emailRoutingConfig, duplicateMatches = [], onSelectInquiry, onOpenPartnerGeneralChat, onClose, onUpdateInquiry, onDeleteInquiry }) {
       const canDeleteInquiries = isSuperAdmin(staffUser) && typeof onDeleteInquiry === 'function';
       const [currentStage, setCurrentStage] = useState(inquiry.stage);
       const latestOffer = (Array.isArray(inquiry.offers) && inquiry.offers.length > 0)
@@ -15186,6 +15483,37 @@
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+              {Array.isArray(duplicateMatches) && duplicateMatches.length > 0 && (
+                <div className="bg-amber-950/35 border border-amber-500/50 rounded-xl p-3.5 space-y-2 text-amber-200">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-base">⚠️</span>
+                    <span className="font-bold text-xs text-amber-100">
+                      Exact VIN / Serial Duplicate Detected ({duplicateMatches.length + 1} total submissions for{' '}
+                      <span className="font-mono text-white">{normalizeVinOrSerialForDuplicateCheck(inquiry.unit?.vinOrSerial)}</span>)
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {duplicateMatches.map((peer) => {
+                      const peerDate = formatInquiryDate(peer.createdAt);
+                      const peerCustomer = peer.partnerOrgName
+                        ? peer.partnerOrgName
+                        : `${peer.customer?.firstName || ''} ${peer.customer?.lastName || ''}`.trim() || 'Unknown';
+                      const peerArchived = peer.isArchived || peer.stage === 'archived';
+                      return (
+                        <button
+                          key={peer.id}
+                          type="button"
+                          onClick={() => onSelectInquiry && onSelectInquiry(peer.id)}
+                          className="px-2.5 py-1 rounded-lg bg-neutral-950/80 hover:bg-neutral-900 border border-amber-500/40 text-amber-100 hover:text-white text-[11px] font-semibold transition-colors cursor-pointer"
+                        >
+                          Open match: {peerDate.date} {peerDate.time} • {peerCustomer}{peerArchived ? ' (Archived)' : ''} →
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {isArchived && (
                 <div className="bg-amber-950/40 border border-amber-800/80 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-amber-200">
                   <div className="flex items-center gap-2.5">
